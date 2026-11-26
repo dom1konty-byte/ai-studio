@@ -10,7 +10,7 @@ for _s in (sys.stdout, sys.stderr):
     _s.reconfigure(encoding="utf-8")  # Windows-консоль: кириллица
 
 ROOT = Path(__file__).resolve().parent.parent
-SKIP = {"main", "ofis", "HEAD"}
+SKIP = {"main", "ai-office", "HEAD"}
 
 
 def git(*a):

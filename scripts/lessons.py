@@ -19,7 +19,7 @@ git("fetch", "-q", "--prune", "origin")
 refs = ["origin/main"] + [f"origin/{b.removeprefix('origin/')}" for b in
                           git("branch", "-r", "--format=%(refname:short)").split()
                           if b != "origin/main" and "/" not in b.removeprefix("origin/")
-                          and b.removeprefix("origin/") not in ("HEAD", "ofis")]
+                          and b.removeprefix("origin/") not in ("HEAD", "ai-office")]
 found = {}
 for ref in refs:
     for path in git("ls-tree", "-r", "--name-only", ref, "projects").splitlines():
