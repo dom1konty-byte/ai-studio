@@ -2,6 +2,8 @@
 """Создаёт проект студии: папку из шаблона, workflow, строку в projects/README.md, ветку."""
 import argparse, datetime, re, shutil, subprocess, sys
 from pathlib import Path
+for _s in (sys.stdout, sys.stderr):
+    _s.reconfigure(encoding="utf-8")  # Windows-консоль: кириллица
 
 ROOT = Path(__file__).resolve().parent.parent
 TYPES = {

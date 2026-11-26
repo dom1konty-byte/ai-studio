@@ -4,10 +4,12 @@
   python3 scripts/ci_status.py --branch <slug> --no-wait
 Код выхода: 0 — всё зелёное, 1 — упало, 2 — нет проверок/не дождались, 3 — нет gh."""
 import argparse, json, re, shutil, subprocess, sys, time
+for _s in (sys.stdout, sys.stderr):
+    _s.reconfigure(encoding="utf-8")  # Windows-консоль: кириллица
 
 
 def sh(*a):
-    r = subprocess.run(a, capture_output=True, text=True)
+    r = subprocess.run(a, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 
 

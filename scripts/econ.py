@@ -4,9 +4,11 @@
 import json, re, subprocess, sys
 from collections import defaultdict
 from pathlib import Path
+for _s in (sys.stdout, sys.stderr):
+    _s.reconfigure(encoding="utf-8")  # Windows-консоль: кириллица
 
 base = Path.home() / ".claude" / "projects"
-top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip() or str(Path.cwd())
+top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip() or str(Path.cwd())
 enc = re.sub(r"[^A-Za-z0-9]", "-", top)
 cands = sorted((base / enc).glob("*.jsonl"), key=lambda p: p.stat().st_mtime) if (base / enc).exists() else []
 if not cands:

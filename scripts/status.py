@@ -3,13 +3,16 @@
 Этап берётся из ветки проекта (там он свежее), иначе из main."""
 import subprocess
 from pathlib import Path
+import sys
+for _s in (sys.stdout, sys.stderr):
+    _s.reconfigure(encoding="utf-8")  # Windows-консоль: кириллица
 
 ROOT = Path(__file__).resolve().parent.parent
 SKIP = {"main", "ofis", "HEAD"}
 
 
 def git(*a):
-    r = subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True)
+    r = subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
