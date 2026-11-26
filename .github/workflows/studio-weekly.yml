@@ -1,0 +1,27 @@
+# Недельный отчёт студии в Telegram (воскресенье, 19:13 МСК). Выключить: переменная TELEGRAM_WEEKLY = off.
+name: studio-weekly
+
+on:
+  schedule:
+    - cron: "13 16 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  weekly:
+    if: ${{ vars.TELEGRAM_WEEKLY != 'off' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Отчёт в Telegram
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+        run: python3 scripts/telegram_notify.py --silent --text "$(python3 scripts/weekly_report.py)"

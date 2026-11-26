@@ -36,4 +36,5 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
         run: python3 scripts/notify_approvals.py "${{ github.event.before }}" "${{ github.sha }}" "${{ github.ref_name }}"
