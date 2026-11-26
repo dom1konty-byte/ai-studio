@@ -10,6 +10,7 @@ TYPES = {
     "app": ("flutter-app", "Android-приложение", "flutter-android.yml"),
     "site": ("web-landing", "Сайт", "web.yml"),
     "windows": ("windows-app", "Программа Windows", "flutter-windows.yml"),
+    "game": ("flutter-game", "Игра Android", "flutter-android.yml"),
 }
 TR = {"а":"a","б":"b","в":"v","г":"g","д":"d","е":"e","ё":"e","ж":"zh","з":"z","и":"i","й":"y",
       "к":"k","л":"l","м":"m","н":"n","о":"o","п":"p","р":"r","с":"s","т":"t","у":"u","ф":"f",

@@ -1,6 +1,6 @@
 # {{NAME}}
 
-{{TYPE}} · папка `projects/{{SLUG}}/` · ветки `{{SLUG}}/...`
+{{TYPE}} · папка `projects/{{SLUG}}/` · ветка `{{SLUG}}`
 
 {{ABOUT}}
 

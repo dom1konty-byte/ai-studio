@@ -8,11 +8,12 @@ description: Создаёт новый проект студии — спраш�
    - `app` — Android-приложение (Flutter)
    - `site` — сайт / лендинг
    - `windows` — программа для Windows (Flutter desktop, заготовка)
+   - `game` — игра для Android (Flutter + Flame)
    Одним сообщением, коротко. Можно добавить 1 строку «о чём проект» — пойдёт в бриф.
 2. Убедись, что рабочее дерево чистое (`git status`). Есть незакоммиченное — спроси.
 3. Запусти из корня репозитория:
    ```bash
-   python3 scripts/new_project.py "<Имя>" <app|site|windows> --about "<о чём>"
+   python3 scripts/new_project.py "<Имя>" <app|site|windows|game> --about "<о чём>"
    ```
    Скрипт: переводит имя в slug (латиница через дефис), копирует `templates/<тип>`, подставляет имя, создаёт `.github/workflows/<slug>.yml`, дописывает строку в `projects/README.md`, создаёт ветку `<slug>` (одна на весь проект) и коммит.
    Флаг `--no-branch` — без ветки и коммита.
