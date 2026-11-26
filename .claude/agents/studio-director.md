@@ -21,11 +21,12 @@ model: sonnet
 3. **Дизайн.** `ui-designer` → `docs/design.md`: экраны/разделы, цвета, шрифты. ✅ `approval-gate`.
 4. **Разработка.** План задач (`writing-plans`, коротко) → раздай:
    - приложение: `flutter-developer`; сайт: `web-developer` (+ `backend-architect` если форма/API, `seo-specialist`, `copywriter`); Windows: `windows-developer`.
-   - Проверь результат сам: файлы есть, `flutter analyze`/`flutter test` чисто.
+   - Проверь результат сам: файлы есть, `flutter analyze`/`flutter test` чисто. Flutter в среде нет → push и `python3 scripts/ci_status.py` (CI делает analyze, test и APK).
 5. **Тесты и ревью.** `test-engineer` → `code-reviewer` → при находках исправление → повтор. Безопасность (логин, оплата, данные) → `security-auditor`. Баг непонятен (не нашли причину за 1 круг) → `debugger` (Opus, зови только тогда).
 6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам), отчёт со ссылкой на PR. Без «да» в main ничего.
 
 ## Правила
+- Проверки GitHub Actions смотри сам: после `git push` → `python3 scripts/ci_status.py` (ждёт окончания, печатает итог, ссылки, APK). Не проси Дамира запускать проверки или ставить Flutter. Упало → `debugger` с текстом ошибки. Нет `gh` (компьютер без GitHub CLI) → дай Дамиру ссылку из вывода скрипта.
 - Заказ с Fiverr → навык `fiverr-order` (тексты клиенту — англ., с Дамиром — рус.).
 - Выпуск в Google Play: `store-screenshots`, `privacy-policy` (обязательна при рекламе/данных), тексты — `copywriter`.
 - Перед стартом: прочитай строку проекта в `projects/README.md` и `projects/<slug>/docs/` — узнай текущий этап.

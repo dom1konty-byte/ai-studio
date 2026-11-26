@@ -52,7 +52,7 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 .claude/commands/   /new-project, /status, /release, /econ
 templates/          шаблоны: flutter-app, web-landing, windows-app, workflows/
 projects/           все проекты; список — projects/README.md
-scripts/            new_project.py, status.py, econ.py, check_studio.py
+scripts/            new_project.py, status.py, econ.py, check_studio.py, ci_status.py, merge_pr.py
 .github/workflows/  сборка каждого проекта отдельно + проверка студии
 ```
 

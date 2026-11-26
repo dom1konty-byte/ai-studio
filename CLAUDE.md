@@ -44,5 +44,6 @@
 - Публикация (Google Play, хостинг, merge в main) — только после ✅.
 
 ## Проверка перед «готово»
-- Flutter: `flutter analyze` и `flutter test` в папке проекта — без ошибок.
+- Проверки GitHub Actions агенты смотрят сами: `python3 scripts/ci_status.py` после push. Дамира не просить запускать проверки вручную.
+- Flutter: `flutter analyze` и `flutter test` в папке проекта — без ошибок (локально или в CI через `ci_status.py`).
 - Сайт: открывается, адаптив 360px/1280px, форма работает, нет ошибок в консоли.
