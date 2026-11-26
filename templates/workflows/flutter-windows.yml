@@ -13,7 +13,7 @@ jobs:
       run:
         working-directory: projects/{{SLUG}}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.50.1   # закреплено; обновлять осознанно
@@ -30,7 +30,7 @@ jobs:
         run: flutter test
       - id: build
         run: flutter build windows --release
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: {{SLUG}}-windows
           path: projects/{{SLUG}}/build/windows/x64/runner/Release

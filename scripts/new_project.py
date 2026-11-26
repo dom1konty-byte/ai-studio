@@ -10,12 +10,13 @@ TYPES = {
     "app": ("flutter-app", "Android-приложение", "flutter-android.yml"),
     "site": ("web-landing", "Сайт", "web.yml"),
     "windows": ("windows-app", "Программа Windows", "flutter-windows.yml"),
-    "game": ("flutter-game", "Игра Android", "flutter-android.yml"),
+    "bot": ("telegram-bot", "Telegram-бот", "bot.yml"),
 }
 TR = {"а":"a","б":"b","в":"v","г":"g","д":"d","е":"e","ё":"e","ж":"zh","з":"z","и":"i","й":"y",
       "к":"k","л":"l","м":"m","н":"n","о":"o","п":"p","р":"r","с":"s","т":"t","у":"u","ф":"f",
       "х":"kh","ц":"ts","ч":"ch","ш":"sh","щ":"shch","ъ":"","ы":"y","ь":"","э":"e","ю":"yu","я":"ya"}
-TEXT_EXT = {".md", ".yaml", ".yml", ".dart", ".html", ".css", ".js", ".json", ".txt", ".xml"}
+TEXT_EXT = {".md", ".yaml", ".yml", ".dart", ".html", ".css", ".js", ".json", ".txt", ".xml",
+            ".ts", ".toml", ".ps1", ".cmd"}
 
 
 def slugify(name: str) -> str:
@@ -56,7 +57,8 @@ def main():
 
     shutil.copytree(ROOT / "templates" / tpl, dest)
     subs = {"{{NAME}}": a.name, "{{SLUG}}": slug, "{{PACKAGE}}": package,
-            "{{TYPE}}": type_ru, "{{ABOUT}}": a.about or "—", "{{DATE}}": today}
+            "{{TYPE}}": type_ru, "{{ABOUT}}": a.about or "—", "{{DATE}}": today,
+            "{{SECRET}}": slug.upper().replace("-", "_")}
     files = [f for f in dest.rglob("*") if f.is_file()]
     wf_src = ROOT / "templates" / "workflows" / wf
     wf_dst = ROOT / ".github" / "workflows" / f"{slug}.yml"
@@ -64,10 +66,10 @@ def main():
     shutil.copy(wf_src, wf_dst)
     for f in files + [wf_dst]:
         if f.suffix in TEXT_EXT:
-            t = f.read_text(encoding="utf-8")
+            t = f.read_bytes().decode("utf-8")  # байты: сохраняем BOM и CRLF (.ps1/.cmd для Windows)
             for k, v in subs.items():
                 t = t.replace(k, v)
-            f.write_text(t, encoding="utf-8")
+            f.write_bytes(t.encode("utf-8"))
 
     readme = ROOT / "projects" / "README.md"
     row = f"| {a.name} | [`{slug}`]({slug}/) | {type_ru} | Бриф | `{branch}` | {today} |\n"

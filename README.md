@@ -1,6 +1,6 @@
 # ai-studio — ИИ-студия разработки
 
-Студия для Claude Code: директор + 19 сотрудников-агентов, навыки и команды. Делает **Android-приложения и игры (Flutter, Flame)**, **сайты и лендинги**, позже — **программы для Windows**. Все проекты лежат здесь, каждый в своей папке `projects/<имя>/`.
+Студия для Claude Code: директор + 19 сотрудников-агентов, навыки и команды. Делает **Android-приложения (Flutter)**, **сайты и лендинги**, **Telegram-ботов**, позже — **программы для Windows**. Все проекты лежат здесь, каждый в своей папке `projects/<имя>/`.
 
 **1 сессия = 1 проект.** В начале сессии директор спрашивает: новый проект, какой из существующих или «Офис студии» (правки самой студии). После `/new-project` он выдаёт текст для старта новой сессии этого проекта.
 
@@ -8,7 +8,7 @@
 
 ## Как пользоваться
 1. Открой этот репозиторий в Claude Code.
-2. Напиши `/new-project` → назови проект и тип (приложение / игра / сайт / программа).
+2. Напиши `/new-project` → назови проект и тип (приложение / сайт / бот / программа).
 3. Директор проведёт по этапам. Остановится 3 раза и спросит «да?»:
    - **ТЗ** — что делаем;
    - **Дизайн** — как выглядит;
@@ -58,6 +58,11 @@ Cloudflare Pages (бесплатно, адрес `<проект>.pages.dev`, с�
 Подключение (5 минут): @BotFather → `/newbot` → токен; открыть своего бота → Start; @userinfobot → твой Id. GitHub → Settings → Secrets and variables → Actions → секреты `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`.
 Выключить: GitHub → Settings → Variables → `TELEGRAM_BUILDS` = `off` (сообщения о каждой сборке) или `TELEGRAM_MORNING` = `off` (утренняя сводка).
 
+## Telegram-боты (проекты)
+`/new-project Мой бот bot`. Где работает — выбираешь на ТЗ:
+- **на компьютере** — бесплатно, стартует сам при включении Windows; один раз двойной клик `projects\<бот>\windows\setup.cmd` (нужен Node.js LTS с nodejs.org);
+- **круглосуточно в Cloudflare** — бесплатно, публикуется сам после «да» на Выпуске (секреты `CLOUDFLARE_*` и `BOT_TOKEN_<ИМЯ>`).
+
 ## Табло студии (с телефона)
 GitHub (приложение или сайт) → репозиторий → **Issues** → закреплённый «Табло студии». Там все проекты: тип, этап, ветка, есть ли в `main`, ссылка на последнюю сборку (APK). Обновляется само: после каждой сборки, при изменениях проектов и раз в час. Видят только те, у кого есть доступ к репозиторию.
 
@@ -87,7 +92,8 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 | Продукт | product-manager, copywriter | Sonnet, Haiku |
 | Рынок и клиенты | market-researcher (стоит ли делать), client-manager (письма клиентам Fiverr) | Sonnet, Haiku |
 | Дизайн | ui-designer | Sonnet |
-| Мобильный | flutter-developer, game-developer (игры на Flame) | Sonnet |
+| Мобильный | flutter-developer | Sonnet |
+| Боты | bot-developer (Telegram, на компьютере или в Cloudflare) | Sonnet |
 | Веб | web-developer, backend-architect, seo-specialist | Sonnet, Sonnet, Haiku |
 | Windows | windows-developer (заготовка) | Sonnet |
 | Качество | test-engineer, code-reviewer, security-auditor | Sonnet |
@@ -96,7 +102,7 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 | Рост | growth-analyst (статистика после выпуска) | Sonnet |
 
 ## Навыки
-Свои: `new-project`, `approval-gate`, `merge-to-main`, `fiverr-order`, `monetization`, `privacy-policy`, `store-screenshots`, `flame-game`, `flutter-android-release`, `landing-page`, `windows-desktop`, `kratko` (короткие ответы).
+Свои: `new-project`, `approval-gate`, `merge-to-main`, `fiverr-order`, `monetization`, `privacy-policy`, `store-screenshots`, `telegram-bot`, `flutter-android-release`, `landing-page`, `windows-desktop`, `kratko` (короткие ответы).
 Взятые: `brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `verification-before-completion` (obra/superpowers), `frontend-design`, `webapp-testing`, `skill-creator` (anthropics/skills), `shadcn` (shadcn/ui), 13 навыков Flutter/Dart (flutter/agent-plugins, dart-lang/skills), `app-store-optimization` (alirezarezvani), `aso`, `copywriting`, `copy-editing`, `cro`, `competitor-profiling`, `customer-research`, `churn-prevention` (coreyhaines31). Подробно — `CREDITS.md`.
 
 ## Структура
@@ -104,7 +110,7 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 .claude/agents/     директор + отделы (product, design, mobile, web, desktop, qa, ops)
 .claude/skills/     навыки
 .claude/commands/   /new-project, /status, /release, /econ
-templates/          шаблоны: flutter-app, flutter-game, web-landing, windows-app, workflows/
+templates/          шаблоны: flutter-app, web-landing, telegram-bot, windows-app, workflows/
 projects/           все проекты; список — projects/README.md
 scripts/            new_project.py, status.py, dashboard.py, lessons.py, telegram_notify.py, notify_approvals.py, econ.py, check_studio.py, ci_status.py, merge_pr.py, android_signing.py
 .github/workflows/  сборка каждого проекта отдельно, проверка студии и шаблонов, табло

@@ -23,10 +23,10 @@ model: sonnet
 2а. **Архитектура (по необходимости).** Зови `architect` (Opus), только если: >3 экранов/страниц, сервер/логин/оплата/синхронизация, выбор стека неочевиден, большая переделка. Простое (счётчик, лендинг-визитка) — без него, решай сам по шаблону. Итог → `docs/architecture.md`, коротко покажи Дамиру вместе с ТЗ/дизайном.
 3. **Дизайн.** `ui-designer` → `docs/design.md`: экраны/разделы, цвета, шрифты. ✅ `approval-gate`.
 4. **Разработка.** План задач (`writing-plans`, коротко) → раздай:
-   - приложение: `flutter-developer`; игра: `game-developer`; сайт: `web-developer` (+ `backend-architect` если форма/API, `seo-specialist`, `copywriter`); Windows: `windows-developer`.
+   - приложение: `flutter-developer`; бот: `bot-developer` (где работает — `bot.config.json`, решить на ТЗ: компьютер или Cloudflare); сайт: `web-developer` (+ `backend-architect` если форма/API, `seo-specialist`, `copywriter`); Windows: `windows-developer`.
    - Проверь результат сам: файлы есть, `flutter analyze`/`flutter test` чисто. Flutter в среде нет → push и `python3 scripts/ci_status.py` (CI делает analyze, test и APK).
 5. **Тесты и ревью.** `test-engineer` → `code-reviewer` → при находках исправление → повтор. Безопасность (логин, оплата, данные) → `security-auditor`. Баг непонятен (не нашли причину за 1 круг) → `debugger` (Opus, зови только тогда).
-6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам; приложение/игра после слияния само уходит в Google Play internal testing, если есть секреты), отчёт со ссылкой на PR. Без «да» в main ничего.
+6. **Выпуск.** `release-engineer` собирает (APK/AAB, сайт или бот). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам; приложение после слияния само уходит в Google Play internal testing, если есть секреты), отчёт со ссылкой на PR. Без «да» в main ничего.
 7. **Уроки.** После слияния → 3–5 строк в `docs/lessons.md`: что пошло не так → как исправили → на будущее (нечего писать — «без проблем»). Коммит и push в ветку `<slug>`.
 
 ## Правила
