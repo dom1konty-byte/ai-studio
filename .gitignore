@@ -1,0 +1,43 @@
+# Секреты — никогда в git
+*.jks
+*.keystore
+key.properties
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+google-services.json
+GoogleService-Info.plist
+service-account*.json
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*.iml
+.idea/
+local.properties
+**/android/.gradle/
+**/android/app/release/
+**/ios/Pods/
+pubspec.lock.bak
+
+# Web
+node_modules/
+dist/
+.astro/
+.next/
+.vercel/
+.netlify/
+
+# Python
+__pycache__/
+*.pyc
+
+# Системное
+.DS_Store
+Thumbs.db
+.superpowers/

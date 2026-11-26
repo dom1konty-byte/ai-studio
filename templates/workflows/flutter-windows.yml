@@ -1,0 +1,34 @@
+# Сборка Windows-программы «{{NAME}}» (заготовка). Создано /new-project.
+name: "{{SLUG}}"
+
+on:
+  pull_request:
+    paths: ["projects/{{SLUG}}/**", ".github/workflows/{{SLUG}}.yml"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: projects/{{SLUG}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Создать windows/, если его нет
+        shell: bash
+        run: |
+          if [ ! -d windows ]; then
+            flutter create --platforms=windows --org com.aistudio --project-name {{PACKAGE}} .
+          fi
+      - run: flutter pub get
+      - run: flutter test
+      - run: flutter build windows --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: {{SLUG}}-windows
+          path: projects/{{SLUG}}/build/windows/x64/runner/Release
+          retention-days: 30

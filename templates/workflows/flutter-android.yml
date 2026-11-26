@@ -1,0 +1,72 @@
+# Сборка Android-приложения «{{NAME}}». Создано /new-project.
+name: "{{SLUG}}"
+
+on:
+  push:
+    paths: ["projects/{{SLUG}}/**", ".github/workflows/{{SLUG}}.yml"]
+  pull_request:
+    paths: ["projects/{{SLUG}}/**", ".github/workflows/{{SLUG}}.yml"]
+  workflow_dispatch:
+    inputs:
+      aab:
+        description: "Собрать AAB для Google Play"
+        type: boolean
+        default: false
+
+concurrency:
+  group: {{SLUG}}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/{{SLUG}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Создать android/, если его нет
+        run: |
+          if [ ! -d android ]; then
+            flutter create --platforms=android --org com.aistudio --project-name {{PACKAGE}} .
+          fi
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Ключ подписи из GitHub Secrets (если задан)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+            printf 'storeFile=upload-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+            echo "Подпись: ключ из секретов"
+          else
+            echo "Подпись: отладочный ключ (секретов нет) — для установки на телефон, не для Google Play"
+          fi
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: {{SLUG}}-apk
+          path: projects/{{SLUG}}/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.aab }}
+        run: flutter build appbundle --release
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.aab }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: {{SLUG}}-aab
+          path: projects/{{SLUG}}/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30

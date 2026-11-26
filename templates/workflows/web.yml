@@ -1,0 +1,33 @@
+# Проверка и сборка сайта «{{NAME}}». Создано /new-project.
+name: "{{SLUG}}"
+
+on:
+  push:
+    paths: ["projects/{{SLUG}}/**", ".github/workflows/{{SLUG}}.yml"]
+  pull_request:
+    paths: ["projects/{{SLUG}}/**", ".github/workflows/{{SLUG}}.yml"]
+  workflow_dispatch:
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/{{SLUG}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Проверка HTML
+        run: npx --yes html-validate@9 "site/**/*.html"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: {{SLUG}}-site
+          path: projects/{{SLUG}}/site
+          retention-days: 30
+      # Деплой: хостинг пока не выбран. Включить после выбора и одобрения Дамира.
+      # - name: Деплой
+      #   run: echo "сюда команда хостинга (Netlify / Vercel / Cloudflare Pages / GitHub Pages)"
+      #   env:
+      #     DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
