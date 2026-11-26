@@ -36,7 +36,8 @@ def last_apk(slug):
         arts = api(f"repos/{repo}/actions/runs/{r['id']}/artifacts") or {}
         for a in arts.get("artifacts", []):
             if a["name"].endswith(("-apk", "-site", "-windows")) and not a["expired"]:
-                when = r["updated_at"][:16].replace("T", " ")
+                when = (datetime.datetime.fromisoformat(r["updated_at"].replace("Z", "+00:00"))
+                        + datetime.timedelta(hours=3)).strftime("%d.%m %H:%M")
                 return f"[{a['name']}]({r['html_url']}#artifacts) · {r['head_branch']} · {when}"
     return "—"
 
