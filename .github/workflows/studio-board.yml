@@ -31,3 +31,9 @@ jobs:
           EXTRA=""
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" != "main" ]; then EXTRA="--ref ${{ github.ref_name }}"; fi
           python3 scripts/dashboard.py --publish $EXTRA
+      - name: Telegram — проект ждёт «да»
+        if: ${{ github.event_name == 'push' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 scripts/notify_approvals.py "${{ github.event.before }}" "${{ github.sha }}" "${{ github.ref_name }}"

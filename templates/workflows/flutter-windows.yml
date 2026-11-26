@@ -33,6 +33,24 @@ jobs:
           name: {{SLUG}}-windows
           path: projects/{{SLUG}}/build/windows/x64/runner/Release
           retention-days: 30
+      - name: Telegram — программа собрана
+        if: ${{ success() && github.event_name != 'pull_request' && github.ref != 'refs/heads/main' && vars.TELEGRAM_BUILDS != 'off' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python ../../scripts/telegram_notify.py --silent --text "✅ <b>{{NAME}}</b>: программа для Windows собрана.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">скачать</a> (внизу, Artifacts)"
+      - name: Telegram — сборка упала
+        if: ${{ failure() && github.event_name != 'pull_request' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python ../../scripts/telegram_notify.py --failed-step --text "❌ <b>{{NAME}}</b>: сборка Windows упала. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
 
   board:
     # после сборки — обновить табло студии (ссылка на свежий файл)

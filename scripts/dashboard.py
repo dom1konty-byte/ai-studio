@@ -45,11 +45,11 @@ def last_apk(slug):
 extra = sys.argv[sys.argv.index("--ref") + 1:sys.argv.index("--ref") + 2] if "--ref" in sys.argv else []
 items = collect(extra)
 now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=3)
+waiting = [p["name"] for p in items if "✅" in p["stage"] or "ждёт" in p["stage"] or "одобр" in p["stage"].lower()]
 lines = [f"_Обновлено автоматически: {now:%d.%m.%Y %H:%M} (МСК). Не редактировать вручную._", ""]
 if not items:
     lines.append("Проектов пока нет. Создай: `/new-project`")
 else:
-    waiting = [p["name"] for p in items if "✅" in p["stage"] or "одобр" in p["stage"].lower()]
     if waiting:
         lines += [f"**Ждут твоего «да»:** {', '.join(waiting)}", ""]
     lines += ["| Проект | Тип | Этап | Ветка | В main | Последняя сборка |", "|---|---|---|---|---|---|"]
@@ -58,6 +58,20 @@ else:
         lines.append(f"| **{p['name']}** | {p['type']} | {p['stage']} | {branch} | {'✔' if p['in_main'] else '—'} | {last_apk(p['slug'])} |")
     lines += ["", "APK: открой ссылку → внизу страницы **Artifacts** → скачать zip → внутри `app-release.apk`."]
 body = "\n".join(lines) + "\n"
+
+if "--telegram" in sys.argv:  # утренняя сводка
+    import html
+    if not items:
+        print("☀️ Доброе утро! Проектов пока нет — можно начать новый.")
+    else:
+        out = [f"☀️ <b>Студия: {len(items)} проект(ов)</b>"]
+        if waiting:
+            out.append("⏳ Ждут твоего «да»: " + ", ".join(html.escape(w) for w in waiting))
+        for p in items:
+            out.append(f"• <b>{html.escape(p['name'])}</b> — {html.escape(p['stage'])} ({p['type']})")
+        out.append(f'<a href="https://github.com/{repo}/issues?q=label%3A{LABEL}">табло</a>')
+        print("\n".join(out))
+    sys.exit()
 
 if "--publish" not in sys.argv:
     print(body)
