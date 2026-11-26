@@ -42,6 +42,8 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
+      - name: Подключить подпись в Gradle
+        run: python3 ../../scripts/android_signing.py android/app/build.gradle.kts
       - name: Ключ подписи из GitHub Secrets (если задан)
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -53,13 +55,9 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
             printf 'storeFile=upload-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
               "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
-            if grep -q "key.properties" android/app/build.gradle.kts 2>/dev/null; then
-              echo "Подпись: ключ из секретов"
-            else
-              echo "::warning::Секреты есть, но android/app/build.gradle.kts не читает key.properties — APK подписан отладочным ключом. См. навык flutter-android-release, шаг 5."
-            fi
+            echo "Подпись: ключ из секретов (годится для Google Play)"
           else
-            echo "Подпись: отладочный ключ (секретов нет) — для установки на телефон, не для Google Play"
+            echo "::notice::Секретов ключа нет — APK подписан отладочным ключом: ставится на телефон, но не для Google Play."
           fi
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4

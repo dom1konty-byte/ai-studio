@@ -35,5 +35,11 @@ title, description, OG-теги, `lang="ru"`, canonical, `sitemap.xml`, `robots.
 - Все якоря работают, форма — ошибки и успех.
 - Консоль без ошибок. Картинки с `alt`, WebP.
 
-## Деплой
-Хостинг не выбран. Сайт — статичная папка `projects/<slug>/site/`; подходит для GitHub Pages, Netlify, Vercel, Cloudflare Pages. Шаг деплоя в workflow закомментирован — включить после выбора и ✅.
+## Деплой (Cloudflare Pages, бесплатно)
+Репозиторий приватный → GitHub Pages бесплатно недоступен. Используем Cloudflare Pages: бесплатно, много сайтов, адрес `https://<slug>.pages.dev`, свой домен подключается бесплатно.
+- Публикация идёт сама из workflow проекта при push в `main` = после «да» на Выпуске (`merge-to-main`).
+- Один раз (Дамир): dash.cloudflare.com → регистрация → My Profile → API Tokens → Create Token → шаблон «Edit Cloudflare Workers» (или Custom: Account → Cloudflare Pages → Edit) → скопировать токен. Account ID — на главной странице аккаунта справа.
+- GitHub → Settings → Secrets and variables → Actions: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
+- Нет секретов → workflow пишет notice и пропускает публикацию (сборка не падает).
+- Свой домен: Cloudflare → Workers & Pages → проект → Custom domains.
+- После первой публикации: заменить `https://example.com/` в `index.html`, `robots.txt`, `sitemap.xml` на реальный адрес.

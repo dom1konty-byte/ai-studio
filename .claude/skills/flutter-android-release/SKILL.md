@@ -34,33 +34,9 @@ GitHub → Settings → Secrets and variables → Actions → добавить:
 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (= upload), `ANDROID_KEY_PASSWORD`.
 Потерять ключ = нельзя обновлять приложение. Хранить копию в надёжном месте.
 
-## 5. Подпись в Gradle (`android/app/build.gradle.kts`)
-```kotlin
-import java.util.Properties
-val keystoreProperties = Properties().apply {
-    val f = rootProject.file("key.properties")
-    if (f.exists()) load(f.inputStream())
-}
-android {
-    signingConfigs {
-        create("release") {
-            if (keystoreProperties.isNotEmpty()) {
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-            }
-        }
-    }
-    buildTypes {
-        release {
-            signingConfig = if (keystoreProperties.isNotEmpty())
-                signingConfigs.getByName("release") else signingConfigs.getByName("debug")
-        }
-    }
-}
-```
-Без этого шага ключ из секретов не применяется (workflow предупредит). Workflow проекта сам создаёт `android/key.properties` из секретов (если они заданы). Без секретов — сборка подписывается отладочным ключом (годится для установки на телефон, не для Play).
+## 5. Подпись в Gradle
+Делается автоматически: workflow проекта запускает `python3 ../../scripts/android_signing.py android/app/build.gradle.kts` (подключает `key.properties`, повторный запуск безопасен). Локально — та же команда из `projects/<slug>/`.
+Секреты заданы → APK/AAB подписаны ключом (годится для Google Play). Нет секретов → отладочный ключ (только для установки на телефон), в логе notice.
 
 ## 6. Сборка
 - Локально: `flutter build apk --release` → `build/app/outputs/flutter-apk/app-release.apk`; `flutter build appbundle` → `build/app/outputs/bundle/release/app-release.aab`.
