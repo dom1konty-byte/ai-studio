@@ -5,4 +5,4 @@
 
 | Имя | Папка | Тип | Этап | Ветка | Создан |
 |---|---|---|---|---|---|
-| Проверка табло | [`proverka-tablo`](proverka-tablo/) | Игра Android | Бриф | `proverka-tablo` | 2026-11-26 |
+| Проверка табло | [`proverka-tablo`](proverka-tablo/) | Игра Android | Дизайн ✅ ждёт «да» | `proverka-tablo` | 2026-11-26 |
