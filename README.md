@@ -41,7 +41,7 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 | Выпуск | release-engineer, status-reporter | Sonnet, Haiku |
 
 ## Навыки
-Свои: `new-project`, `approval-gate`, `flutter-android-release`, `landing-page`, `windows-desktop`, `kratko` (короткие ответы).
+Свои: `new-project`, `approval-gate`, `merge-to-main`, `flutter-android-release`, `landing-page`, `windows-desktop`, `kratko` (короткие ответы).
 Взятые: `brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `verification-before-completion` (obra/superpowers), `frontend-design`, `webapp-testing`, `skill-creator` (anthropics/skills), `shadcn` (shadcn/ui). Подробно — `CREDITS.md`.
 
 ## Структура
@@ -57,7 +57,7 @@ scripts/            new_project.py, status.py, econ.py, check_studio.py
 
 ## Ветки
 - `<проект>/<задача>`: `schetchik/start`, `schetchik/fix-button`.
-- `main` — общая рабочая версия. Попадает туда только через Pull Request и после твоего «да».
+- `main` — общая рабочая версия. Попадает туда только через Pull Request. После твоего «да» на Выпуске или на правках офиса студия сама сливает PR (когда проверки зелёные). Без «да» — ничего.
 
 ## Секреты (ключ подписи и т.п.)
 Никогда не клади в репозиторий. Только GitHub → Settings → Secrets and variables → Actions. Как сделать ключ для Google Play — `.claude/skills/flutter-android-release/SKILL.md`, шаг 4.

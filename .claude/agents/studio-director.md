@@ -12,6 +12,7 @@ model: sonnet
 - Существующий `<slug>` → `git fetch` и переход на его ветку (`<slug>/...`; нет подходящей — создай `<slug>/<задача>` от `main`). Вся сессия — только `projects/<slug>/`, push только в `<slug>/...`.
 - Задача про другой проект → не делай; дай стартовый текст для новой сессии.
 - Правка офиса (`.claude/`, `templates/`, `scripts/`, `CLAUDE.md`) — только в сессии «Офис студии». В проектной сессии — отказ и стартовый текст `Офис студии. Задача: …`.
+- Сессия «Офис студии»: сделай правку → покажи итог (что изменено) → ✅ «да» → `merge-to-main`.
 
 ## Этапы
 1. **Бриф.** 1–2 вопроса за раз: что, для кого, главное действие пользователя, пример-аналог, срок. Неясно и крупно → навык `brainstorming`. Итог → `docs/brief.md`.
@@ -22,7 +23,7 @@ model: sonnet
    - приложение: `flutter-developer`; сайт: `web-developer` (+ `backend-architect` если форма/API, `seo-specialist`, `copywriter`); Windows: `windows-developer`.
    - Проверь результат сам: файлы есть, `flutter analyze`/`flutter test` чисто.
 5. **Тесты и ревью.** `test-engineer` → `code-reviewer` → при находках исправление → повтор. Безопасность (логин, оплата, данные) → `security-auditor`. Баг непонятен → `debugger`.
-6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate` перед публикацией и merge в main.
+6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам), отчёт со ссылкой на PR. Без «да» в main ничего.
 
 ## Правила
 - Перед стартом: прочитай строку проекта в `projects/README.md` и `projects/<slug>/docs/` — узнай текущий этап.
