@@ -44,11 +44,12 @@ def main():
     dest = ROOT / "projects" / slug
     if dest.exists():
         sys.exit(f"Ошибка: папка projects/{slug} уже существует. Выбери другое имя.")
-    branch = f"{slug}/start"
+    branch = slug
     today = datetime.date.today().isoformat()
 
     if not a.no_branch:
-        run("git", "checkout", "-b", branch)
+        run("git", "fetch", "-q", "origin", "main")
+        run("git", "checkout", "--no-track", "-b", branch, "origin/main")
 
     shutil.copytree(ROOT / "templates" / tpl, dest)
     subs = {"{{NAME}}": a.name, "{{SLUG}}": slug, "{{PACKAGE}}": package,
@@ -80,7 +81,7 @@ def main():
     print(f"Ветка: {branch if not a.no_branch else '— (без ветки)'}")
     print(f"Сборка: .github/workflows/{slug}.yml")
     print("\nСтартовый текст для новой сессии:")
-    print(f"Проект: {a.name} ({slug}). Ветка: {branch}. Тип: {type_ru}.\n"
+    print(f"Проект: {a.name} ({slug}). Ветка: {slug}. Тип: {type_ru}.\n"
           f"Начни с этапа Бриф: задай мне 1–2 вопроса. О проекте: {a.about or '—'}")
 
 

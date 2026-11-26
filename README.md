@@ -14,7 +14,7 @@
    - **Дизайн** — как выглядит;
    - **Выпуск** — перед публикацией.
 4. Между этими точками студия работает сама. После каждого этапа — короткий отчёт.
-5. Есть идея правки — просто напиши: «Счётчик: сделай кнопку сброса». Директор сам создаст ветку `schetchik/reset-button`.
+5. Есть идея правки — просто напиши: «Счётчик: сделай кнопку сброса». Директор сделает её в ветке проекта `schetchik`.
 
 ## Команды
 | Команда | Что делает |
@@ -52,12 +52,12 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 .claude/commands/   /new-project, /status, /release, /econ
 templates/          шаблоны: flutter-app, web-landing, windows-app, workflows/
 projects/           все проекты; список — projects/README.md
-scripts/            new_project.py, status.py, econ.py, check_studio.py
+scripts/            new_project.py, status.py, econ.py, check_studio.py, ci_status.py, merge_pr.py
 .github/workflows/  сборка каждого проекта отдельно + проверка студии
 ```
 
 ## Ветки
-- `<проект>/<задача>`: `schetchik/start`, `schetchik/fix-button`.
+- 1 проект = 1 ветка с его именем: `moy-sait`, `schetchik`. Без `/` и без веток под каждую задачу. Офис — ветка `ofis`.
 - `main` — общая рабочая версия. Попадает туда только через Pull Request. После твоего «да» на Выпуске или на правках офиса студия сама сливает PR (когда проверки зелёные). Без «да» — ничего.
 
 ## Секреты (ключ подписи и т.п.)

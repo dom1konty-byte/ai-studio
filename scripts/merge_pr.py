@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Слияние ветки в main через PR — ТОЛЬКО после «да» Дамира (навык merge-to-main).
-Находит/создаёт PR текущей ветки, ждёт проверки GitHub Actions, сливает (squash).
+Находит/создаёт PR текущей ветки, ждёт проверки GitHub Actions, сливает merge-коммитом (ветка проекта остаётся).
   python3 scripts/merge_pr.py --title "..." [--dry-run]"""
 import argparse, json, re, subprocess, sys, time
 
@@ -47,7 +47,8 @@ else:
 num, sha = pr["number"], pr["head"]["sha"]
 print(f"PR #{num}: {pr['html_url']}")
 
-deadline = time.time() + a.timeout
+start = time.time()
+deadline = start + a.timeout
 while True:
     runs = api(f"repos/{repo}/commits/{sha}/check-runs?per_page=100").get("check_runs", [])
     pending = [r["name"] for r in runs if r["status"] != "completed"]
@@ -55,6 +56,9 @@ while True:
               and r["conclusion"] not in ("success", "skipped", "neutral")]
     if failed:
         sys.exit(f"НЕ СЛИТО: проверки упали: {', '.join(failed)}. Чинить → снова одобрение не нужно, повторить скрипт.")
+    if not runs and time.time() < start + 120:
+        time.sleep(15)  # проверки стартуют не сразу после push
+        continue
     if not pending:
         break
     if time.time() > deadline:
@@ -65,7 +69,7 @@ print(f"Проверки: {len(runs)} зелёных" if runs else "Провер
 if a.dry_run:
     print("dry-run: всё готово к слиянию, не сливаю.")
     sys.exit()
-res = api(f"repos/{repo}/pulls/{num}/merge", "-X", "PUT", "-f", "merge_method=squash")
+res = api(f"repos/{repo}/pulls/{num}/merge", "-X", "PUT", "-f", "merge_method=merge")
 if not res.get("merged"):
     sys.exit(f"НЕ СЛИТО: {res.get('message')}")
 print(f"СЛИТО в main: PR #{num} ({res.get('sha', '')[:7]})")
