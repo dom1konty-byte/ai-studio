@@ -26,8 +26,10 @@ jobs:
             flutter create --platforms=windows --org com.aistudio --project-name {{PACKAGE}} .
           fi
       - run: flutter pub get
-      - run: flutter test
-      - run: flutter build windows --release
+      - id: test
+        run: flutter test
+      - id: build
+        run: flutter build windows --release
       - uses: actions/upload-artifact@v4
         with:
           name: {{SLUG}}-windows
@@ -50,7 +52,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          python ../../scripts/telegram_notify.py --failed-step --text "❌ <b>{{NAME}}</b>: сборка Windows упала. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
+          python ../../scripts/telegram_notify.py --text "❌ <b>{{NAME}}</b>: сборка Windows упала на шаге: ${{ steps.test.outcome == 'failure' && 'flutter test' || steps.build.outcome == 'failure' && 'сборка .exe' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
 
   board:
     # после сборки — обновить табло студии (ссылка на свежий файл)

@@ -20,6 +20,7 @@ jobs:
         with:
           node-version: "22"
       - name: Проверка HTML
+        id: html
         run: npx --yes html-validate@9 "site/**/*.html"
       - uses: actions/upload-artifact@v4
         with:
@@ -73,7 +74,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ../../scripts/telegram_notify.py --failed-step --text "❌ <b>{{NAME}}</b>: проверка сайта упала (ветка ${{ github.ref_name }}). Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
+          python3 ../../scripts/telegram_notify.py --text "❌ <b>{{NAME}}</b>: проверка сайта упала (ветка ${{ github.ref_name }}) на шаге: ${{ steps.html.outcome == 'failure' && 'проверка HTML' || steps.publish.outcome == 'failure' && 'публикация' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
 
   board:
     # после сборки — обновить табло студии (ссылка на свежий файл)

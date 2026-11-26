@@ -45,9 +45,12 @@ jobs:
           if [ ! -d android ]; then
             flutter create --platforms=android --org com.aistudio --project-name proverka_bota .
           fi
-      - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
+      - id: pubget
+        run: flutter pub get
+      - id: analyze
+        run: flutter analyze
+      - id: test
+        run: flutter test
       - name: Подключить подпись в Gradle
         run: python3 ../../scripts/android_signing.py android/app/build.gradle.kts
       - name: Ключ подписи из GitHub Secrets (если задан)
@@ -66,7 +69,8 @@ jobs:
           else
             echo "::notice::Секретов ключа нет — APK подписан отладочным ключом: ставится на телефон, но не для Google Play."
           fi
-      - run: flutter build apk --release --build-number=$BUILD_NUMBER
+      - id: apk
+        run: flutter build apk --release --build-number=$BUILD_NUMBER
       - uses: actions/upload-artifact@v4
         with:
           name: proverka-bota-apk
@@ -137,7 +141,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ../../scripts/telegram_notify.py --failed-step --text "❌ <b>Проверка бота</b>: сборка упала (ветка ${{ github.ref_name }}). Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
+          python3 ../../scripts/telegram_notify.py --text "❌ <b>Проверка бота</b>: сборка упала (ветка ${{ github.ref_name }}) на шаге: ${{ steps.analyze.outcome == 'failure' && 'flutter analyze (ошибки в коде)' || steps.test.outcome == 'failure' && 'flutter test (тесты)' || steps.pubget.outcome == 'failure' && 'flutter pub get (пакеты)' || steps.apk.outcome == 'failure' && 'сборка APK' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
 
   board:
     # после сборки — обновить табло студии (ссылка на свежий файл)
