@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Слияние ветки в main через PR — ТОЛЬКО после «да» Дамира (навык merge-to-main).
-Находит/создаёт PR текущей ветки, ждёт проверки GitHub Actions, сливает (squash).
+Находит/создаёт PR текущей ветки, ждёт проверки GitHub Actions, сливает merge-коммитом (ветка проекта остаётся).
   python3 scripts/merge_pr.py --title "..." [--dry-run]"""
 import argparse, json, re, subprocess, sys, time
 
@@ -69,7 +69,7 @@ print(f"Проверки: {len(runs)} зелёных" if runs else "Провер
 if a.dry_run:
     print("dry-run: всё готово к слиянию, не сливаю.")
     sys.exit()
-res = api(f"repos/{repo}/pulls/{num}/merge", "-X", "PUT", "-f", "merge_method=squash")
+res = api(f"repos/{repo}/pulls/{num}/merge", "-X", "PUT", "-f", "merge_method=merge")
 if not res.get("merged"):
     sys.exit(f"НЕ СЛИТО: {res.get('message')}")
 print(f"СЛИТО в main: PR #{num} ({res.get('sha', '')[:7]})")
