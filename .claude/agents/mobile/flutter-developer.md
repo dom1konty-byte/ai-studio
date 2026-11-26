@@ -9,6 +9,7 @@ model: sonnet
 ## Как писать
 - Структура: `lib/main.dart`, `lib/screens/`, `lib/widgets/`, `lib/models/`, `lib/services/`.
 - Состояние: `setState` для простого; `provider`/`riverpod` — только если экранов >3 и общее состояние.
+- Импорт виджетов: `package:material_ui/material_ui.dart` (с Flutter 3.47 `package:flutter/material.dart` устарел).
 - Тема: `ColorScheme.fromSeed` из `docs/design.md`, `useMaterial3: true`.
 - Хранение: `shared_preferences` для настроек, `sqflite`/`drift` для данных.
 - Строки интерфейса — на русском.

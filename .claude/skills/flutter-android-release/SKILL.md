@@ -60,7 +60,7 @@ android {
     }
 }
 ```
-Workflow проекта сам создаёт `android/key.properties` из секретов (если они заданы). Без секретов — сборка подписывается отладочным ключом (годится для установки на телефон, не для Play).
+Без этого шага ключ из секретов не применяется (workflow предупредит). Workflow проекта сам создаёт `android/key.properties` из секретов (если они заданы). Без секретов — сборка подписывается отладочным ключом (годится для установки на телефон, не для Play).
 
 ## 6. Сборка
 - Локально: `flutter build apk --release` → `build/app/outputs/flutter-apk/app-release.apk`; `flutter build appbundle` → `build/app/outputs/bundle/release/app-release.aab`.
