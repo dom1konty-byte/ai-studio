@@ -31,6 +31,7 @@ jobs:
           java-version: "17"
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: 3.50.1
           channel: stable
           cache: true
       - name: Создать android/, если его нет
@@ -52,7 +53,7 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
             printf 'storeFile=upload-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
               "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
-            echo "Подпись: ключ из секретов"
+            echo "Подпись: ключ записан, но gradle его пока не использует — APK подписан отладочным ключом"
           else
             echo "Подпись: отладочный ключ (секретов нет) — для установки на телефон, не для Google Play"
           fi
