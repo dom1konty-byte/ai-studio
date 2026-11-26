@@ -79,6 +79,9 @@ def main():
     print(f"Готово: projects/{slug}/ ({type_ru})")
     print(f"Ветка: {branch if not a.no_branch else '— (без ветки)'}")
     print(f"Сборка: .github/workflows/{slug}.yml")
+    print("\nСтартовый текст для новой сессии:")
+    print(f"Проект: {a.name} ({slug}). Ветка: {branch}. Тип: {type_ru}.\n"
+          f"Начни с этапа Бриф: задай мне 1–2 вопроса. О проекте: {a.about or '—'}")
 
 
 if __name__ == "__main__":
