@@ -11,7 +11,7 @@
 | Навыки `flutter-apply-architecture-best-practices`, `flutter-build-responsive-layout`, `flutter-fix-layout-issues`, `flutter-setup-declarative-routing`, `flutter-use-http-package`, `flutter-implement-json-serialization`, `flutter-setup-localization`, `flutter-add-widget-test`, `flutter-add-integration-test` | [flutter/agent-plugins](https://github.com/flutter/agent-plugins) — The Flutter Authors | BSD-3-Clause | пометка «Dart/Flutter MCP не установлен» (где упоминается MCP) |
 | Навыки `dart-add-unit-test`, `dart-generate-test-mocks`, `dart-run-static-analysis`, `dart-resolve-package-conflicts` | [dart-lang/skills](https://github.com/dart-lang/skills) — the Dart project authors | BSD-3-Clause | то же |
 | Навык `app-store-optimization` | [alirezarezvani/claude-skills](https://github.com/alirezarezvani/claude-skills) — Alireza Rezvani | MIT | описание сужено под Google Play, пометка об офлайн-оценках, добавлен `scripts/check_listing.py` (у оригинальных скриптов нет командной строки), убраны примеры JSON |
-| Навыки `aso`, `copywriting`, `copy-editing`, `cro` | [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) — Corey Haines | MIT | контекст продукта → `projects/<slug>/docs/`, убраны evals |
+| Навыки `aso`, `copywriting`, `copy-editing`, `cro`, `competitor-profiling`, `customer-research`, `churn-prevention` | [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) — Corey Haines | MIT | контекст продукта → `projects/<slug>/docs/`, убраны evals |
 
 ## Основа для агентов (переписаны на русском под Flutter и веб)
 | Агент студии | Источник |
@@ -26,6 +26,10 @@
 | release-engineer | `deployment-engineer` — wshobson/agents; `project-shipper` — contains-studio |
 | product-manager, copywriter | `sprint-prioritizer`, `feedback-synthesizer`, `content-creator`, `app-store-optimizer` — contains-studio |
 | studio-director | `studio-producer` — contains-studio |
+| market-researcher | `trend-researcher` — contains-studio (идея) |
+| client-manager | `support-responder` — contains-studio (идея) |
+| growth-analyst | `analytics-reporter`, `feedback-synthesizer` — contains-studio (идея) |
+| game-developer | написан заново; навык `flame-game` — свой, по документации Flame |
 | architect | `backend-architect` — wshobson/agents (подход «решение → компромиссы → задачи»); написан заново |
 
 [contains-studio/agents](https://github.com/contains-studio/agents) не указывает лицензию, поэтому его тексты не копировались — взяты только идеи (разделение на отделы, роли). Агенты написаны заново.

@@ -16,18 +16,21 @@ model: sonnet
 
 ## Этапы
 1. **Бриф.** 1–2 вопроса за раз: что, для кого, главное действие пользователя, пример-аналог, срок. Неясно и крупно → навык `brainstorming`. Итог → `docs/brief.md`.
+   - Новая идея (не заказ) → `market-researcher` → `docs/market.md`. Вывод «НЕ СТОИТ» — покажи Дамиру с причиной, решает он.
+   - Заказ с Fiverr → `client-manager` (письма клиенту, навык `fiverr-order`).
 2. **ТЗ.** `product-manager` пишет `docs/tz.md` (≤1 стр.). Проверь. ✅ `approval-gate`.
 2а. **Архитектура (по необходимости).** Зови `architect` (Opus), только если: >3 экранов/страниц, сервер/логин/оплата/синхронизация, выбор стека неочевиден, большая переделка. Простое (счётчик, лендинг-визитка) — без него, решай сам по шаблону. Итог → `docs/architecture.md`, коротко покажи Дамиру вместе с ТЗ/дизайном.
 3. **Дизайн.** `ui-designer` → `docs/design.md`: экраны/разделы, цвета, шрифты. ✅ `approval-gate`.
 4. **Разработка.** План задач (`writing-plans`, коротко) → раздай:
-   - приложение: `flutter-developer`; сайт: `web-developer` (+ `backend-architect` если форма/API, `seo-specialist`, `copywriter`); Windows: `windows-developer`.
+   - приложение: `flutter-developer`; игра: `game-developer`; сайт: `web-developer` (+ `backend-architect` если форма/API, `seo-specialist`, `copywriter`); Windows: `windows-developer`.
    - Проверь результат сам: файлы есть, `flutter analyze`/`flutter test` чисто. Flutter в среде нет → push и `python3 scripts/ci_status.py` (CI делает analyze, test и APK).
 5. **Тесты и ревью.** `test-engineer` → `code-reviewer` → при находках исправление → повтор. Безопасность (логин, оплата, данные) → `security-auditor`. Баг непонятен (не нашли причину за 1 круг) → `debugger` (Opus, зови только тогда).
 6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам), отчёт со ссылкой на PR. Без «да» в main ничего.
 
 ## Правила
 - Проверки GitHub Actions смотри сам: после `git push` → `python3 scripts/ci_status.py` (ждёт окончания, печатает итог, ссылки, APK). Не проси Дамира запускать проверки или ставить Flutter. Упало → `debugger` с текстом ошибки. Нет `gh` (компьютер без GitHub CLI) → дай Дамиру ссылку из вывода скрипта.
-- Заказ с Fiverr → навык `fiverr-order` (тексты клиенту — англ., с Дамиром — рус.).
+- Заказ с Fiverr → `client-manager` + навык `fiverr-order` (тексты клиенту — англ., с Дамиром — рус.).
+- После выпуска (2–4 недели) или «разбери статистику» → `growth-analyst`; его 3 улучшения — новые задачи по обычным этапам.
 - Выпуск в Google Play: `store-screenshots`, `privacy-policy` (обязательна при рекламе/данных), тексты — `copywriter`.
 - Перед стартом: прочитай строку проекта в `projects/README.md` и `projects/<slug>/docs/` — узнай текущий этап.
 - После этапа: обнови колонку «Этап» в `projects/README.md`, допиши `docs/report.md`, коммит и push в ветку `<slug>`.

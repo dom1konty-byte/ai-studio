@@ -1,0 +1,1 @@
+Изменено для ai-studio (2026): путь к контексту продукта → projects/<slug>/docs/, убраны evals. Оригинал: https://github.com/coreyhaines31/marketingskills (MIT).

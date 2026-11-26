@@ -1,6 +1,6 @@
 # ai-studio — ИИ-студия разработки
 
-Студия для Claude Code: директор + 15 сотрудников-агентов, навыки и команды. Делает **Android-приложения (Flutter)**, **сайты и лендинги**, позже — **программы для Windows**. Все проекты лежат здесь, каждый в своей папке `projects/<имя>/`.
+Студия для Claude Code: директор + 19 сотрудников-агентов, навыки и команды. Делает **Android-приложения и игры (Flutter, Flame)**, **сайты и лендинги**, позже — **программы для Windows**. Все проекты лежат здесь, каждый в своей папке `projects/<имя>/`.
 
 **1 сессия = 1 проект.** В начале сессии директор спрашивает: новый проект, какой из существующих или «Офис студии» (правки самой студии). После `/new-project` он выдаёт текст для старта новой сессии этого проекта.
 
@@ -8,7 +8,7 @@
 
 ## Как пользоваться
 1. Открой этот репозиторий в Claude Code.
-2. Напиши `/new-project` → назови проект и тип (приложение / сайт / программа).
+2. Напиши `/new-project` → назови проект и тип (приложение / игра / сайт / программа).
 3. Директор проведёт по этапам. Остановится 3 раза и спросит «да?»:
    - **ТЗ** — что делаем;
    - **Дизайн** — как выглядит;
@@ -64,24 +64,26 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 | Директор | studio-director (главный агент сессии) | Sonnet |
 | Архитектура | architect (только сложные решения) | Opus |
 | Продукт | product-manager, copywriter | Sonnet, Haiku |
+| Рынок и клиенты | market-researcher (стоит ли делать), client-manager (письма клиентам Fiverr) | Sonnet, Haiku |
 | Дизайн | ui-designer | Sonnet |
-| Мобильный | flutter-developer | Sonnet |
+| Мобильный | flutter-developer, game-developer (игры на Flame) | Sonnet |
 | Веб | web-developer, backend-architect, seo-specialist | Sonnet, Sonnet, Haiku |
 | Windows | windows-developer (заготовка) | Sonnet |
 | Качество | test-engineer, code-reviewer, security-auditor | Sonnet |
 | Отладка | debugger (только непонятные ошибки) | Opus |
 | Выпуск | release-engineer, status-reporter | Sonnet, Haiku |
+| Рост | growth-analyst (статистика после выпуска) | Sonnet |
 
 ## Навыки
-Свои: `new-project`, `approval-gate`, `merge-to-main`, `fiverr-order`, `monetization`, `privacy-policy`, `store-screenshots`, `flutter-android-release`, `landing-page`, `windows-desktop`, `kratko` (короткие ответы).
-Взятые: `brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `verification-before-completion` (obra/superpowers), `frontend-design`, `webapp-testing`, `skill-creator` (anthropics/skills), `shadcn` (shadcn/ui), 13 навыков Flutter/Dart (flutter/agent-plugins, dart-lang/skills), `app-store-optimization` (alirezarezvani), `aso`, `copywriting`, `copy-editing`, `cro` (coreyhaines31). Подробно — `CREDITS.md`.
+Свои: `new-project`, `approval-gate`, `merge-to-main`, `fiverr-order`, `monetization`, `privacy-policy`, `store-screenshots`, `flame-game`, `flutter-android-release`, `landing-page`, `windows-desktop`, `kratko` (короткие ответы).
+Взятые: `brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `verification-before-completion` (obra/superpowers), `frontend-design`, `webapp-testing`, `skill-creator` (anthropics/skills), `shadcn` (shadcn/ui), 13 навыков Flutter/Dart (flutter/agent-plugins, dart-lang/skills), `app-store-optimization` (alirezarezvani), `aso`, `copywriting`, `copy-editing`, `cro`, `competitor-profiling`, `customer-research`, `churn-prevention` (coreyhaines31). Подробно — `CREDITS.md`.
 
 ## Структура
 ```
 .claude/agents/     директор + отделы (product, design, mobile, web, desktop, qa, ops)
 .claude/skills/     навыки
 .claude/commands/   /new-project, /status, /release, /econ
-templates/          шаблоны: flutter-app, web-landing, windows-app, workflows/
+templates/          шаблоны: flutter-app, flutter-game, web-landing, windows-app, workflows/
 projects/           все проекты; список — projects/README.md
 scripts/            new_project.py, status.py, econ.py, check_studio.py, ci_status.py, merge_pr.py
 .github/workflows/  сборка каждого проекта отдельно + проверка студии
