@@ -47,7 +47,8 @@ else:
 num, sha = pr["number"], pr["head"]["sha"]
 print(f"PR #{num}: {pr['html_url']}")
 
-deadline = time.time() + a.timeout
+start = time.time()
+deadline = start + a.timeout
 while True:
     runs = api(f"repos/{repo}/commits/{sha}/check-runs?per_page=100").get("check_runs", [])
     pending = [r["name"] for r in runs if r["status"] != "completed"]
@@ -55,6 +56,9 @@ while True:
               and r["conclusion"] not in ("success", "skipped", "neutral")]
     if failed:
         sys.exit(f"НЕ СЛИТО: проверки упали: {', '.join(failed)}. Чинить → снова одобрение не нужно, повторить скрипт.")
+    if not runs and time.time() < start + 120:
+        time.sleep(15)  # проверки стартуют не сразу после push
+        continue
     if not pending:
         break
     if time.time() > deadline:
