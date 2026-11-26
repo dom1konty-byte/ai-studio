@@ -17,7 +17,7 @@ def front(p):
     for line in m.group(1).splitlines():
         k, _, v = line.partition(":")
         if k and not k.startswith(" ") and v:
-            d[k.strip()] = v.strip()
+            d[k.strip()] = v.strip().strip('"')
     return d
 
 
@@ -50,7 +50,11 @@ cmds = ok - agents - skills
 # ссылки агентов на навыки и агентов
 skill_names = {p.parent.name for p in (C / "skills").glob("*/SKILL.md")}
 for p in (C / "agents").rglob("*.md"):
-    for s in re.findall(r"навык[а-я]* `([a-z0-9-]+)`", p.read_text(encoding="utf-8")):
+    txt = p.read_text(encoding="utf-8")
+    refs = re.findall(r"навык[а-я]* `([a-z0-9-]+)`", txt)
+    for line in re.findall(r"^- Навыки: (.*)$", txt, re.M):
+        refs += re.findall(r"`([a-z0-9-]+)`", line)
+    for s in refs:
         if s not in skill_names:
             errors.append(f"{p.relative_to(ROOT)}: ссылка на несуществующий навык {s}")
 print(f"Агентов: {agents}, навыков: {skills}, команд: {cmds}")

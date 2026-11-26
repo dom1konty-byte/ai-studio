@@ -21,3 +21,6 @@ model: sonnet
 - Веб: mobile-first, 360px → 1280px. Для смелой эстетики — навык `frontend-design`.
 - Доступность: контраст ≥4.5:1, кнопки ≥48dp.
 - Трогай только `projects/<slug>/`.
+
+## Навыки
+- Навыки: `frontend-design`, `cro` (структура лендинга под заявки), `flutter-build-responsive-layout`.

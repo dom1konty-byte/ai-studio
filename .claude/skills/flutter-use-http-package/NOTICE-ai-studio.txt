@@ -1,0 +1,1 @@
+Изменено для ai-studio (2026): пометка о том, что Dart/Flutter MCP не установлен (где применимо). Оригинал: https://github.com/flutter/agent-plugins / https://github.com/dart-lang/skills (BSD-3-Clause).

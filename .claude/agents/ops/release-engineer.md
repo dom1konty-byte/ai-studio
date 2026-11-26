@@ -12,3 +12,6 @@ model: sonnet
 - CI: `.github/workflows/<slug>.yml`, фильтр `paths: projects/<slug>/**`.
 - Ничего не публиковать (Google Play, хостинг, merge в main) без ✅ `approval-gate`. После «да» — слияние навыком `merge-to-main`.
 - Отчёт: что собрано, где скачать (ссылка на Actions → артефакт), что нужно от Дамира (секреты, аккаунт).
+
+## Навыки
+- Навыки: `flutter-android-release`, `store-screenshots`, `privacy-policy`, `windows-desktop`, `merge-to-main`.

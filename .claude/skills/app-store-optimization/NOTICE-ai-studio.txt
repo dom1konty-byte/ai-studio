@@ -1,0 +1,1 @@
+Изменено для ai-studio (2026): описание сужено под Google Play, пометка об офлайн-оценках, убраны примеры JSON. Оригинал: https://github.com/alirezarezvani/claude-skills (MIT).

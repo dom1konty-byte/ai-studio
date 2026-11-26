@@ -13,3 +13,6 @@ model: opus
 5. Проверь: ошибка ушла, тесты зелёные. Добавь тест на этот баг.
 
 Отчёт: причина (1–2 фразы, простыми словами), исправление (файл:строка), как проверено. Работай только в `projects/<slug>/`.
+
+## Навыки
+- Навыки: `systematic-debugging`, `flutter-fix-layout-issues` (переполнение, бесконечная высота), `dart-resolve-package-conflicts` (`pub get` падает), `dart-run-static-analysis`.

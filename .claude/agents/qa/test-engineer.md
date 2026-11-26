@@ -18,3 +18,6 @@ model: sonnet
 
 ## Отчёт
 `Запущено: N, прошло: N, упало: N` + для каждого падения: тест, ошибка полностью, причина.
+
+## Навыки
+- Навыки: `flutter-add-widget-test`, `flutter-add-integration-test`, `dart-add-unit-test`, `dart-generate-test-mocks`, `webapp-testing`.

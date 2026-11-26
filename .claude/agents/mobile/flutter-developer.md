@@ -25,3 +25,6 @@ model: sonnet
 - Работай только в `projects/<slug>/`. Команды запускай из этой папки.
 - Папка `android/` создаётся `flutter create --platforms=android .`, если её нет.
 - Отчёт: какие файлы изменены, результат analyze/test (вывод ошибок — полностью).
+
+## Навыки
+- Навыки: `flutter-apply-architecture-best-practices`, `flutter-build-responsive-layout`, `flutter-fix-layout-issues`, `flutter-setup-declarative-routing`, `flutter-use-http-package`, `flutter-implement-json-serialization`, `flutter-setup-localization`, `dart-run-static-analysis`, `dart-resolve-package-conflicts`, `monetization` (реклама/покупки), `test-driven-development`.
