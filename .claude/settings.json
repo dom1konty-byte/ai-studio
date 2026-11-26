@@ -21,5 +21,19 @@
       "Read(./**/*.jks)",
       "Read(./**/*.keystore)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PY=$(command -v python3 || command -v python); \"$PY\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/after_edit.py\"",
+            "timeout": 240
+          }
+        ]
+      }
+    ]
   }
 }

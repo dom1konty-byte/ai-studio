@@ -1,0 +1,33 @@
+# Табло студии: обновляет закреплённый Issue «Табло студии» (проекты, этапы, ветки, последние сборки).
+name: studio-board
+
+on:
+  push:
+    paths: ["projects/**", "scripts/status.py", "scripts/dashboard.py", ".github/workflows/studio-board.yml"]
+  schedule:
+    - cron: "17 * * * *"   # раз в час
+  workflow_dispatch:      # его же запускают workflow проектов после сборки
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: studio-board
+  cancel-in-progress: true
+
+jobs:
+  board:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Обновить табло
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          EXTRA=""
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_name }}" != "main" ]; then EXTRA="--ref ${{ github.ref_name }}"; fi
+          python3 scripts/dashboard.py --publish $EXTRA
