@@ -5,4 +5,4 @@
 
 | Имя | Папка | Тип | Этап | Ветка | Создан |
 |---|---|---|---|---|---|
-| Счётчик | [`schetchik`](schetchik/) | Android-приложение | ТЗ | `schetchik/start` | 2026-11-26 |
+| Счётчик | [`schetchik`](schetchik/) | Android-приложение | Дизайн | `schetchik/start` | 2026-11-26 |
