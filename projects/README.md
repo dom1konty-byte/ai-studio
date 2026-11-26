@@ -5,3 +5,5 @@
 
 | Имя | Папка | Тип | Этап | Ветка | Создан |
 |---|---|---|---|---|---|
+| Проверка бота | [`proverka-bota`](proverka-bota/) | Android-приложение | Бриф | `proverka-bota` | 2026-11-26 |
+| Проверка бота сайт | [`proverka-bota-sait`](proverka-bota-sait/) | Сайт | Бриф | `proverka-bota-sait` | 2026-11-26 |
