@@ -1,0 +1,105 @@
+# Telegram-бот «{{NAME}}». Создано /new-project.
+# Где работает — projects/{{SLUG}}/bot.config.json: "windows" (компьютер) или "cloudflare" (круглосуточно).
+name: "{{SLUG}}"
+
+on:
+  push:
+    paths: ["projects/{{SLUG}}/**", ".github/workflows/{{SLUG}}.yml"]
+  pull_request:
+    paths: ["projects/{{SLUG}}/**", ".github/workflows/{{SLUG}}.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: {{SLUG}}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/{{SLUG}}
+    env:
+      RELEASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - id: install
+        run: npm install --no-audit --no-fund
+      - id: check
+        run: npm run check
+      - id: test
+        run: npm test
+      - name: Где работает бот
+        id: cfg
+        run: echo "hosting=$(node -p "require('./bot.config.json').hosting")" >> "$GITHUB_OUTPUT"
+
+      - name: Публикация в Cloudflare
+        id: publish
+        if: ${{ env.RELEASE == 'true' && steps.cfg.outputs.hosting == 'cloudflare' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN_{{SECRET}} }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$BOT_TOKEN" ]; then
+            echo "::notice::Нет секретов CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / BOT_TOKEN_{{SECRET}} — бот не опубликован."
+            exit 0
+          fi
+          KV="{{SLUG}}-data"
+          id=$(npx wrangler kv namespace list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const n=JSON.parse(s).find(x=>x.title===process.argv[1]);console.log(n?n.id:"")})' "$KV")
+          if [ -z "$id" ]; then
+            npx wrangler kv namespace create "$KV"
+            id=$(npx wrangler kv namespace list | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{console.log(JSON.parse(s).find(x=>x.title===process.argv[1]).id)})' "$KV")
+          fi
+          sed -i "s/KV_ID_PLACEHOLDER/$id/" wrangler.toml
+          npx wrangler deploy | tee deploy.log
+          url=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          secret=$(printf %s "$BOT_TOKEN" | sha256sum | cut -c1-32)
+          printf %s "$BOT_TOKEN" | npx wrangler secret put BOT_TOKEN
+          printf %s "$secret" | npx wrangler secret put WEBHOOK_SECRET
+          curl -fsS "https://api.telegram.org/bot$BOT_TOKEN/setWebhook" -d "url=$url" -d "secret_token=$secret" -d "drop_pending_updates=true" > /dev/null
+          echo "Бот работает: $url"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      - name: Telegram — проверки прошли
+        if: ${{ success() && github.event_name != 'pull_request' && github.ref != 'refs/heads/main' && vars.TELEGRAM_BUILDS != 'off' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --silent --text "✅ <b>{{NAME}}</b>: проверки бота прошли (ветка ${{ github.ref_name }})."
+      - name: Telegram — бот опубликован
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --text "🤖 <b>{{NAME}}</b>: новая версия бота работает в Cloudflare (круглосуточно)."
+      - name: Telegram — выпуск (компьютер)
+        if: ${{ success() && env.RELEASE == 'true' && steps.cfg.outputs.hosting != 'cloudflare' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --text "🚀 <b>{{NAME}}</b>: выпуск слит в main. На компьютере: git pull в папке ai-studio, затем двойной клик projects\\{{SLUG}}\\windows\\update.cmd (первый раз — setup.cmd)."
+      - name: Telegram — сборка упала
+        if: ${{ failure() && github.event_name != 'pull_request' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --text "❌ <b>{{NAME}}</b>: бот не прошёл проверку (ветка ${{ github.ref_name }}) на шаге: ${{ steps.check.outcome == 'failure' && 'проверка кода (TypeScript)' || steps.test.outcome == 'failure' && 'тесты' || steps.install.outcome == 'failure' && 'пакеты' || steps.publish.outcome == 'failure' && 'публикация в Cloudflare' || 'другой шаг' }}. Студия чинит сама."
+
+  board:
+    needs: [bot]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST repos/${{ github.repository }}/actions/workflows/studio-board.yml/dispatches -f ref=main || echo "табло ещё не в main"

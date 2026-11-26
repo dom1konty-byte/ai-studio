@@ -1,0 +1,9 @@
+# Cloudflare Workers — только если в bot.config.json "hosting": "cloudflare".
+# id хранилища KV подставляет GitHub при публикации (создаёт сам, если нет).
+name = "{{SLUG}}"
+main = "src/worker.ts"
+compatibility_date = "2026-11-01"
+
+[[kv_namespaces]]
+binding = "DATA"
+id = "KV_ID_PLACEHOLDER"

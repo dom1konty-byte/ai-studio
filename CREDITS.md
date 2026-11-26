@@ -29,7 +29,7 @@
 | market-researcher | `trend-researcher` — contains-studio (идея) |
 | client-manager | `support-responder` — contains-studio (идея) |
 | growth-analyst | `analytics-reporter`, `feedback-synthesizer` — contains-studio (идея) |
-| game-developer | написан заново; навык `flame-game` — свой, по документации Flame |
+| bot-developer | написан заново; навык `telegram-bot` — свой, по документации grammY |
 | architect | `backend-architect` — wshobson/agents (подход «решение → компромиссы → задачи»); написан заново |
 
 [contains-studio/agents](https://github.com/contains-studio/agents) не указывает лицензию, поэтому его тексты не копировались — взяты только идеи (разделение на отделы, роли). Агенты написаны заново.
