@@ -47,6 +47,17 @@ flutter --version
 ## Хостинг сайтов
 Cloudflare Pages (бесплатно, адрес `<проект>.pages.dev`, свой домен — тоже бесплатно). Сайт публикуется сам при слиянии в `main`, то есть после твоего «да» на Выпуске. Один раз нужно добавить в GitHub Secrets `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID` — как их получить, в `.claude/skills/landing-page/SKILL.md`, раздел «Деплой».
 
+## Telegram-бот студии
+Бот сам пишет тебе (без сервера — сообщения отправляет GitHub):
+- ⏳ проект ждёт твоего «да» (ТЗ, Дизайн, Выпуск);
+- ✅ новая сборка — **APK-файл прямо в чат** (без звука): нажал → установил;
+- ❌ сборка упала (студия чинит сама, это для сведения);
+- 🚀 выпуск слит в main, 📲 ушёл в Google Play, 🌐 сайт опубликован;
+- ☀️ каждое утро в 08:43 (МСК) — сводка по проектам.
+
+Подключение (5 минут): @BotFather → `/newbot` → токен; открыть своего бота → Start; @userinfobot → твой Id. GitHub → Settings → Secrets and variables → Actions → секреты `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`.
+Выключить: GitHub → Settings → Variables → `TELEGRAM_BUILDS` = `off` (сообщения о каждой сборке) или `TELEGRAM_MORNING` = `off` (утренняя сводка).
+
 ## Табло студии (с телефона)
 GitHub (приложение или сайт) → репозиторий → **Issues** → закреплённый «Табло студии». Там все проекты: тип, этап, ветка, есть ли в `main`, ссылка на последнюю сборку (APK). Обновляется само: после каждой сборки, при изменениях проектов и раз в час. Видят только те, у кого есть доступ к репозиторию.
 
@@ -95,7 +106,7 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 .claude/commands/   /new-project, /status, /release, /econ
 templates/          шаблоны: flutter-app, flutter-game, web-landing, windows-app, workflows/
 projects/           все проекты; список — projects/README.md
-scripts/            new_project.py, status.py, dashboard.py, lessons.py, econ.py, check_studio.py, ci_status.py, merge_pr.py, android_signing.py
+scripts/            new_project.py, status.py, dashboard.py, lessons.py, telegram_notify.py, notify_approvals.py, econ.py, check_studio.py, ci_status.py, merge_pr.py, android_signing.py
 .github/workflows/  сборка каждого проекта отдельно, проверка студии и шаблонов, табло
 .claude/hooks/      проверки после правок
 ```

@@ -1,0 +1,26 @@
+# Утренняя сводка студии в Telegram. Выключить: переменная репозитория TELEGRAM_MORNING = off.
+name: studio-morning
+
+on:
+  schedule:
+    - cron: "43 5 * * *"   # 08:43 МСК
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  morning:
+    if: ${{ vars.TELEGRAM_MORNING != 'off' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Сводка в Telegram
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 scripts/telegram_notify.py --silent --text "$(python3 scripts/dashboard.py --telegram)"
