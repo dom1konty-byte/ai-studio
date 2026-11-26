@@ -1,0 +1,99 @@
+# Проверка и сборка сайта «Тест сайта». Создано /new-project.
+name: "test-saita"
+
+on:
+  push:
+    paths: ["projects/test-saita/**", ".github/workflows/test-saita.yml"]
+  pull_request:
+    paths: ["projects/test-saita/**", ".github/workflows/test-saita.yml"]
+  workflow_dispatch:
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/test-saita
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Проверка HTML
+        id: html
+        run: npx --yes html-validate@9 "site/**/*.html"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: test-saita-site
+          path: projects/test-saita/site
+          retention-days: 30
+      # Публикация на Cloudflare Pages: только из main (= после «да» на Выпуске) и только если заданы секреты.
+      - name: Публикация (Cloudflare Pages)
+        id: publish
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::Секретов Cloudflare нет — сайт не опубликован. См. навык landing-page, раздел «Деплой»."
+            exit 0
+          fi
+          npx --yes wrangler@4 pages project create test-saita --production-branch=main 2>/dev/null || true
+          npx --yes wrangler@4 pages deploy site --project-name=test-saita --branch=main
+          echo "Сайт: https://test-saita.pages.dev"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+      - name: Скриншот сайта (для Telegram)
+        if: ${{ success() && github.event_name != 'pull_request' && vars.TELEGRAM_BUILDS != 'off' }}
+        continue-on-error: true
+        run: |
+          npx --yes playwright@1.63.0 install --with-deps chromium > /dev/null
+          npx --yes playwright@1.63.0 screenshot --viewport-size "390,844" "file://$PWD/site/index.html" shot.png
+      - name: Telegram — сайт собран
+        if: ${{ success() && github.event_name != 'pull_request' && github.ref != 'refs/heads/main' && vars.TELEGRAM_BUILDS != 'off' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --silent --photo shot.png --text "✅ <b>Тест сайта</b>: сайт собран (ветка ${{ github.ref_name }}).\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a> (архив сайта — внизу, Artifacts)"
+      - name: Telegram — сайт опубликован
+        if: ${{ success() && steps.publish.outputs.published == 'true' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --photo shot.png --text "🌐 <b>Тест сайта</b>: сайт опубликован — https://test-saita.pages.dev"
+      - name: Telegram — выпуск
+        if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.publish.outputs.published != 'true' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --text "🚀 <b>Тест сайта</b>: выпуск слит в main (публикация не настроена — нет секретов Cloudflare).\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка</a>"
+      - name: Telegram — сборка упала
+        if: ${{ failure() && github.event_name != 'pull_request' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --text "❌ <b>Тест сайта</b>: проверка сайта упала (ветка ${{ github.ref_name }}) на шаге: ${{ steps.html.outcome == 'failure' && 'проверка HTML' || steps.publish.outcome == 'failure' && 'публикация' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
+
+  board:
+    # после сборки — обновить табло студии (ссылка на свежий файл)
+    needs: [site]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST repos/${{ github.repository }}/actions/workflows/studio-board.yml/dispatches -f ref=main || echo "табло ещё не в main"

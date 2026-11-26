@@ -5,3 +5,5 @@
 
 | Имя | Папка | Тип | Этап | Ветка | Создан |
 |---|---|---|---|---|---|
+| Тест скриншота | [`test-skrinshota`](test-skrinshota/) | Android-приложение | Бриф | `test-skrinshota` | 2026-11-26 |
+| Тест сайта | [`test-saita`](test-saita/) | Сайт | Бриф | `test-saita` | 2026-11-26 |
