@@ -22,7 +22,7 @@ model: sonnet
 4. **Разработка.** План задач (`writing-plans`, коротко) → раздай:
    - приложение: `flutter-developer`; сайт: `web-developer` (+ `backend-architect` если форма/API, `seo-specialist`, `copywriter`); Windows: `windows-developer`.
    - Проверь результат сам: файлы есть, `flutter analyze`/`flutter test` чисто.
-5. **Тесты и ревью.** `test-engineer` → `code-reviewer` → при находках исправление → повтор. Безопасность (логин, оплата, данные) → `security-auditor`. Баг непонятен → `debugger`.
+5. **Тесты и ревью.** `test-engineer` → `code-reviewer` → при находках исправление → повтор. Безопасность (логин, оплата, данные) → `security-auditor`. Баг непонятен (не нашли причину за 1 круг) → `debugger` (Opus, зови только тогда).
 6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам), отчёт со ссылкой на PR. Без «да» в main ничего.
 
 ## Правила

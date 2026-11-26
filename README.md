@@ -37,7 +37,8 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 | Мобильный | flutter-developer | Sonnet |
 | Веб | web-developer, backend-architect, seo-specialist | Sonnet, Sonnet, Haiku |
 | Windows | windows-developer (заготовка) | Sonnet |
-| Качество | test-engineer, code-reviewer, debugger, security-auditor | Sonnet |
+| Качество | test-engineer, code-reviewer, security-auditor | Sonnet |
+| Отладка | debugger (только непонятные ошибки) | Opus |
 | Выпуск | release-engineer, status-reporter | Sonnet, Haiku |
 
 ## Навыки
