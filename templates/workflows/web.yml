@@ -43,27 +43,36 @@ jobs:
           npx --yes wrangler@4 pages deploy site --project-name={{SLUG}} --branch=main
           echo "Сайт: https://{{SLUG}}.pages.dev"
           echo "published=true" >> "$GITHUB_OUTPUT"
+      - name: Скриншот сайта (для Telegram)
+        if: ${{ success() && github.event_name != 'pull_request' && vars.TELEGRAM_BUILDS != 'off' }}
+        continue-on-error: true
+        run: |
+          npx --yes playwright@1.63.0 install --with-deps chromium > /dev/null
+          npx --yes playwright@1.63.0 screenshot --viewport-size "390,844" "file://$PWD/site/index.html" shot.png
       - name: Telegram — сайт собран
         if: ${{ success() && github.event_name != 'pull_request' && github.ref != 'refs/heads/main' && vars.TELEGRAM_BUILDS != 'off' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ../../scripts/telegram_notify.py --silent --text "✅ <b>{{NAME}}</b>: сайт собран (ветка ${{ github.ref_name }}).\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a> (архив сайта — внизу, Artifacts)"
+          python3 ../../scripts/telegram_notify.py --silent --photo shot.png --text "✅ <b>{{NAME}}</b>: сайт собран (ветка ${{ github.ref_name }}).\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a> (архив сайта — внизу, Artifacts)"
       - name: Telegram — сайт опубликован
         if: ${{ success() && steps.publish.outputs.published == 'true' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ../../scripts/telegram_notify.py --text "🌐 <b>{{NAME}}</b>: сайт опубликован — https://{{SLUG}}.pages.dev"
+          python3 ../../scripts/telegram_notify.py --photo shot.png --text "🌐 <b>{{NAME}}</b>: сайт опубликован — https://{{SLUG}}.pages.dev"
       - name: Telegram — выпуск
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.publish.outputs.published != 'true' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 ../../scripts/telegram_notify.py --text "🚀 <b>{{NAME}}</b>: выпуск слит в main (публикация не настроена — нет секретов Cloudflare).\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка</a>"
@@ -72,6 +81,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 ../../scripts/telegram_notify.py --text "❌ <b>{{NAME}}</b>: проверка сайта упала (ветка ${{ github.ref_name }}) на шаге: ${{ steps.html.outcome == 'failure' && 'проверка HTML' || steps.publish.outcome == 'failure' && 'публикация' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"

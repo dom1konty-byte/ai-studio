@@ -69,6 +69,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
         run: |
           python3 ../../scripts/telegram_notify.py --silent --text "✅ <b>{{NAME}}</b>: проверки бота прошли (ветка ${{ github.ref_name }})."
       - name: Telegram — бот опубликован
@@ -76,6 +77,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
         run: |
           python3 ../../scripts/telegram_notify.py --text "🤖 <b>{{NAME}}</b>: новая версия бота работает в Cloudflare (круглосуточно)."
       - name: Telegram — выпуск (компьютер)
@@ -83,6 +85,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
         run: |
           python3 ../../scripts/telegram_notify.py --text "🚀 <b>{{NAME}}</b>: выпуск слит в main. На компьютере: git pull в папке ai-studio, затем двойной клик projects\\{{SLUG}}\\windows\\update.cmd (первый раз — setup.cmd)."
       - name: Telegram — сборка упала
@@ -90,6 +93,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
         run: |
           python3 ../../scripts/telegram_notify.py --text "❌ <b>{{NAME}}</b>: бот не прошёл проверку (ветка ${{ github.ref_name }}) на шаге: ${{ steps.check.outcome == 'failure' && 'проверка кода (TypeScript)' || steps.test.outcome == 'failure' && 'тесты' || steps.install.outcome == 'failure' && 'пакеты' || steps.publish.outcome == 'failure' && 'публикация в Cloudflare' || 'другой шаг' }}. Студия чинит сама."
 

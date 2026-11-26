@@ -110,27 +110,34 @@ jobs:
           track: internal
           status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
           releaseName: "${{ github.run_number }}"
+      - name: Скриншот главного экрана (для Telegram)
+        if: ${{ success() && github.event_name != 'pull_request' && vars.TELEGRAM_BUILDS != 'off' }}
+        continue-on-error: true
+        run: flutter test --update-goldens --dart-define=SCREENSHOTS=true test/screenshot_test.dart
       - name: Telegram — сборка готова
         if: ${{ success() && github.event_name != 'pull_request' && github.ref != 'refs/heads/main' && vars.TELEGRAM_BUILDS != 'off' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ../../scripts/telegram_notify.py --silent --file build/app/outputs/flutter-apk/app-release.apk --text "✅ <b>{{NAME}}</b>: новая сборка №$BUILD_NUMBER (ветка ${{ github.ref_name }})\nНажми на файл → Установить.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a>"
+          python3 ../../scripts/telegram_notify.py --silent --photo build/telegram/screenshot.png --file build/app/outputs/flutter-apk/app-release.apk --text "✅ <b>{{NAME}}</b>: новая сборка №$BUILD_NUMBER (ветка ${{ github.ref_name }})\nНажми на файл → Установить.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a>"
       - name: Telegram — выпуск
         if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ../../scripts/telegram_notify.py --file build/app/outputs/flutter-apk/app-release.apk --text "🚀 <b>{{NAME}}</b>: выпуск слит в main, сборка №$BUILD_NUMBER\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a>"
+          python3 ../../scripts/telegram_notify.py --photo build/telegram/screenshot.png --file build/app/outputs/flutter-apk/app-release.apk --text "🚀 <b>{{NAME}}</b>: выпуск слит в main, сборка №$BUILD_NUMBER\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a>"
       - name: Telegram — ушло в Google Play
         if: ${{ success() && steps.play.outputs.ok == 'true' }}
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 ../../scripts/telegram_notify.py --text "📲 <b>{{NAME}}</b>: сборка №$BUILD_NUMBER загружена в Google Play (внутреннее тестирование). Обновится у тестировщиков в течение часа."
@@ -139,6 +146,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 ../../scripts/telegram_notify.py --text "❌ <b>{{NAME}}</b>: сборка упала (ветка ${{ github.ref_name }}) на шаге: ${{ steps.analyze.outcome == 'failure' && 'flutter analyze (ошибки в коде)' || steps.test.outcome == 'failure' && 'flutter test (тесты)' || steps.pubget.outcome == 'failure' && 'flutter pub get (пакеты)' || steps.apk.outcome == 'failure' && 'сборка APK' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
