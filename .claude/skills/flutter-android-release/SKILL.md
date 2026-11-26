@@ -69,8 +69,9 @@ android {
 
 ## 7. Google Play (папка `store/`)
 - `store/listing.md`: название ≤30, краткое ≤80, полное ≤4000 (агент `copywriter`).
-- Скриншоты телефона 2–8 шт., 1080×1920 (`store/screenshots/`); feature graphic 1024×500; иконка 512×512.
-- Политика конфиденциальности (ссылка) — нужна, если есть данные/интернет.
+- Скриншоты телефона 2–8 шт., 1080×1920, и feature graphic 1024×500 — навык `store-screenshots`; иконка 512×512.
+- Проверка лимитов текста: `python3 -I .claude/skills/app-store-optimization/scripts/check_listing.py projects/<slug>/store/listing.md`.
+- Политика конфиденциальности и Data safety — навык `privacy-policy`.
 - Загрузка в Play Console — Дамир вручную (аккаунт разработчика $25), после ✅.
 
 ## Проверка перед ✅

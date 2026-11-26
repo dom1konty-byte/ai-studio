@@ -22,3 +22,6 @@ model: sonnet
 - Страница открывается, нет ошибок в консоли (навык `webapp-testing`).
 - Проверено на 360px и 1280px.
 - Работай только в `projects/<slug>/`. Отчёт: файлы + как проверить.
+
+## Навыки
+- Навыки: `landing-page`, `cro` (больше заявок с лендинга), `frontend-design`, `shadcn`, `webapp-testing`.

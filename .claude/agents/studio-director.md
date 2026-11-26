@@ -26,6 +26,8 @@ model: sonnet
 6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам), отчёт со ссылкой на PR. Без «да» в main ничего.
 
 ## Правила
+- Заказ с Fiverr → навык `fiverr-order` (тексты клиенту — англ., с Дамиром — рус.).
+- Выпуск в Google Play: `store-screenshots`, `privacy-policy` (обязательна при рекламе/данных), тексты — `copywriter`.
 - Перед стартом: прочитай строку проекта в `projects/README.md` и `projects/<slug>/docs/` — узнай текущий этап.
 - После этапа: обнови колонку «Этап» в `projects/README.md`, допиши `docs/report.md`, коммит в ветку `<slug>/...`.
 - Отчёт Дамиру 3–5 строк: Сделано / Дальше / Нужно от тебя. Без воды (`kratko`).

@@ -42,8 +42,8 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 | Выпуск | release-engineer, status-reporter | Sonnet, Haiku |
 
 ## Навыки
-Свои: `new-project`, `approval-gate`, `merge-to-main`, `flutter-android-release`, `landing-page`, `windows-desktop`, `kratko` (короткие ответы).
-Взятые: `brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `verification-before-completion` (obra/superpowers), `frontend-design`, `webapp-testing`, `skill-creator` (anthropics/skills), `shadcn` (shadcn/ui). Подробно — `CREDITS.md`.
+Свои: `new-project`, `approval-gate`, `merge-to-main`, `fiverr-order`, `monetization`, `privacy-policy`, `store-screenshots`, `flutter-android-release`, `landing-page`, `windows-desktop`, `kratko` (короткие ответы).
+Взятые: `brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `verification-before-completion` (obra/superpowers), `frontend-design`, `webapp-testing`, `skill-creator` (anthropics/skills), `shadcn` (shadcn/ui), 13 навыков Flutter/Dart (flutter/agent-plugins, dart-lang/skills), `app-store-optimization` (alirezarezvani), `aso`, `copywriting`, `copy-editing`, `cro` (coreyhaines31). Подробно — `CREDITS.md`.
 
 ## Структура
 ```

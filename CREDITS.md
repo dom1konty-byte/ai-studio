@@ -8,6 +8,10 @@
 | Навыки `brainstorming`, `writing-plans`, `test-driven-development`, `systematic-debugging`, `verification-before-completion` | [obra/superpowers](https://github.com/obra/superpowers) — Jesse Vincent | MIT | сужены триггеры, пути документов → `projects/<slug>/docs/`, убраны ссылки на не взятые навыки |
 | Навыки `frontend-design`, `webapp-testing`, `skill-creator` | [anthropics/skills](https://github.com/anthropics/skills) — Anthropic | Apache-2.0 | без изменений |
 | Навык `shadcn` | [shadcn-ui/ui](https://github.com/shadcn-ui/ui) — shadcn | MIT | без изменений |
+| Навыки `flutter-apply-architecture-best-practices`, `flutter-build-responsive-layout`, `flutter-fix-layout-issues`, `flutter-setup-declarative-routing`, `flutter-use-http-package`, `flutter-implement-json-serialization`, `flutter-setup-localization`, `flutter-add-widget-test`, `flutter-add-integration-test` | [flutter/agent-plugins](https://github.com/flutter/agent-plugins) — The Flutter Authors | BSD-3-Clause | пометка «Dart/Flutter MCP не установлен» (где упоминается MCP) |
+| Навыки `dart-add-unit-test`, `dart-generate-test-mocks`, `dart-run-static-analysis`, `dart-resolve-package-conflicts` | [dart-lang/skills](https://github.com/dart-lang/skills) — the Dart project authors | BSD-3-Clause | то же |
+| Навык `app-store-optimization` | [alirezarezvani/claude-skills](https://github.com/alirezarezvani/claude-skills) — Alireza Rezvani | MIT | описание сужено под Google Play, пометка об офлайн-оценках, добавлен `scripts/check_listing.py` (у оригинальных скриптов нет командной строки), убраны примеры JSON |
+| Навыки `aso`, `copywriting`, `copy-editing`, `cro` | [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills) — Corey Haines | MIT | контекст продукта → `projects/<slug>/docs/`, убраны evals |
 
 ## Основа для агентов (переписаны на русском под Flutter и веб)
 | Агент студии | Источник |
