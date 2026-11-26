@@ -40,3 +40,15 @@ jobs:
           npx --yes wrangler@4 pages project create {{SLUG}} --production-branch=main 2>/dev/null || true
           npx --yes wrangler@4 pages deploy site --project-name={{SLUG}} --branch=main
           echo "Сайт: https://{{SLUG}}.pages.dev"
+
+  board:
+    # после сборки — обновить табло студии (ссылка на свежий файл)
+    needs: [site]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST repos/${{ github.repository }}/actions/workflows/studio-board.yml/dispatches -f ref=main || echo "табло ещё не в main"

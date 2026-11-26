@@ -47,6 +47,16 @@ flutter --version
 ## Хостинг сайтов
 Cloudflare Pages (бесплатно, адрес `<проект>.pages.dev`, свой домен — тоже бесплатно). Сайт публикуется сам при слиянии в `main`, то есть после твоего «да» на Выпуске. Один раз нужно добавить в GitHub Secrets `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID` — как их получить, в `.claude/skills/landing-page/SKILL.md`, раздел «Деплой».
 
+## Табло студии (с телефона)
+GitHub (приложение или сайт) → репозиторий → **Issues** → закреплённый «Табло студии». Там все проекты: тип, этап, ветка, есть ли в `main`, ссылка на последнюю сборку (APK). Обновляется само: после каждой сборки, при изменениях проектов и раз в час. Видят только те, у кого есть доступ к репозиторию.
+
+## Сами проверяют за агентами
+- После каждой правки файла проекта: `.dart` → `dart format` + `dart analyze`, `.html` → `html-validate`, `.css` → `csstree-validator` (`.claude/hooks/after_edit.py`). Ошибки агент чинит сразу.
+- После выпуска директор пишет уроки в `docs/lessons.md`; в начале нового проекта читает уроки всех проектов.
+
+## Автовыпуск в Google Play
+После твоего «да» на Выпуске приложение само уходит во внутреннее тестирование Google Play. Один раз нужно настроить Play Console — по шагам в `.claude/skills/flutter-android-release/SKILL.md`, раздел 8.
+
 ## Команды
 | Команда | Что делает |
 |---|---|
@@ -85,8 +95,9 @@ GitHub → репозиторий → **Actions** → workflow с именем �
 .claude/commands/   /new-project, /status, /release, /econ
 templates/          шаблоны: flutter-app, flutter-game, web-landing, windows-app, workflows/
 projects/           все проекты; список — projects/README.md
-scripts/            new_project.py, status.py, econ.py, check_studio.py, ci_status.py, merge_pr.py
-.github/workflows/  сборка каждого проекта отдельно + проверка студии
+scripts/            new_project.py, status.py, dashboard.py, lessons.py, econ.py, check_studio.py, ci_status.py, merge_pr.py, android_signing.py
+.github/workflows/  сборка каждого проекта отдельно, проверка студии и шаблонов, табло
+.claude/hooks/      проверки после правок
 ```
 
 ## Ветки

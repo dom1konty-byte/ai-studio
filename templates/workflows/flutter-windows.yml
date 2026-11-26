@@ -33,3 +33,15 @@ jobs:
           name: {{SLUG}}-windows
           path: projects/{{SLUG}}/build/windows/x64/runner/Release
           retention-days: 30
+
+  board:
+    # после сборки — обновить табло студии (ссылка на свежий файл)
+    needs: [windows]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST repos/${{ github.repository }}/actions/workflows/studio-board.yml/dispatches -f ref=main || echo "табло ещё не в main"

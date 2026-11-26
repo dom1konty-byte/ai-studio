@@ -32,7 +32,9 @@ jobs:
           keytool -genkeypair -keystore android/app/upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 \
             -validity 365 -storepass testpass -keypass testpass -dname "CN=ai-studio-test"
           printf 'storeFile=upload-keystore.jks\nstorePassword=testpass\nkeyAlias=upload\nkeyPassword=testpass\n' > android/key.properties
-          flutter build apk --release
+          flutter build apk --release --build-number=7
+          flutter build appbundle --release --build-number=7
+          ls -la build/app/outputs/bundle/release/app-release.aab
       - name: APK подписан тестовым ключом, а не отладочным
         run: |
           APKSIGNER=$(ls -d $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)

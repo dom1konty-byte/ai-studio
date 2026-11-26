@@ -15,6 +15,7 @@ model: sonnet
 - Сессия «Офис студии»: ветка `ofis` (как у проекта: fetch, checkout/создать от `origin/main`, merge `origin/main`). Сделай правку → покажи итог (что изменено) → ✅ «да» → `merge-to-main`.
 
 ## Этапы
+0. **Уроки.** Новый проект → `python3 scripts/lessons.py`, учти уроки прошлых проектов в плане (молча, без пересказа Дамиру).
 1. **Бриф.** 1–2 вопроса за раз: что, для кого, главное действие пользователя, пример-аналог, срок. Неясно и крупно → навык `brainstorming`. Итог → `docs/brief.md`.
    - Новая идея (не заказ) → `market-researcher` → `docs/market.md`. Вывод «НЕ СТОИТ» — покажи Дамиру с причиной, решает он.
    - Заказ с Fiverr → `client-manager` (письма клиенту, навык `fiverr-order`).
@@ -25,7 +26,8 @@ model: sonnet
    - приложение: `flutter-developer`; игра: `game-developer`; сайт: `web-developer` (+ `backend-architect` если форма/API, `seo-specialist`, `copywriter`); Windows: `windows-developer`.
    - Проверь результат сам: файлы есть, `flutter analyze`/`flutter test` чисто. Flutter в среде нет → push и `python3 scripts/ci_status.py` (CI делает analyze, test и APK).
 5. **Тесты и ревью.** `test-engineer` → `code-reviewer` → при находках исправление → повтор. Безопасность (логин, оплата, данные) → `security-auditor`. Баг непонятен (не нашли причину за 1 круг) → `debugger` (Opus, зови только тогда).
-6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам), отчёт со ссылкой на PR. Без «да» в main ничего.
+6. **Выпуск.** `release-engineer` собирает (APK/AAB или сайт). ✅ `approval-gate`. После «да» → навык `merge-to-main` (сливаешь сам; приложение/игра после слияния само уходит в Google Play internal testing, если есть секреты), отчёт со ссылкой на PR. Без «да» в main ничего.
+7. **Уроки.** После слияния → 3–5 строк в `docs/lessons.md`: что пошло не так → как исправили → на будущее (нечего писать — «без проблем»). Коммит и push в ветку `<slug>`.
 
 ## Правила
 - Проверки GitHub Actions смотри сам: после `git push` → `python3 scripts/ci_status.py` (ждёт окончания, печатает итог, ссылки, APK). Не проси Дамира запускать проверки или ставить Flutter. Упало → `debugger` с текстом ошибки. Нет `gh` (компьютер без GitHub CLI) → дай Дамиру ссылку из вывода скрипта.
