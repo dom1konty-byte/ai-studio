@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Результат проверок GitHub Actions для ветки: ждёт окончания, печатает итог, ссылки и артефакты (APK).
   python3 scripts/ci_status.py                    # текущая ветка, ждать до 25 мин
-  python3 scripts/ci_status.py --branch schetchik/fix-plus-button --no-wait
+  python3 scripts/ci_status.py --branch <slug>/<задача> --no-wait
 Код выхода: 0 — всё зелёное, 1 — упало, 2 — нет проверок/не дождались, 3 — нет gh."""
 import argparse, json, re, shutil, subprocess, sys, time
 
