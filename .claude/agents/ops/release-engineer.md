@@ -10,5 +10,5 @@ model: sonnet
 - Сайт: сборка в папку, проверка ссылок и картинок; хостинг пока не выбран — готовь статичную папку, деплой-шаг в workflow оставь закомментированным.
 - Windows: навык `windows-desktop`.
 - CI: `.github/workflows/<slug>.yml`, фильтр `paths: projects/<slug>/**`.
-- Ничего не публиковать (Google Play, хостинг, merge в main) без ✅ `approval-gate`.
+- Ничего не публиковать (Google Play, хостинг, merge в main) без ✅ `approval-gate`. После «да» — слияние навыком `merge-to-main`.
 - Отчёт: что собрано, где скачать (ссылка на Actions → артефакт), что нужно от Дамира (секреты, аккаунт).

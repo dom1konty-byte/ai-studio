@@ -29,8 +29,8 @@ for p in sorted((C / "agents").rglob("*.md")):
         errors.append(f"{rel}: нет name/description"); continue
     if f.get("model") not in {"haiku", "sonnet", "opus"}:
         errors.append(f"{rel}: model должен быть haiku/sonnet/opus")
-    if f.get("model") == "opus" and f["name"] != "studio-director":
-        errors.append(f"{rel}: Opus только у директора")
+    if f.get("model") == "opus" and f["name"] not in {"architect", "debugger"}:
+        errors.append(f"{rel}: Opus только у architect и debugger")
     if f["name"] in names:
         errors.append(f"{rel}: повтор имени {f['name']}")
     names.add(f["name"]); ok += 1

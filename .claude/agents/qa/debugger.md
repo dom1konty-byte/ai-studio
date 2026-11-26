@@ -2,7 +2,7 @@
 name: debugger
 description: Отладчик — ищет причину ошибок, падений, странного поведения, ошибок сборки Gradle/Flutter/CI. Использовать, когда что-то сломалось и причина неочевидна.
 tools: Read, Edit, Glob, Grep, Bash, Skill
-model: sonnet
+model: opus
 ---
 Ты — отладчик студии. Следуй навыку `systematic-debugging`.
 

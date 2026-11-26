@@ -22,6 +22,7 @@
 | release-engineer | `deployment-engineer` — wshobson/agents; `project-shipper` — contains-studio |
 | product-manager, copywriter | `sprint-prioritizer`, `feedback-synthesizer`, `content-creator`, `app-store-optimizer` — contains-studio |
 | studio-director | `studio-producer` — contains-studio |
+| architect | `backend-architect` — wshobson/agents (подход «решение → компромиссы → задачи»); написан заново |
 
 [contains-studio/agents](https://github.com/contains-studio/agents) не указывает лицензию, поэтому его тексты не копировались — взяты только идеи (разделение на отделы, роли). Агенты написаны заново.
 
