@@ -151,9 +151,57 @@ jobs:
         run: |
           python3 ../../scripts/telegram_notify.py --text "❌ <b>{{NAME}}</b>: сборка упала (ветка ${{ github.ref_name }}) на шаге: ${{ steps.analyze.outcome == 'failure' && 'flutter analyze (ошибки в коде)' || steps.test.outcome == 'failure' && 'flutter test (тесты)' || steps.pubget.outcome == 'failure' && 'flutter pub get (пакеты)' || steps.apk.outcome == 'failure' && 'сборка APK' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
 
+  ios:
+    # Сборка для iPhone — только если в проекте есть папка ios/ (включить: flutter create --platforms=ios .).
+    # Без подписи: на свой айфон ставится через AltStore / Sideloadly (навык flutter-ios-personal).
+    # Mac в GitHub тратит бесплатные минуты в 10 раз быстрее — поэтому только на push, не на PR.
+    if: ${{ github.event_name != 'pull_request' && hashFiles('projects/{{SLUG}}/ios/Runner.xcodeproj/project.pbxproj') != '' }}
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: projects/{{SLUG}}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.1
+          channel: stable
+          cache: true
+      - id: pubget
+        run: flutter pub get
+      - id: build
+        name: Сборка .ipa (без подписи)
+        run: |
+          flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+          mkdir -p build/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
+          (cd build/ipa && zip -qr "../{{SLUG}}.ipa" Payload)
+          ls -la build/{{SLUG}}.ipa
+      - uses: actions/upload-artifact@v7
+        with:
+          name: {{SLUG}}-ipa
+          path: projects/{{SLUG}}/build/{{SLUG}}.ipa
+          retention-days: 30
+      - name: Telegram — сборка для iPhone
+        if: ${{ success() && vars.TELEGRAM_BUILDS != 'off' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --silent --file build/{{SLUG}}.ipa --text "🍏 <b>{{NAME}}</b>: сборка для iPhone (ветка ${{ github.ref_name }}). Сохрани файл на компьютер и установи через AltStore или Sideloadly."
+      - name: Telegram — сборка для iPhone упала
+        if: ${{ failure() }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+        run: |
+          python3 ../../scripts/telegram_notify.py --text "❌ <b>{{NAME}}</b>: сборка для iPhone упала на шаге: ${{ steps.build.outcome == 'failure' && 'сборка .ipa' || steps.pubget.outcome == 'failure' && 'пакеты' || 'другой шаг' }}. Студия чинит сама."
+
   board:
     # после сборки — обновить табло студии (ссылка на свежий файл)
-    needs: [android]
+    needs: [android, ios]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     permissions:
