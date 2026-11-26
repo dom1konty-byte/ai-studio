@@ -7,3 +7,4 @@
 | 2026-11-26 | ТЗ | docs/tz.md; ✅ тест: одобрено автоматически |
 | 2026-11-26 | Дизайн | docs/design.md; ✅ тест: одобрено автоматически |
 | 2026-11-26 | Разработка | lib/main.dart, lib/counter_store.dart, shared_preferences, material_ui (material.dart устарел во Flutter 3.50); analyze чисто, 6 тестов ок |
+| 2026-11-26 | Тесты и ревью | 39 тестов ок; ревью ОК, исправлено: dispose при load, unawaited save, sdk ^3.13.0 |

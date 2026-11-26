@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -33,14 +35,23 @@ class CounterController extends ChangeNotifier {
   final CounterStore _store;
   int _value = 0;
   bool _loaded = false;
+  bool _disposed = false;
 
   int get value => _value;
   bool get loaded => _loaded;
 
   Future<void> load() async {
-    _value = await _store.load();
+    final loaded = await _store.load();
+    if (_disposed) return;
+    _value = loaded;
     _loaded = true;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   void increment() => _set(_value + 1);
@@ -56,6 +67,7 @@ class CounterController extends ChangeNotifier {
   void _set(int v) {
     _value = v;
     notifyListeners();
-    _store.save(v);
+    // Намеренно: UI берёт значение из памяти.
+    unawaited(_store.save(v));
   }
 }

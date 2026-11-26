@@ -143,5 +143,12 @@ void main() {
       c.decrement();
       expect(notified, 2);
     });
+
+    test('dispose до окончания load — без исключения', () async {
+      final c = CounterController(CounterStore());
+      final f = c.load();
+      c.dispose();
+      await f;
+    });
   });
 }
