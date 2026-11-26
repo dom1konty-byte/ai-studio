@@ -1,0 +1,120 @@
+# Сборка Android-приложения «Проверка табло». Создано /new-project.
+name: "proverka-tablo"
+
+on:
+  push:
+    paths: ["projects/proverka-tablo/**", ".github/workflows/proverka-tablo.yml"]
+  pull_request:
+    paths: ["projects/proverka-tablo/**", ".github/workflows/proverka-tablo.yml"]
+  workflow_dispatch:
+    inputs:
+      aab:
+        description: "Собрать AAB для Google Play"
+        type: boolean
+        default: false
+
+concurrency:
+  group: proverka-tablo-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}   # выпуск из main не прерываем
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/proverka-tablo
+    env:
+      # versionCode растёт сам с каждым запуском (Google Play требует новый номер на каждую загрузку)
+      BUILD_OFFSET: ${{ vars.BUILD_OFFSET || 0 }}   # если в Play уже есть номер больше — задать переменную репозитория
+      RELEASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Номер сборки (versionCode)
+        run: echo "BUILD_NUMBER=$(( ${{ github.run_number }} + BUILD_OFFSET ))" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.1   # закреплено; обновлять осознанно
+          channel: stable
+          cache: true
+      - name: Создать android/, если его нет
+        run: |
+          if [ ! -d android ]; then
+            flutter create --platforms=android --org com.aistudio --project-name proverka_tablo .
+          fi
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Подключить подпись в Gradle
+        run: python3 ../../scripts/android_signing.py android/app/build.gradle.kts
+      - name: Ключ подписи из GitHub Secrets (если задан)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+            printf 'storeFile=upload-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
+            echo "Подпись: ключ из секретов (годится для Google Play)"
+            echo "SIGNED=true" >> "$GITHUB_ENV"
+          else
+            echo "::notice::Секретов ключа нет — APK подписан отладочным ключом: ставится на телефон, но не для Google Play."
+          fi
+      - run: flutter build apk --release --build-number=$BUILD_NUMBER
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proverka-tablo-apk
+          path: projects/proverka-tablo/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+      - name: AAB (по кнопке или при выпуске из main)
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.aab) || env.RELEASE == 'true' }}
+        run: flutter build appbundle --release --build-number=$BUILD_NUMBER
+      - if: ${{ (github.event_name == 'workflow_dispatch' && inputs.aab) || env.RELEASE == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: proverka-tablo-aab
+          path: projects/proverka-tablo/build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      # Автовыпуск: push в main = после «да» Дамира на Выпуске → Google Play, внутреннее тестирование.
+      - name: Можно ли загружать в Google Play
+        id: play
+        if: ${{ env.RELEASE == 'true' }}
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$PLAY_JSON" ]; then
+            echo "::notice::Нет секрета PLAY_SERVICE_ACCOUNT_JSON — в Google Play не загружаю (AAB лежит в артефактах)."
+          elif [ "$SIGNED" != "true" ]; then
+            echo "::warning::Нет ключа подписи ANDROID_* — Google Play не примет отладочную подпись, не загружаю."
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Загрузка в Google Play (internal testing)
+        if: ${{ steps.play.outputs.ok == 'true' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.aistudio.proverka_tablo
+          releaseFiles: projects/proverka-tablo/build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+          releaseName: "${{ github.run_number }}"
+
+  board:
+    # после сборки — обновить табло студии (ссылка на свежий файл)
+    needs: [android]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST repos/${{ github.repository }}/actions/workflows/studio-board.yml/dispatches -f ref=main || echo "табло ещё не в main"
