@@ -3,10 +3,12 @@
 Находит/создаёт PR текущей ветки, ждёт проверки GitHub Actions, сливает merge-коммитом (ветка проекта остаётся).
   python3 scripts/merge_pr.py --title "..." [--dry-run]"""
 import argparse, json, re, subprocess, sys, time
+for _s in (sys.stdout, sys.stderr):
+    _s.reconfigure(encoding="utf-8")  # Windows-консоль: кириллица
 
 
 def sh(*a, check=True):
-    r = subprocess.run(a, capture_output=True, text=True)
+    r = subprocess.run(a, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if check and r.returncode:
         sys.exit(f"Ошибка: {' '.join(a[:4])}…\n{r.stderr.strip() or r.stdout.strip()}")
     return r.stdout.strip()

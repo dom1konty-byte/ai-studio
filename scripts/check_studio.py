@@ -2,6 +2,8 @@
 """Проверка студии: у агентов, навыков и команд корректный frontmatter, модели по правилам."""
 import re, sys
 from pathlib import Path
+for _s in (sys.stdout, sys.stderr):
+    _s.reconfigure(encoding="utf-8")  # Windows-консоль: кириллица
 
 ROOT = Path(__file__).resolve().parent.parent
 C = ROOT / ".claude"

@@ -16,6 +16,37 @@
 4. Между этими точками студия работает сама. После каждого этапа — короткий отчёт.
 5. Есть идея правки — просто напиши: «Счётчик: сделай кнопку сброса». Директор сделает её в ветке проекта `schetchik`.
 
+## Работа с компьютера (Windows)
+Один раз поставить:
+1. **Git** — https://git-scm.com/download/win (всё по умолчанию).
+2. **Flutter** — https://docs.flutter.dev/get-started/install/windows: распаковать в `C:\flutter`, добавить `C:\flutter\bin` в PATH. Для Android — Android Studio (ставит Android SDK). Для программ Windows — Visual Studio 2022 с «Desktop development with C++».
+3. **GitHub CLI** — https://cli.github.com, затем в терминале `gh auth login`. Нужен, чтобы студия сама видела проверки GitHub и сливала PR.
+4. **Claude Code** — https://claude.com/claude-code (приложение Desktop или CLI).
+5. **Python 3** — https://www.python.org/downloads/ (галочка «Add to PATH»). На нём работают скрипты студии.
+
+Открыть студию:
+```
+git clone https://github.com/dom1konty-byte/ai-studio.git
+cd ai-studio
+claude
+```
+Проверка, что всё стоит: `flutter doctor`, `gh auth status`, `python --version`.
+
+## Облако: Flutter в каждой сессии
+Чтобы в облачных сессиях был Flutter (тесты за секунды, без ожидания GitHub), один раз добавь скрипт установки в настройки среды: claude.ai/code → выбор среды (environment) → Edit → **Setup script** → вставить:
+```bash
+if [ ! -x /opt/flutter/bin/flutter ]; then git clone -q --depth 1 -b 3.50.1 https://github.com/flutter/flutter.git /opt/flutter; fi
+ln -sf /opt/flutter/bin/flutter /usr/local/bin/flutter
+ln -sf /opt/flutter/bin/dart /usr/local/bin/dart
+git config --global --add safe.directory /opt/flutter
+flutter --disable-analytics >/dev/null 2>&1 || true
+flutter --version
+```
+Сессия будет стартовать примерно на минуту дольше. Без скрипта всё тоже работает: проверки делает GitHub (`scripts/ci_status.py`).
+
+## Хостинг сайтов
+Cloudflare Pages (бесплатно, адрес `<проект>.pages.dev`, свой домен — тоже бесплатно). Сайт публикуется сам при слиянии в `main`, то есть после твоего «да» на Выпуске. Один раз нужно добавить в GitHub Secrets `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID` — как их получить, в `.claude/skills/landing-page/SKILL.md`, раздел «Деплой».
+
 ## Команды
 | Команда | Что делает |
 |---|---|
@@ -62,6 +93,3 @@ scripts/            new_project.py, status.py, econ.py, check_studio.py, ci_stat
 
 ## Секреты (ключ подписи и т.п.)
 Никогда не клади в репозиторий. Только GitHub → Settings → Secrets and variables → Actions. Как сделать ключ для Google Play — `.claude/skills/flutter-android-release/SKILL.md`, шаг 4.
-
-## Хостинг сайтов
-Пока не выбран. Сайт — обычная папка `site/`, подходит для любого хостинга. Шаг деплоя в workflow сайта закомментирован и ждёт выбора.
