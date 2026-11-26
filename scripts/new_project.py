@@ -49,7 +49,7 @@ def main():
 
     if not a.no_branch:
         run("git", "fetch", "-q", "origin", "main")
-        run("git", "checkout", "-b", branch, "origin/main")
+        run("git", "checkout", "--no-track", "-b", branch, "origin/main")
 
     shutil.copytree(ROOT / "templates" / tpl, dest)
     subs = {"{{NAME}}": a.name, "{{SLUG}}": slug, "{{PACKAGE}}": package,
