@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{NAME}}</title>
+  <meta name="description" content="{{ABOUT}}">
+  <link rel="canonical" href="https://example.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{NAME}}">
+  <meta property="og:description" content="{{ABOUT}}">
+  <meta property="og:image" content="og-image.png">
+  <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"{{NAME}}"}</script>
+</head>
+<body>
+  <header class="header">
+    <div class="container header__row">
+      <a class="logo" href="#">{{NAME}}</a>
+      <nav class="nav"><a href="#features">Преимущества</a><a href="#steps">Как работает</a><a href="#faq">Вопросы</a></nav>
+      <a class="btn" href="#form">Оставить заявку</a>
+    </div>
+  </header>
+  <main>
+    <section class="hero container">
+      <h1>Заголовок-выгода</h1>
+      <p class="lead">Подзаголовок: кому и чем поможем.</p>
+      <a class="btn btn--big" href="#form">Оставить заявку</a>
+    </section>
+    <section id="features" class="container">
+      <h2>Преимущества</h2>
+      <div class="cards">
+        <article class="card"><h3>Пункт 1</h3><p>Описание.</p></article>
+        <article class="card"><h3>Пункт 2</h3><p>Описание.</p></article>
+        <article class="card"><h3>Пункт 3</h3><p>Описание.</p></article>
+      </div>
+    </section>
+    <section id="steps" class="container">
+      <h2>Как это работает</h2>
+      <ol class="steps"><li>Заявка</li><li>Звонок</li><li>Результат</li></ol>
+    </section>
+    <section id="faq" class="container">
+      <h2>Вопросы</h2>
+      <details><summary>Вопрос?</summary><p>Ответ.</p></details>
+    </section>
+    <section id="form" class="container">
+      <h2>Оставить заявку</h2>
+      <form class="form" novalidate>
+        <input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <label>Имя<input type="text" name="name" required></label>
+        <label>Телефон или почта<input type="text" name="contact" required></label>
+        <label>Сообщение<textarea name="message" rows="3"></textarea></label>
+        <label class="check"><input type="checkbox" name="agree" required> Согласен на обработку данных</label>
+        <button class="btn" type="submit">Отправить</button>
+        <p class="form__msg" role="status"></p>
+      </form>
+    </section>
+  </main>
+  <footer class="footer"><div class="container">© {{NAME}}</div></footer>
+  <script src="main.js"></script>
+</body>
+</html>
