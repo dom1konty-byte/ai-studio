@@ -1,0 +1,69 @@
+# Сборка Windows-программы «Чистка ПК» (заготовка). Создано /new-project.
+name: "chistka-pk"
+
+on:
+  pull_request:
+    paths: ["projects/chistka-pk/**", ".github/workflows/chistka-pk.yml"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: projects/chistka-pk
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.50.1   # закреплено; обновлять осознанно
+          channel: stable
+          cache: true
+      - name: Создать windows/, если его нет
+        shell: bash
+        run: |
+          if [ ! -d windows ]; then
+            flutter create --platforms=windows --org com.aistudio --project-name chistka_pk .
+          fi
+      - run: flutter pub get
+      - id: test
+        run: flutter test
+      - id: build
+        run: flutter build windows --release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: chistka-pk-windows
+          path: projects/chistka-pk/build/windows/x64/runner/Release
+          retention-days: 30
+      - name: Telegram — программа собрана
+        if: ${{ success() && github.event_name != 'pull_request' && github.ref != 'refs/heads/main' && vars.TELEGRAM_BUILDS != 'off' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python ../../scripts/telegram_notify.py --silent --text "✅ <b>Чистка ПК</b>: программа для Windows собрана.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">скачать</a> (внизу, Artifacts)"
+      - name: Telegram — сборка упала
+        if: ${{ failure() && github.event_name != 'pull_request' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python ../../scripts/telegram_notify.py --text "❌ <b>Чистка ПК</b>: сборка Windows упала на шаге: ${{ steps.test.outcome == 'failure' && 'flutter test' || steps.build.outcome == 'failure' && 'сборка .exe' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
+
+  board:
+    # после сборки — обновить табло студии (ссылка на свежий файл)
+    needs: [windows]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST repos/${{ github.repository }}/actions/workflows/studio-board.yml/dispatches -f ref=main || echo "табло ещё не в main"
