@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show ChangeNotifier;
 
 import '../core/catalog.dart';
 import '../core/cleaner.dart';
+import '../core/disk_map.dart';
 import '../core/journal.dart';
 import '../core/models.dart';
 import '../core/scanner.dart';
@@ -14,7 +15,10 @@ import '../platform/platform_api.dart';
 
 enum Phase { idle, analyzing, ready, cleaning, done }
 
-enum Section { main, downloads, big }
+enum Section { main, downloads, big, map }
+
+/// Порог «Мало места»: свободно меньше 10 ГБ на системном диске.
+const lowSpaceBytes = 10 * 1024 * 1024 * 1024;
 
 enum LoadState { idle, loading, loaded, error }
 
@@ -33,6 +37,10 @@ class CategoryRow {
 }
 
 typedef DownloadsScan = Future<List<FileInfo>> Function(String dir);
+typedef FolderSizer = Future<FolderSize> Function(String path);
+
+Future<FolderSize> _defaultFolderSizer(String path) => Isolate.run(() => measureFolderSync(path));
+
 typedef LargeScan = Future<List<FileInfo>> Function(List<String> dirs, int n);
 
 Future<List<FileInfo>> _defaultDownloadsScan(String dir) {
@@ -49,9 +57,11 @@ class AppController extends ChangeNotifier {
     Env? env,
     DownloadsScan? downloadsScan,
     LargeScan? largeScan,
+    FolderSizer? folderSizer,
     String? dataDir,
   })  : env = env ?? Env.system(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
+        _folderSizer = folderSizer ?? _defaultFolderSizer,
         _largeScan = largeScan ?? _defaultLargeScan {
     systemDrive = systemDriveRoot(this.env);
     // Журнал и статистика: %LOCALAPPDATA%\ChistoDisk, иначе %APPDATA%\ChistoDisk.
@@ -91,6 +101,7 @@ class AppController extends ChangeNotifier {
   final Env env;
   final DownloadsScan _downloadsScan;
   final LargeScan _largeScan;
+  final FolderSizer _folderSizer;
   File? logFile;
   StatsStore? _stats;
 
@@ -122,6 +133,8 @@ class AppController extends ChangeNotifier {
 
   CleanSummary? summary;
   bool failedAll = false;
+
+  bool get lowSpace => disk != null && disk!.free < lowSpaceBytes;
 
   Future<void> init() async {
     totalFreedEver = await _stats?.load() ?? 0;
@@ -346,9 +359,69 @@ class AppController extends ChangeNotifier {
         totalFreedEver = await _stats?.add(sum.freedBytes) ?? totalFreedEver;
       } catch (_) {}
     }
+    try {
+      disk = await platform.diskSpace(systemDrive) ?? disk;
+    } catch (_) {}
     phase = Phase.done;
     notifyListeners();
   }
+
+  // ---------- Карта диска (только просмотр) ----------
+
+  late String mapPath = systemDrive;
+  LoadState mapState = LoadState.idle;
+  List<FolderSize> mapEntries = [];
+  String mapProgress = '';
+  final Map<String, List<FolderSize>> _mapCache = {};
+  int _mapToken = 0;
+
+  bool get mapCanGoBack => mapPath.toLowerCase() != systemDrive.toLowerCase();
+
+  /// Показывает папку [path]: из кэша или сканированием.
+  Future<void> openMapFolder(String path, {bool force = false}) async {
+    final token = ++_mapToken;
+    mapPath = path;
+    final cached = _mapCache[path];
+    if (cached != null && !force) {
+      mapEntries = cached;
+      mapState = LoadState.loaded;
+      notifyListeners();
+      return;
+    }
+    mapState = LoadState.loading;
+    mapEntries = [];
+    mapProgress = 'Считаю…';
+    notifyListeners();
+    try {
+      final result = <FolderSize>[];
+      for (final d in listSubdirs(path)) {
+        if (token != _mapToken) return; // ушли в другую папку
+        mapProgress = 'Считаю: ${d.path.split(RegExp(r'[\\/]')).last}';
+        notifyListeners();
+        try {
+          result.add(await _folderSizer(d.path));
+        } catch (_) {
+          result.add(FolderSize(d.path.split(RegExp(r'[\\/]')).last, d.path, 0, denied: true));
+        }
+      }
+      if (token != _mapToken) return;
+      mapEntries = sortBySize(result);
+      _mapCache[path] = mapEntries;
+      mapState = LoadState.loaded;
+    } catch (_) {
+      if (token != _mapToken) return;
+      mapState = LoadState.error;
+    }
+    notifyListeners();
+  }
+
+  Future<void> mapBack() async {
+    if (!mapCanGoBack) return;
+    final crumbs = breadcrumbs(systemDrive, mapPath);
+    await openMapFolder(crumbs[crumbs.length - 2].path);
+  }
+
+  Future<void> openInExplorer(String path) => platform.openFolder(path);
 
   Future<void> openLog() async {
     final lf = logFile;

@@ -36,7 +36,7 @@ class FakePlatform implements PlatformApi {
   Future<({int free, int total})?> diskSpace(String root) async {
     diskCalls++;
     if (throwOnSecondDisk && diskCalls >= 2) throw StateError('disk');
-    return (free: 45 * 1024 * 1024 * 1024, total: 237 * 1024 * 1024 * 1024);
+    return (free: freeBytes, total: 237 * 1024 * 1024 * 1024);
   }
 
   @override
@@ -47,4 +47,10 @@ class FakePlatform implements PlatformApi {
 
   @override
   Future<void> openFile(String path) async {}
+
+  @override
+  Future<void> openFolder(String path) async {}
+
+  /// Свободное место для виджет-тестов (по умолчанию 45 ГБ).
+  int freeBytes = 45 * 1024 * 1024 * 1024;
 }

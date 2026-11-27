@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'fake_platform.dart';
 
-AppController _controller() => AppController(
-      platform: FakePlatform(),
+AppController _controller([FakePlatform? p]) => AppController(
+      platform: p ?? FakePlatform(),
       env: const Env({}),
       downloadsScan: (_) async => [],
       largeScan: (_, __) async => [],
@@ -36,5 +36,26 @@ void main() {
     await tester.scrollUntilVisible(tile, 200);
     final downloads = tester.widget<CheckboxListTile>(tile);
     expect(downloads.value, isFalse);
+  });
+
+  Future<void> pumpWith(WidgetTester tester, int freeGb) async {
+    tester.view.physicalSize = const Size(1000, 680);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final p = FakePlatform()..freeBytes = freeGb * 1024 * 1024 * 1024;
+    final c = _controller(p);
+    await tester.pumpWidget(ChistoApp(controller: c));
+    await tester.pump();
+    await tester.pump();
+  }
+
+  testWidgets('Плашка «Мало места» видна при свободно < 10 ГБ', (tester) async {
+    await pumpWith(tester, 6);
+    expect(find.textContaining('Мало места'), findsOneWidget);
+  });
+
+  testWidgets('Плашка «Мало места» скрыта при свободно >= 10 ГБ', (tester) async {
+    await pumpWith(tester, 10);
+    expect(find.textContaining('Мало места'), findsNothing);
   });
 }

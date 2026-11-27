@@ -246,4 +246,11 @@ class WindowsPlatform implements PlatformApi {
       } catch (_) {}
     }
   }
+
+  @override
+  Future<void> openFolder(String path) async {
+    try {
+      await Process.start('$_sysRoot\\explorer.exe', [path], mode: ProcessStartMode.detached);
+    } catch (_) {}
+  }
 }

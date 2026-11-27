@@ -22,4 +22,7 @@ abstract class PlatformApi {
 
   /// Открывает текстовый файл в Блокноте.
   Future<void> openFile(String path);
+
+  /// Открывает папку в Проводнике.
+  Future<void> openFolder(String path);
 }

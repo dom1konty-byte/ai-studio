@@ -155,6 +155,27 @@ class MainScreen extends StatelessWidget {
               ],
             ),
           ),
+        if (c.lowSpace)
+          Card(
+            elevation: 0,
+            color: theme.colorScheme.errorContainer,
+            shape: cardShape(),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber, color: theme.colorScheme.onErrorContainer),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Мало места: свободно ${formatSize(disk!.free)}. Нажмите «Анализ».',
+                      style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         if (disk != null && disk.total > 0) ...[
           LinearProgressIndicator(
             value: ((disk.total - disk.free) / disk.total).clamp(0.0, 1.0),
