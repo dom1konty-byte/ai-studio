@@ -32,9 +32,9 @@ void main() {
     final analyze = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Анализ'));
     expect(analyze.onPressed, isNotNull);
 
-    final downloads = tester.widget<CheckboxListTile>(
-      find.widgetWithText(CheckboxListTile, 'Загрузки'),
-    );
+    final tile = find.widgetWithText(CheckboxListTile, 'Загрузки');
+    await tester.scrollUntilVisible(tile, 200);
+    final downloads = tester.widget<CheckboxListTile>(tile);
     expect(downloads.value, isFalse);
   });
 }
