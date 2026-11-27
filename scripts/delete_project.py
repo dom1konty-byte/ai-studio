@@ -30,7 +30,7 @@ if git("status", "--porcelain"):
 git("fetch", "-q", "--prune", "origin")
 if not git("ls-remote", "origin", f"refs/heads/{slug}"):
     sys.exit(f"Ветки {slug} нет на GitHub — проект уже удалён или имя неверное (python3 scripts/status.py).")
-in_main = subprocess.run(["git", "cat-file", "-e", f"origin/main:projects/{slug}"], cwd=ROOT).returncode == 0
+in_main = subprocess.run(["git", "cat-file", "-e", f"origin/main:projects/{slug}"], cwd=ROOT, capture_output=True).returncode == 0
 
 git("checkout", "-q", "-B", slug, f"origin/{slug}")
 # свежий офис в ветке (в нём workflow studio-cleanup, который удалит ветку)
