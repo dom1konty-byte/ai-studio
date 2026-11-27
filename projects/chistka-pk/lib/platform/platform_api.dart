@@ -1,3 +1,18 @@
+import '../core/programs.dart';
+
+/// Результат запуска программы удаления.
+class UninstallRun {
+  const UninstallRun({required this.started, this.cancelled = false, this.exitCode, this.error});
+
+  /// Процесс запущен (и завершился — запуск ждёт окончания).
+  final bool started;
+
+  /// Пользователь отказал в запросе прав администратора (UAC).
+  final bool cancelled;
+  final int? exitCode;
+  final String? error;
+}
+
 /// Всё, что зависит от Windows, спрятано за этим интерфейсом (в тестах — фейк).
 abstract class PlatformApi {
   /// Отправляет файлы в Корзину ОДНИМ пакетным вызовом. Файл, который нельзя
@@ -25,4 +40,20 @@ abstract class PlatformApi {
 
   /// Открывает папку в Проводнике.
   Future<void> openFolder(String path);
+
+  /// Записи разделов Uninstall: HKCU, HKLM, HKLM\WOW6432Node (только чтение).
+  Future<List<RawUninstall>> readUninstallEntries();
+
+  /// Имена подключей ключа вида `HKCU\Software` (пусто, если нет ключа/доступа).
+  Future<List<String>> regSubKeys(String key);
+
+  /// Запускает программу удаления через ShellExecute (Windows сама покажет UAC)
+  /// и ждёт её завершения.
+  Future<UninstallRun> runUninstaller(String exe, String args);
+
+  /// `reg.exe export <ключ> <файл> /y`. true — файл создан.
+  Future<bool> exportRegKey(String key, String file);
+
+  /// `reg.exe delete <ключ> /f`. true — ключ удалён.
+  Future<bool> deleteRegKey(String key);
 }

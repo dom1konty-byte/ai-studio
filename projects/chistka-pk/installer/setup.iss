@@ -1,6 +1,6 @@
-; Inno Setup 6. Версия: iscc /DMyAppVersion=1.0.0 installer\setup.iss
+; Inno Setup 6. Версия: iscc /DMyAppVersion=1.1.0 installer\setup.iss
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.0"
 #endif
 
 [Setup]

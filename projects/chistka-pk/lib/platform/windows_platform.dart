@@ -1,12 +1,15 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
 import '../core/browsers.dart';
+import '../core/programs.dart';
 import '../core/whitelist.dart';
 import 'platform_api.dart';
+import 'win_registry.dart';
 
 // Win32 через dart:ffi напрямую (shell32 / kernel32): без зависимости от версии пакета win32.
 
@@ -25,6 +28,37 @@ final class _ShFileOpStruct extends Struct {
   external Pointer<Utf16> lpszProgressTitle;
 }
 
+final class _ShellExecInfo extends Struct {
+  @Uint32()
+  external int cbSize;
+  @Uint32()
+  external int fMask;
+  @IntPtr()
+  external int hwnd;
+  external Pointer<Utf16> lpVerb;
+  external Pointer<Utf16> lpFile;
+  external Pointer<Utf16> lpParameters;
+  external Pointer<Utf16> lpDirectory;
+  @Int32()
+  external int nShow;
+  @IntPtr()
+  external int hInstApp;
+  external Pointer<Void> lpIDList;
+  external Pointer<Utf16> lpClass;
+  @IntPtr()
+  external int hkeyClass;
+  @Uint32()
+  external int dwHotKey;
+  @IntPtr()
+  external int hMonitor;
+  @IntPtr()
+  external int hProcess;
+}
+
+typedef _ShellExecNative = Int32 Function(Pointer<_ShellExecInfo>);
+typedef _ShellExecDart = int Function(Pointer<_ShellExecInfo>);
+typedef _LastErrNative = Uint32 Function();
+typedef _LastErrDart = int Function();
 typedef _ShFileOpNative = Int32 Function(Pointer<_ShFileOpStruct>);
 typedef _ShFileOpDart = int Function(Pointer<_ShFileOpStruct>);
 typedef _QueryBinNative = Int32 Function(Pointer<Utf16>, Pointer<Uint8>);
@@ -38,6 +72,9 @@ typedef _DiskNative = Int32 Function(
 typedef _DiskDart = int Function(
     Pointer<Utf16>, Pointer<Uint64>, Pointer<Uint64>, Pointer<Uint64>);
 
+const _seeMaskNoCloseProcess = 0x40;
+const _seeMaskNoAsync = 0x100;
+const _errorCancelled = 1223;
 const _foDelete = 3;
 const _fofAllowUndo = 0x0040;
 const _fofNoConfirmMkdir = 0x0200;
@@ -57,6 +94,10 @@ class WindowsPlatform implements PlatformApi {
       _shell32.lookupFunction<_QueryBinNative, _QueryBinDart>('SHQueryRecycleBinW');
   late final _EmptyBinDart _emptyBin =
       _shell32.lookupFunction<_EmptyBinNative, _EmptyBinDart>('SHEmptyRecycleBinW');
+  late final _ShellExecDart _shellExec =
+      _shell32.lookupFunction<_ShellExecNative, _ShellExecDart>('ShellExecuteExW');
+  late final _LastErrDart _lastError =
+      _kernel32.lookupFunction<_LastErrNative, _LastErrDart>('GetLastError');
   late final _DriveTypeDart _driveType =
       _kernel32.lookupFunction<_DriveTypeNative, _DriveTypeDart>('GetDriveTypeW');
   late final _DiskDart _disk =
@@ -252,5 +293,98 @@ class WindowsPlatform implements PlatformApi {
     try {
       await Process.start('$_sysRoot\\explorer.exe', [path], mode: ProcessStartMode.detached);
     } catch (_) {}
+  }
+
+  @override
+  Future<List<RawUninstall>> readUninstallEntries() async {
+    try {
+      return await Isolate.run(readUninstallSync);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<String>> regSubKeys(String key) async {
+    try {
+      return WinRegistry.instance.subKeysOf(key);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  @override
+  Future<UninstallRun> runUninstaller(String exe, String args) async {
+    final file = exe.toNativeUtf16();
+    final verb = 'open'.toNativeUtf16();
+    final params = args.isEmpty ? nullptr : args.toNativeUtf16();
+    final dirText = RegExp(r'^[A-Za-z]:\\').hasMatch(exe) && exe.contains(r'\')
+        ? exe.substring(0, exe.lastIndexOf(r'\'))
+        : null;
+    final dir = dirText == null ? nullptr : dirText.toNativeUtf16();
+    final info = calloc<_ShellExecInfo>();
+    var handle = 0;
+    try {
+      info.ref
+        ..cbSize = sizeOf<_ShellExecInfo>()
+        ..fMask = _seeMaskNoCloseProcess | _seeMaskNoAsync
+        ..hwnd = 0
+        ..lpVerb = verb
+        ..lpFile = file
+        ..lpParameters = params.cast<Utf16>()
+        ..lpDirectory = dir.cast<Utf16>()
+        ..nShow = 1;
+      final ok = _shellExec(info);
+      if (ok == 0) {
+        final err = _lastError();
+        return UninstallRun(
+          started: false,
+          cancelled: err == _errorCancelled,
+          error: 'ShellExecuteEx: код $err',
+        );
+      }
+      handle = info.ref.hProcess;
+    } catch (e) {
+      return UninstallRun(started: false, error: '$e');
+    } finally {
+      calloc.free(file);
+      calloc.free(verb);
+      if (params != nullptr) calloc.free(params);
+      if (dir != nullptr) calloc.free(dir);
+      calloc.free(info);
+    }
+    if (handle == 0) {
+      // процесса нет (передача другой программе): ждать нечего
+      return const UninstallRun(started: true);
+    }
+    int? code;
+    try {
+      code = await Isolate.run(() => waitForProcessSync(handle));
+    } catch (_) {}
+    return UninstallRun(started: true, exitCode: code);
+  }
+
+  @override
+  Future<bool> exportRegKey(String key, String file) async {
+    if (!key.toUpperCase().startsWith(r'HKCU\')) return false;
+    try {
+      final r = await Process.run('$_sysRoot\\System32\\reg.exe', ['export', key, file, '/y']);
+      if (r.exitCode != 0) return false;
+      final f = File(file);
+      return f.existsSync() && f.lengthSync() > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> deleteRegKey(String key) async {
+    if (!key.toUpperCase().startsWith(r'HKCU\')) return false;
+    try {
+      final r = await Process.run('$_sysRoot\\System32\\reg.exe', ['delete', key, '/f']);
+      return r.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
   }
 }

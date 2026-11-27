@@ -4,6 +4,7 @@ import '../core/format.dart';
 import '../state/app_controller.dart';
 import 'files_screen.dart';
 import 'main_screen.dart';
+import 'programs_screen.dart';
 import 'map_screen.dart';
 import 'result_screen.dart';
 
@@ -31,6 +32,8 @@ class Shell extends StatelessWidget {
               content = FilesScreen(controller: c, isDownloads: false);
             case Section.map:
               content = MapScreen(controller: c);
+            case Section.programs:
+              content = ProgramsScreen(controller: c);
           }
         }
         return Scaffold(
@@ -72,6 +75,11 @@ class Shell extends StatelessWidget {
                     NavigationRailDestination(
                       icon: Icon(Icons.pie_chart_outline),
                       label: Text('Карта диска'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.apps_outlined),
+                      selectedIcon: Icon(Icons.apps),
+                      label: Text('Программы'),
                     ),
                   ],
                   trailing: Expanded(

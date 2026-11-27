@@ -1,3 +1,4 @@
+import 'package:chistka_pk/core/programs.dart';
 import 'package:chistka_pk/platform/platform_api.dart';
 
 class FakePlatform implements PlatformApi {
@@ -50,6 +51,45 @@ class FakePlatform implements PlatformApi {
 
   @override
   Future<void> openFolder(String path) async {}
+
+  // --- программы и реестр ---
+  List<RawUninstall> uninstallEntries = [];
+  final regTree = <String, List<String>>{};
+  final uninstallCalls = <String>[];
+  UninstallRun uninstallResult = const UninstallRun(started: true, exitCode: 0);
+  void Function()? onUninstall;
+  bool exportOk = true;
+  bool deleteOk = true;
+  final exported = <String>[];
+  final deleted = <String>[];
+  final callOrder = <String>[];
+
+  @override
+  Future<List<RawUninstall>> readUninstallEntries() async => uninstallEntries;
+
+  @override
+  Future<List<String>> regSubKeys(String key) async => regTree[key] ?? const [];
+
+  @override
+  Future<UninstallRun> runUninstaller(String exe, String args) async {
+    uninstallCalls.add('$exe|$args');
+    onUninstall?.call();
+    return uninstallResult;
+  }
+
+  @override
+  Future<bool> exportRegKey(String key, String file) async {
+    callOrder.add('export $key');
+    if (exportOk) exported.add(key);
+    return exportOk;
+  }
+
+  @override
+  Future<bool> deleteRegKey(String key) async {
+    callOrder.add('delete $key');
+    if (deleteOk) deleted.add(key);
+    return deleteOk;
+  }
 
   /// Свободное место для виджет-тестов (по умолчанию 45 ГБ).
   int freeBytes = 45 * 1024 * 1024 * 1024;

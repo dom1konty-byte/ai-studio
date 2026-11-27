@@ -2,12 +2,15 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:path/path.dart' as p;
 
 import '../core/catalog.dart';
 import '../core/cleaner.dart';
 import '../core/disk_map.dart';
 import '../core/journal.dart';
+import '../core/leftovers.dart';
 import '../core/models.dart';
+import '../core/programs.dart';
 import '../core/scanner.dart';
 import '../core/stats.dart';
 import '../core/whitelist.dart';
@@ -15,7 +18,7 @@ import '../platform/platform_api.dart';
 
 enum Phase { idle, analyzing, ready, cleaning, done }
 
-enum Section { main, downloads, big, map }
+enum Section { main, downloads, big, map, programs }
 
 /// Порог «Мало места»: свободно меньше 10 ГБ на системном диске.
 const lowSpaceBytes = 10 * 1024 * 1024 * 1024;
@@ -48,6 +51,17 @@ Future<List<FileInfo>> _defaultDownloadsScan(String dir) {
   return Isolate.run(() => scanOldDownloadsSync(dir, now));
 }
 
+Future<int> _defaultSizeOf(String path, bool isDir) {
+  if (!isDir) {
+    try {
+      return Future.value(File(path).lengthSync());
+    } catch (_) {
+      return Future.value(0);
+    }
+  }
+  return Isolate.run(() => measureFolderSync(path).bytes);
+}
+
 Future<List<FileInfo>> _defaultLargeScan(List<String> dirs, int n) =>
     Isolate.run(() => scanLargestSync(dirs, n));
 
@@ -59,10 +73,16 @@ class AppController extends ChangeNotifier {
     LargeScan? largeScan,
     FolderSizer? folderSizer,
     String? dataDir,
+    DirLister? listDir,
+    SizeOf? sizeOf,
+    PathGuard? leftoverGuard,
   })  : env = env ?? Env.system(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _folderSizer = folderSizer ?? _defaultFolderSizer,
-        _largeScan = largeScan ?? _defaultLargeScan {
+        _largeScan = largeScan ?? _defaultLargeScan,
+        _listDir = listDir ?? listDirReal,
+        _sizeOf = sizeOf ?? _defaultSizeOf,
+        _leftoverGuard = leftoverGuard {
     systemDrive = systemDriveRoot(this.env);
     // Журнал и статистика: %LOCALAPPDATA%\ChistoDisk, иначе %APPDATA%\ChistoDisk.
     // Во временную папку не пишем; если негде — очистка не запускается.
@@ -102,6 +122,9 @@ class AppController extends ChangeNotifier {
   final DownloadsScan _downloadsScan;
   final LargeScan _largeScan;
   final FolderSizer _folderSizer;
+  final DirLister _listDir;
+  final SizeOf _sizeOf;
+  final PathGuard? _leftoverGuard;
   File? logFile;
   StatsStore? _stats;
 
@@ -433,5 +456,228 @@ class AppController extends ChangeNotifier {
       }
     } catch (_) {}
     await platform.openFile(lf.path);
+  }
+
+  // ---------- программы ----------
+
+  LoadState programsState = LoadState.idle;
+  List<Program> programs = [];
+  String programQuery = '';
+  ProgramSort programSort = ProgramSort.size;
+
+  /// Сообщение над списком программ (итог запуска удаления, ошибка).
+  String? programMessage;
+
+  /// true, пока идёт удаление программы (ждём её программу удаления).
+  bool uninstallBusy = false;
+
+  List<Program> get visiblePrograms => filterAndSort(programs, programQuery, programSort);
+
+  void setProgramQuery(String q) {
+    programQuery = q;
+    notifyListeners();
+  }
+
+  void setProgramSort(ProgramSort s) {
+    programSort = s;
+    notifyListeners();
+  }
+
+  Future<void> loadPrograms() async {
+    if (programsState == LoadState.loading) return;
+    programsState = LoadState.loading;
+    notifyListeners();
+    try {
+      programs = buildPrograms(await platform.readUninstallEntries());
+      programsState = LoadState.loaded;
+    } catch (_) {
+      programsState = LoadState.error;
+    }
+    notifyListeners();
+  }
+
+  /// Штатное удаление: запуск программы удаления, ожидание, затем «Остатки».
+  Future<void> uninstall(Program prog) async {
+    if (uninstallBusy) return;
+    final cmd = parseUninstallString(prog.uninstallString, env: env.vars);
+    if (cmd == null) {
+      programMessage =
+          'У «${prog.name}» нет программы удаления. Можно выбрать «Принудительно удалить…».';
+      notifyListeners();
+      return;
+    }
+    uninstallBusy = true;
+    programMessage = 'Идёт удаление «${prog.name}»… Дождитесь окончания в окне программы удаления.';
+    notifyListeners();
+    UninstallRun run;
+    try {
+      run = await platform.runUninstaller(cmd.exe, cmd.args);
+    } catch (e) {
+      run = UninstallRun(started: false, error: '$e');
+    }
+    uninstallBusy = false;
+    if (!run.started) {
+      programMessage = run.cancelled
+          ? 'Удаление отменено (не дали права администратора).'
+          : 'Не удалось запустить удаление «${prog.name}».';
+      notifyListeners();
+      return;
+    }
+    // Удаление могли отменить внутри программы: если запись осталась — остатки не ищем.
+    List<Program> after = const [];
+    try {
+      after = buildPrograms(await platform.readUninstallEntries());
+    } catch (_) {}
+    if (after.isEmpty) {
+      programMessage = 'Не удалось проверить список программ после удаления. Остатки не ищу.';
+      notifyListeners();
+      return;
+    }
+    programs = after;
+    programsState = LoadState.loaded;
+    final still = after.any((a) => a.keyPath.toLowerCase() == prog.keyPath.toLowerCase());
+    if (still) {
+      programMessage =
+          '«${prog.name}» всё ещё в списке: удаление отменено или ещё идёт. Остатки не ищу.';
+      notifyListeners();
+      return;
+    }
+    programMessage = null;
+    await startLeftovers(prog, forced: false);
+  }
+
+  /// Принудительное удаление: программа удаления не запускается.
+  Future<void> forceRemove(Program prog) => startLeftovers(prog, forced: true);
+
+  // ---------- остатки ----------
+
+  Program? leftoverProgram;
+  bool leftoverForced = false;
+  LoadState leftoverState = LoadState.idle;
+  List<Leftover> leftovers = [];
+  final Set<Leftover> leftoverSelected = {};
+  Map<Leftover, String> leftoverResults = {};
+  bool leftoverBusy = false;
+  String? leftoverMessage;
+
+  int get leftoverSelectedBytes =>
+      leftovers.where(leftoverSelected.contains).fold(0, (a, l) => a + l.bytes);
+
+  Future<void> startLeftovers(Program prog, {required bool forced}) async {
+    leftoverProgram = prog;
+    leftoverForced = forced;
+    leftoverState = LoadState.loading;
+    leftovers = [];
+    leftoverSelected.clear();
+    leftoverResults = {};
+    leftoverMessage = null;
+    notifyListeners();
+    try {
+      final list = await findLeftovers(
+        name: prog.name,
+        publisher: prog.publisher,
+        installLocation: prog.installLocation,
+        env: env,
+        listDir: _listDir,
+        regSubKeys: platform.regSubKeys,
+        sizeOf: _sizeOf,
+      );
+      if (forced) {
+        list.insert(
+          0,
+          Leftover(
+            kind: LeftoverKind.registry,
+            path: prog.keyPath,
+            exact: true,
+            deletable: prog.isUserHive,
+            isUninstallEntry: true,
+            note: prog.isUserHive
+                ? 'Запись в списке программ'
+                : 'Запись в списке программ. Нужны права администратора',
+          ),
+        );
+      }
+      leftovers = list;
+      for (final l in list) {
+        if (l.exact && l.deletable) leftoverSelected.add(l);
+      }
+      leftoverState = LoadState.loaded;
+    } catch (_) {
+      leftoverState = LoadState.error;
+    }
+    notifyListeners();
+  }
+
+  void toggleLeftover(Leftover l, bool on) {
+    if (leftoverBusy || !l.deletable) return;
+    on ? leftoverSelected.add(l) : leftoverSelected.remove(l);
+    notifyListeners();
+  }
+
+  /// Папка резервных копий реестра: `<данные>\backup`.
+  String? get backupDir {
+    final lf = logFile;
+    return lf == null ? null : p.join(lf.parent.path, 'backup');
+  }
+
+  Future<void> deleteLeftovers() async {
+    if (leftoverBusy || leftoverSelected.isEmpty) return;
+    final lf = logFile;
+    final bd = backupDir;
+    if (lf == null || bd == null) {
+      leftoverMessage = 'Некуда писать журнал и резервные копии — удаление не запущено.';
+      notifyListeners();
+      return;
+    }
+    leftoverBusy = true;
+    leftoverMessage = null;
+    notifyListeners();
+    final log = CleanLog(lf);
+    final cleaner = LeftoverCleaner(
+      platform: platform,
+      log: log,
+      env: env,
+      backupDir: bd,
+      guard: _leftoverGuard,
+    );
+    final todo = leftovers.where(leftoverSelected.contains).toList();
+    try {
+      final outcomes = await cleaner.run(todo);
+      var ok = 0;
+      var bad = 0;
+      for (final o in outcomes) {
+        leftoverResults[o.item] = o.message;
+        o.ok ? ok++ : bad++;
+      }
+      final removed = {for (final o in outcomes) if (o.ok) o.item};
+      leftovers = leftovers.where((l) => !removed.contains(l)).toList();
+      leftoverSelected.removeAll(removed);
+      leftoverMessage = 'Удалено: $ok, пропущено: $bad. Файлы ушли в Корзину.';
+    } catch (_) {
+      leftoverMessage = 'Ошибка при удалении. Подробности — в журнале.';
+    }
+    await log.flush();
+    leftoverBusy = false;
+    notifyListeners();
+  }
+
+  void closeLeftovers() {
+    leftoverProgram = null;
+    leftovers = [];
+    leftoverSelected.clear();
+    leftoverResults = {};
+    leftoverMessage = null;
+    leftoverState = LoadState.idle;
+    programsState = LoadState.idle; // список обновится при открытии
+    notifyListeners();
+  }
+
+  Future<void> openBackupFolder() async {
+    final bd = backupDir;
+    if (bd == null) return;
+    try {
+      await Directory(bd).create(recursive: true);
+    } catch (_) {}
+    await platform.openFolder(bd);
   }
 }
