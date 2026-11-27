@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/format.dart';
 import '../core/models.dart';
 import '../state/app_controller.dart';
+import 'anim.dart';
 
 IconData categoryIcon(CategoryId id) {
   switch (id) {
@@ -117,20 +118,12 @@ class MainScreen extends StatelessWidget {
       heroCaption = 'Нажмите «Анализ»';
     }
 
-    final list = <Widget>[];
-    var programsHeader = false;
+    final general = <Widget>[];
+    final programs = <Widget>[];
     for (final r in c.rows) {
-      if (r.category.isProgram && !programsHeader) {
-        programsHeader = true;
-        list.add(const Padding(
-          padding: EdgeInsets.fromLTRB(4, 16, 4, 8),
-          child: Text('Программы', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        ));
-      }
-      list.add(_CategoryTile(row: r, controller: c, enabled: ready));
+      (r.category.isProgram ? programs : general)
+          .add(_CategoryTile(row: r, controller: c, enabled: ready));
     }
-    list.add(const SizedBox(height: 8));
-    list.add(_DownloadsTile(controller: c, enabled: !busy));
 
     final disk = c.disk;
 
@@ -189,25 +182,48 @@ class MainScreen extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 8),
-        Row(
-          children: [
-            SizedBox(
-              width: 72,
-              height: 72,
-              child: CircularProgressIndicator(value: ring, strokeWidth: 8),
-            ),
-            const SizedBox(width: 16),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(heroText, style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w300)),
-                Text(heroCaption, style: const TextStyle(fontSize: 14)),
-              ],
-            ),
-          ],
+        _Hero(
+          ring: ring,
+          indeterminate: analyzing,
+          bytes: ready ? c.selectedBytes : null,
+          text: heroText,
+          caption: heroCaption,
         ),
         const SizedBox(height: 8),
-        Expanded(child: ListView(children: list)),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final twoCols = box.maxWidth >= 640;
+              Widget grid(List<Widget> items) => Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final w in items)
+                        SizedBox(
+                          width: twoCols ? (box.maxWidth - 12 - 16) / 2 : box.maxWidth - 16,
+                          child: w,
+                        ),
+                    ],
+                  );
+              return ListView(
+                padding: const EdgeInsets.only(right: 16, top: 4, bottom: 4),
+                children: [
+                  grid(general),
+                  if (programs.isNotEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(4, 16, 4, 8),
+                      child: Text('Программы',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                    ),
+                    grid(programs),
+                  ],
+                  const SizedBox(height: 12),
+                  _DownloadsTile(controller: c, enabled: !busy),
+                ],
+              );
+            },
+          ),
+        ),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
@@ -253,18 +269,14 @@ class _CategoryTile extends StatelessWidget {
         size = Icon(Icons.error_outline, color: cs.error);
         subtitle = 'Не удалось посчитать';
       case RowStatus.done:
-        size = Text(
-          row.isEmpty ? 'Пусто' : formatSize(row.bytes ?? 0),
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        );
+        size = row.isEmpty
+            ? const Text('Пусто', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))
+            : CountSize(row.bytes ?? 0, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600));
     }
     if (cat.id == CategoryId.recycle && row.selected && row.active) {
       subtitle = 'Очищает Корзину на всех дисках';
     }
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: cardShape(),
+    return _HoverCard(
       child: CheckboxListTile(
         shape: cardShape(),
         controlAffinity: ListTileControlAffinity.leading,
@@ -272,12 +284,15 @@ class _CategoryTile extends StatelessWidget {
         onChanged: enabled && row.active ? (v) => controller.toggleRow(row, v ?? false) : null,
         title: Row(
           children: [
-            Icon(categoryIcon(cat.id), size: 20),
-            const SizedBox(width: 8),
+            _IconCircle(icon: categoryIcon(cat.id), color: categoryColor(cat.id)),
+            const SizedBox(width: 12),
             Flexible(child: Text(cat.title)),
           ],
         ),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(left: 52),
+          child: Text(subtitle, style: const TextStyle(fontSize: 12)),
+        ),
         secondary: size,
       ),
     );
@@ -292,9 +307,7 @@ class _DownloadsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = controller;
-    return Card(
-      elevation: 0,
-      shape: cardShape(),
+    return _HoverCard(
       child: CheckboxListTile(
         shape: cardShape(),
         controlAffinity: ListTileControlAffinity.leading,
@@ -310,8 +323,8 @@ class _DownloadsTile extends StatelessWidget {
             : null,
         title: const Row(
           children: [
-            Icon(Icons.download_outlined, size: 20),
-            SizedBox(width: 8),
+            _IconCircle(icon: Icons.download_outlined, color: Color(0xFF0F9D9A)),
+            SizedBox(width: 12),
             Flexible(child: Text('Загрузки')),
           ],
         ),
@@ -325,6 +338,177 @@ class _DownloadsTile extends StatelessWidget {
           onPressed: enabled ? () => c.go(Section.downloads) : null,
           child: const Text('Выбрать файлы →'),
         ),
+      ),
+    );
+  }
+}
+
+Color categoryColor(CategoryId id) {
+  switch (id) {
+    case CategoryId.temp:
+      return const Color(0xFF0F9D9A);
+    case CategoryId.browsers:
+    case CategoryId.gpu:
+      return const Color(0xFF3D5A80);
+    case CategoryId.recycle:
+      return const Color(0xFFB26A00);
+    case CategoryId.thumbs:
+      return const Color(0xFF7B5EA7);
+    case CategoryId.logs:
+      return const Color(0xFF566B6B);
+    case CategoryId.telegram:
+    case CategoryId.discord:
+    case CategoryId.steam:
+    case CategoryId.spotify:
+    case CategoryId.vscode:
+      return const Color(0xFF2E7D32);
+  }
+}
+
+/// Иконка в цветном кружке (фон — цвет с прозрачностью 14 %).
+class _IconCircle extends StatelessWidget {
+  const _IconCircle({required this.icon, required this.color});
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.14), shape: BoxShape.circle),
+        child: Icon(icon, size: 22, color: color),
+      );
+}
+
+/// Карточка с рамкой 1 px; при наведении поднимается на 1 px, рамка — бирюзовая.
+class _HoverCard extends StatefulWidget {
+  const _HoverCard({required this.child});
+  final Widget child;
+
+  @override
+  State<_HoverCard> createState() => _HoverCardState();
+}
+
+class _HoverCardState extends State<_HoverCard> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final light = Theme.of(context).brightness == Brightness.light;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedContainer(
+        duration: animDuration(context, const Duration(milliseconds: 120)),
+        curve: Curves.easeOut,
+        transform: Matrix4.translationValues(0, _hover ? -1 : 0, 0),
+        decoration: BoxDecoration(
+          color: light ? Colors.white : cs.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _hover ? const Color(0xFF0F9D9A) : (light ? const Color(0xFFD5E6E6) : cs.outlineVariant),
+          ),
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: BorderRadius.circular(16),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Размер, который «считает» от нуля (или от прошлого значения) до нового.
+class CountSize extends StatelessWidget {
+  const CountSize(this.bytes, {super.key, this.style});
+  final int bytes;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: bytes.toDouble()),
+      duration: animDuration(context, const Duration(milliseconds: 500)),
+      curve: Curves.easeOut,
+      builder: (_, v, __) => Text(formatSize(v.round()), style: style),
+    );
+  }
+}
+
+/// Герой: градиентная карточка с кольцом и крупной цифрой.
+class _Hero extends StatelessWidget {
+  const _Hero({
+    required this.ring,
+    required this.indeterminate,
+    required this.bytes,
+    required this.text,
+    required this.caption,
+  });
+  final double? ring;
+  final bool indeterminate;
+  final int? bytes;
+  final String text;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) {
+    const big = TextStyle(fontSize: 56, fontWeight: FontWeight.w300, color: Colors.white);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0B7C7A), Color(0xFF17B3AE)],
+        ),
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 120,
+            height: 120,
+            child: indeterminate || ring == null
+                ? const CircularProgressIndicator(
+                    strokeWidth: 12,
+                    strokeCap: StrokeCap.round,
+                    color: Colors.white,
+                    backgroundColor: Color(0x33FFFFFF),
+                  )
+                : TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: ring),
+                    duration: animDuration(context, const Duration(milliseconds: 800)),
+                    curve: Curves.easeOutCubic,
+                    builder: (_, v, __) => CircularProgressIndicator(
+                      value: v,
+                      strokeWidth: 12,
+                      strokeCap: StrokeCap.round,
+                      color: Colors.white,
+                      backgroundColor: const Color(0x33FFFFFF),
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 24),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (bytes != null)
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: bytes!.toDouble()),
+                    duration: animDuration(context, const Duration(milliseconds: 600)),
+                    curve: Curves.easeOut,
+                    builder: (_, v, __) => Text(formatSize(v.round()), style: big),
+                  )
+                else
+                  Text(text, style: big),
+                Text(caption, style: const TextStyle(fontSize: 14, color: Colors.white)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

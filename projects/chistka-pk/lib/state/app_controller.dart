@@ -23,7 +23,7 @@ import 'startup_service.dart';
 
 enum Phase { idle, analyzing, ready, cleaning, done }
 
-enum Section { main, downloads, big, map, programs, startup, settings }
+enum Section { main, downloads, big, map, programs, startup, settings, internet }
 
 /// Порог «Мало места»: свободно меньше 10 ГБ на системном диске.
 const lowSpaceBytes = 10 * 1024 * 1024 * 1024;
@@ -853,6 +853,17 @@ class AppController extends ChangeNotifier {
     }
     return ok;
   }
+
+  /// Режим администратора (плашка в левой панели; включается в следующей части).
+  bool adminMode = false;
+
+  /// Ширина левой панели: сразу в памяти, на диск — по окончании перетаскивания.
+  void previewNavWidth(double w) {
+    settings = settings.copyWith(navWidth: w);
+    notifyListeners();
+  }
+
+  Future<void> setNavWidth(double w) => _saveSettings(settings.copyWith(navWidth: w));
 
   Future<void> setMinimizeToTray(bool on) => _saveSettings(settings.copyWith(minimizeToTray: on));
 

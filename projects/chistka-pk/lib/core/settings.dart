@@ -7,6 +7,14 @@ import 'models.dart';
 const autostartValueName = 'ChistoDisk';
 const autostartRunKey = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
 
+const defaultNavWidth = 240.0;
+const minNavWidth = 64.0;
+const maxNavWidth = 360.0;
+
+/// Ширина панели в допустимых пределах (мусор/NaN — по умолчанию).
+double clampNavWidth(double w) =>
+    w.isNaN ? defaultNavWidth : w.clamp(minNavWidth, maxNavWidth).toDouble();
+
 /// Настройки в %LOCALAPPDATA%\ChistoDisk\settings.json.
 class AppSettings {
   const AppSettings({
@@ -14,11 +22,15 @@ class AppSettings {
     this.minimizeToTray = true,
     this.trayHintShown = false,
     this.quickCategories = const [],
+    this.navWidth = defaultNavWidth,
   });
 
   final bool autostart;
   final bool minimizeToTray;
   final bool trayHintShown;
+
+  /// Ширина левой панели, px (64–360).
+  final double navWidth;
 
   /// Категории, отмеченные при последней очистке (имена CategoryId).
   final List<String> quickCategories;
@@ -28,12 +40,14 @@ class AppSettings {
     bool? minimizeToTray,
     bool? trayHintShown,
     List<String>? quickCategories,
+    double? navWidth,
   }) =>
       AppSettings(
         autostart: autostart ?? this.autostart,
         minimizeToTray: minimizeToTray ?? this.minimizeToTray,
         trayHintShown: trayHintShown ?? this.trayHintShown,
         quickCategories: quickCategories ?? this.quickCategories,
+        navWidth: clampNavWidth(navWidth ?? this.navWidth),
       );
 
   Map<String, Object?> toJson() => {
@@ -41,6 +55,7 @@ class AppSettings {
         'minimizeToTray': minimizeToTray,
         'trayHintShown': trayHintShown,
         'quickCategories': quickCategories,
+        'navWidth': navWidth,
       };
 
   static AppSettings fromJson(Object? m) {
@@ -52,6 +67,7 @@ class AppSettings {
       minimizeToTray: b('minimizeToTray', true),
       trayHintShown: b('trayHintShown', false),
       quickCategories: q is List ? q.whereType<String>().toList() : const [],
+      navWidth: m['navWidth'] is num ? clampNavWidth((m['navWidth'] as num).toDouble()) : defaultNavWidth,
     );
   }
 }

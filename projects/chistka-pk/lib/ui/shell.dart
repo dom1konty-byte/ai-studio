@@ -1,8 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../core/format.dart';
 import '../state/app_controller.dart';
+import 'anim.dart';
 import 'files_screen.dart';
+import 'internet_screen.dart';
+import 'nav_panel.dart';
 import 'main_screen.dart';
 import 'programs_screen.dart';
 import 'map_screen.dart';
@@ -10,124 +12,71 @@ import 'result_screen.dart';
 import 'settings_screen.dart';
 import 'startup_screen.dart';
 
-class Shell extends StatelessWidget {
+class Shell extends StatefulWidget {
   const Shell({super.key, required this.controller});
   final AppController controller;
 
   @override
+  State<Shell> createState() => _ShellState();
+}
+
+class _ShellState extends State<Shell> {
+  AppController get c => widget.controller;
+
+  Widget _content() {
+    if (c.phase == Phase.done) return ResultScreen(key: const ValueKey('done'), controller: c);
+    switch (c.section) {
+      case Section.main:
+        return MainScreen(key: const ValueKey('main'), controller: c);
+      case Section.downloads:
+        return FilesScreen(key: const ValueKey('downloads'), controller: c, isDownloads: true);
+      case Section.big:
+        return FilesScreen(key: const ValueKey('big'), controller: c, isDownloads: false);
+      case Section.map:
+        return MapScreen(key: const ValueKey('map'), controller: c);
+      case Section.programs:
+        return ProgramsScreen(key: const ValueKey('programs'), controller: c);
+      case Section.startup:
+        return StartupScreen(key: const ValueKey('startup'), controller: c);
+      case Section.settings:
+        return SettingsScreen(key: const ValueKey('settings'), controller: c);
+      case Section.internet:
+        return const InternetScreen(key: ValueKey('internet'));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: c,
       builder: (context, _) {
-        final c = controller;
-        final busy = c.phase == Phase.analyzing || c.phase == Phase.cleaning;
-        final Widget content;
-        if (c.phase == Phase.done) {
-          content = ResultScreen(controller: c);
-        } else {
-          switch (c.section) {
-            case Section.main:
-              content = MainScreen(controller: c);
-            case Section.downloads:
-              content = FilesScreen(controller: c, isDownloads: true);
-            case Section.big:
-              content = FilesScreen(controller: c, isDownloads: false);
-            case Section.map:
-              content = MapScreen(controller: c);
-            case Section.programs:
-              content = ProgramsScreen(controller: c);
-            case Section.startup:
-              content = StartupScreen(controller: c);
-            case Section.settings:
-              content = SettingsScreen(controller: c);
-          }
-        }
         return Scaffold(
           body: SafeArea(
             child: Row(
               children: [
-                NavigationRail(
-                  extended: true,
-                  minExtendedWidth: 240,
-                  selectedIndex: c.phase == Phase.done
-                      ? 0
-                      : c.section == Section.settings
-                          ? null
-                          : c.section.index,
-                  onDestinationSelected: busy ? null : (i) => c.go(Section.values[i]),
-                  leading: const Padding(
-                    padding: EdgeInsets.fromLTRB(8, 16, 8, 16),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.water_drop, color: Color(0xFF0F9D9A), size: 32),
-                        SizedBox(width: 8),
-                        Text('ЧистоДиск',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                  ),
-                  destinations: const [
-                    NavigationRailDestination(
-                      icon: Icon(Icons.cleaning_services_outlined),
-                      selectedIcon: Icon(Icons.cleaning_services),
-                      label: Text('Главный'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.download_outlined),
-                      selectedIcon: Icon(Icons.download),
-                      label: Text('Загрузки'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.data_usage),
-                      label: Text('Большие файлы'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.pie_chart_outline),
-                      label: Text('Карта диска'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.apps_outlined),
-                      selectedIcon: Icon(Icons.apps),
-                      label: Text('Программы'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.rocket_launch_outlined),
-                      selectedIcon: Icon(Icons.rocket_launch),
-                      label: Text('Автозагрузка'),
-                    ),
-                  ],
-                  trailing: Expanded(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'За всё время: ${formatSize(c.totalFreedEver)}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            TextButton.icon(
-                              onPressed: busy ? null : () => c.go(Section.settings),
-                              icon: const Icon(Icons.settings_outlined),
-                              label: const Text('Настройки'),
-                            ),
-                            TextButton.icon(
-                              onPressed: c.openLog,
-                              icon: const Icon(Icons.description_outlined),
-                              label: const Text('Открыть журнал'),
-                            ),
-                          ],
+                NavPanel(
+                  controller: c,
+                  width: c.settings.navWidth,
+                  onWidthChanged: c.previewNavWidth,
+                  onWidthCommitted: c.setNavWidth,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: AnimatedSwitcher(
+                      duration: animDuration(context, const Duration(milliseconds: 200)),
+                      switchInCurve: Curves.easeOutCubic,
+                      transitionBuilder: (child, anim) => FadeTransition(
+                        opacity: anim,
+                        child: SlideTransition(
+                          position: Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero)
+                              .animate(anim),
+                          child: child,
                         ),
                       ),
+                      child: _content(),
                     ),
                   ),
-                ),
-                const VerticalDivider(width: 1),
-                Expanded(
-                  child: Padding(padding: const EdgeInsets.all(24), child: content),
                 ),
               ],
             ),

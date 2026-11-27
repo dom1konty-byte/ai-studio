@@ -24,7 +24,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Очистка'), findsOneWidget);
+    expect(find.text('Очистка'), findsWidgets); // панель + заголовок экрана
     expect(find.text('Нажмите «Анализ»'), findsOneWidget);
 
     final clean = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Очистить'));

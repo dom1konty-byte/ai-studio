@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'dart:ui';
+
+import 'package:flutter/animation.dart';
 
 import 'package:path/path.dart' as p;
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../state/app_controller.dart';
+import 'work_area.dart';
 
 /// Значок у часов, меню и «крестик сворачивает в трей».
 class TrayService with TrayListener, WindowListener {
@@ -31,7 +35,116 @@ class TrayService with TrayListener, WindowListener {
     await windowManager.setPreventClose(true);
   }
 
+  static const _animMs = 300;
+  static const _minSize = Size(900, 600);
+  bool _animating = false;
+
+  bool get _noAnimations => PlatformDispatcher.instance.accessibilityFeatures.disableAnimations;
+
+  /// Кадры от одного состояния окна к другому. [from]/[to] null — размер не меняем.
+  Future<void> _play({
+    Rect? from,
+    Rect? to,
+    required double o0,
+    required double o1,
+    required Curve curve,
+    required int ms,
+  }) async {
+    final sw = Stopwatch()..start();
+    while (true) {
+      final t = (sw.elapsedMilliseconds / ms).clamp(0.0, 1.0);
+      final k = curve.transform(t);
+      if (from != null && to != null) {
+        await windowManager.setBounds(Rect.lerp(from, to, k));
+      }
+      await windowManager.setOpacity(o0 + (o1 - o0) * k);
+      if (t >= 1) break;
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
+  }
+
+  /// Окно, с которого начинается/которым заканчивается «джинн»: 10 % размера
+  /// у правого нижнего угла рабочей области.
+  Rect? _cornerRect(Rect normal) {
+    final area = primaryWorkArea();
+    if (area == null) return null;
+    final w = normal.width * 0.1, h = normal.height * 0.1;
+    return Rect.fromLTWH(area.right - w, area.bottom - h, w, h);
+  }
+
+  /// Плавно спрятать окно (уменьшение к углу + затухание), затем hide.
+  /// Не поддерживается что-то — только затухание. Исходные bounds/opacity возвращаются.
+  Future<void> hideAnimated() async {
+    if (_animating) return;
+    _animating = true;
+    Rect? normal;
+    var resized = false;
+    try {
+      if (!_noAnimations) {
+        try {
+          normal = await windowManager.getBounds();
+          final canResize = !(await windowManager.isMaximized()) &&
+              !(await windowManager.isFullScreen());
+          final corner = canResize ? _cornerRect(normal) : null;
+          if (corner != null) {
+            await windowManager.setMinimumSize(const Size(1, 1));
+            resized = true;
+            await _play(
+                from: normal, to: corner, o0: 1, o1: 0, curve: Curves.easeInCubic, ms: _animMs);
+          } else {
+            await _play(o0: 1, o1: 0, curve: Curves.easeInCubic, ms: 200);
+          }
+        } catch (_) {}
+      }
+      await windowManager.hide();
+    } finally {
+      try {
+        if (resized && normal != null) await windowManager.setBounds(normal);
+        await windowManager.setMinimumSize(_minSize);
+        await windowManager.setOpacity(1);
+      } catch (_) {}
+      _animating = false;
+    }
+  }
+
   Future<void> showWindow() async {
+    if (_animating) return;
+    var animated = false;
+    if (!_noAnimations) {
+      try {
+        if (!await windowManager.isVisible()) {
+          animated = true;
+          _animating = true;
+          final normal = await windowManager.getBounds();
+          final corner = (await windowManager.isMaximized()) ? null : _cornerRect(normal);
+          await windowManager.setOpacity(0);
+          if (corner != null) {
+            await windowManager.setMinimumSize(const Size(1, 1));
+            await windowManager.setBounds(corner);
+          }
+          await windowManager.show();
+          await _play(
+              from: corner,
+              to: corner != null ? normal : null,
+              o0: 0,
+              o1: 1,
+              curve: Curves.easeOutCubic,
+              ms: corner != null ? _animMs : 200);
+          if (corner != null) {
+            await windowManager.setBounds(normal);
+            await windowManager.setMinimumSize(_minSize);
+          }
+          await windowManager.setOpacity(1);
+        }
+      } catch (_) {
+        try {
+          await windowManager.setMinimumSize(_minSize);
+          await windowManager.setOpacity(1);
+        } catch (_) {}
+      } finally {
+        if (animated) _animating = false;
+      }
+    }
     await windowManager.show();
     await windowManager.restore();
     await windowManager.focus();
@@ -51,7 +164,7 @@ class TrayService with TrayListener, WindowListener {
       await quit();
       return;
     }
-    await windowManager.hide();
+    await hideAnimated();
     if (!controller.settings.trayHintShown) {
       await controller.markTrayHintShown();
       await controller.platform
