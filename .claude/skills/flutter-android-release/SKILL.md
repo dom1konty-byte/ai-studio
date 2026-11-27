@@ -10,7 +10,6 @@ description: Выпуск Android-приложения на Flutter — верс
 Нет `android/` → `flutter create --platforms=android --org com.aistudio --project-name <package> .` (существующие файлы не перезаписываются). Закоммить `android/`.
 
 ## 2. Версия
-Делает `python3 scripts/release_notes.py <slug>` перед выпуском (patch по умолчанию, `--minor`/`--major`), заодно «Что нового». Вручную менять не нужно.
 `pubspec.yaml`: `version: 1.2.0+5` → `1.2.0` видит пользователь (менять при выпуске). versionCode (`+5`) в CI подменяется номером запуска workflow (`--build-number`) — растёт сам.
 
 ## 3. Иконка
