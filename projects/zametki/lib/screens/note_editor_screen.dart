@@ -66,14 +66,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
       _items.add(_Item(i.text, i.checked, _scheduleSave));
     }
     if (_isChecklist && _items.isEmpty) _items.add(_Item('', false, _scheduleSave));
-    widget.service.registerFlusher(_flush);
+    widget.service.registerFlusher(_flushClosing);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
-    widget.service.unregisterFlusher(_flush);
+    widget.service.unregisterFlusher(_flushClosing);
     _title.removeListener(_scheduleSave);
     _body.removeListener(_scheduleSave);
     _title.dispose();
@@ -100,10 +100,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
   }
 
   /// Сохраняет сразу (отменяя ожидание автосохранения).
-  Future<void> _flush() {
+  Future<void> _flush({bool closing = false}) {
     _timer?.cancel();
-    return _save();
+    return _save(closing: closing);
   }
+
+  /// Сохранить перед закрытием редактора (пустую старую заметку — удалить).
+  Future<void> _flushClosing() => _flush(closing: true);
 
   Note _current() => Note(
         id: _id,
@@ -124,18 +127,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
 
   /// Сохраняет, если есть что сохранять. Пустую заметку не создаём (а у старой — удаляем).
   /// Сохранения идут строго по очереди: иначе две вставки подряд создадут дубль.
-  Future<void> _save() {
-    final next = _saveQueue.then((_) => _doSave());
+  Future<void> _save({bool closing = false}) {
+    final next = _saveQueue.then((_) => _doSave(closing: closing));
     _saveQueue = next;
     return next;
   }
 
-  Future<void> _doSave() async {
+  Future<void> _doSave({bool closing = false}) async {
     if (_deleted) return;
     final note = _current();
     try {
       if (note.isEmpty) {
-        if (_id != null) {
+        // Стёрли всё: удаляем только при закрытии, не на паузе в наборе.
+        if (_id != null && closing) {
           await widget.service.delete(_id!);
           _id = null;
           _original = note.copyWith(id: null);
@@ -159,7 +163,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
   }
 
   Future<void> _saveAndClose() async {
-    await _flush();
+    await _flushClosing();
     if (mounted) Navigator.of(context).pop();
   }
 

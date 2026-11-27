@@ -119,15 +119,15 @@ class _AppState extends State<App> {
     NavigatorState? nav;
     Note? note;
     try {
+      nav = await _navigator();
+      if (nav == null) return;
+      // Не терять правки открытого редактора (и читать заметку уже после них).
+      await widget.service.flushEditors();
+      nav.popUntil((r) => r.isFirst);
       if (link is OpenNoteLink) {
         note = await widget.service.byId(link.id);
         if (note == null) return;
       }
-      nav = await _navigator();
-      if (nav == null) return;
-      // Не терять правки открытого редактора.
-      await widget.service.flushEditors();
-      nav.popUntil((r) => r.isFirst);
     } catch (e) {
       debugPrint('Не удалось открыть по ссылке: $e');
       return;
