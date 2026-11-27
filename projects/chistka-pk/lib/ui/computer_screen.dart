@@ -154,9 +154,9 @@ class _ComputerScreenState extends State<ComputerScreen> with WidgetsBindingObse
       title: 'Батарея',
       caption: '',
       kind: TileKind.summary,
-      summary: 'Износ ${b.wearPercent} %',
-      summaryIcon: b.wearPercent >= 40 ? Icons.warning_amber_rounded : Icons.check_circle,
-      summaryColor: b.wearPercent >= 40 ? const Color(0xFF8F5500) : successColor,
+      summary: b.noData ? 'Износ: нет данных' : 'Износ ${b.wearPercent} %',
+      summaryIcon: !b.noData && b.wearPercent >= 40 ? Icons.warning_amber_rounded : Icons.check_circle,
+      summaryColor: !b.noData && b.wearPercent >= 40 ? const Color(0xFF8F5500) : successColor,
       onAction: open,
       onTap: open,
     );

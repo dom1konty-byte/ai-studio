@@ -55,6 +55,7 @@ class TrayService with TrayListener, WindowListener {
     if (_animating) return;
     _animating = true; // синхронно, до первого await
     _hiding = true;
+    controller.pauseComputerPolling();
     try {
       if (!_noAnimations) {
         try {
@@ -108,6 +109,7 @@ class TrayService with TrayListener, WindowListener {
     await windowManager.show();
     await windowManager.restore();
     await windowManager.focus();
+    controller.resumeComputerPolling();
   }
 
   Future<void> quit() async {

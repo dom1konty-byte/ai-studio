@@ -57,7 +57,7 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
 
   AppController get c => widget.controller;
   bool get _narrow => widget.width < navNarrowBelow;
-  bool get _busy => c.phase == Phase.analyzing || c.phase == Phase.cleaning;
+  bool get _busy => c.phase == Phase.analyzing || c.phase == Phase.cleaning || c.tileBusy;
 
   Section get _selected => c.section;
 

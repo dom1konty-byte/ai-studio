@@ -77,7 +77,13 @@ class HttpUpdateNetwork implements UpdateNetwork {
     final c = _client();
     try {
       final resp = await _get(c, url);
-      return await resp.transform(utf8.decoder).join().timeout(timeout);
+      if (resp.contentLength > maxChecksumBytes) throw UpdateException('Файл суммы слишком большой');
+      final bytes = <int>[];
+      await for (final chunk in resp.timeout(timeout)) {
+        bytes.addAll(chunk);
+        if (bytes.length > maxChecksumBytes) throw UpdateException('Файл суммы слишком большой');
+      }
+      return utf8.decode(bytes, allowMalformed: true);
     } finally {
       c.close(force: true);
     }
@@ -88,6 +94,9 @@ class HttpUpdateNetwork implements UpdateNetwork {
     final c = _client();
     try {
       final resp = await _get(c, url);
+      if (resp.contentLength > maxInstallerBytes) {
+        throw UpdateException('Установщик слишком большой');
+      }
       await dest.parent.create(recursive: true);
       final sink = dest.openWrite();
       var got = 0;
@@ -95,6 +104,7 @@ class HttpUpdateNetwork implements UpdateNetwork {
         await for (final chunk in resp.timeout(timeout)) {
           sink.add(chunk);
           got += chunk.length;
+          if (got > maxInstallerBytes) throw UpdateException('Установщик слишком большой');
           onProgress(got, resp.contentLength);
         }
       } finally {

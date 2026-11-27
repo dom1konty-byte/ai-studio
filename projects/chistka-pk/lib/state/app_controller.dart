@@ -4,7 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 
-import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:flutter/foundation.dart' show ChangeNotifier, visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import 'computer_service.dart';
@@ -14,6 +14,7 @@ import '../core/disk_map.dart';
 import '../core/duplicates.dart';
 import '../core/empty_dirs.dart';
 import '../core/journal.dart';
+import '../core/killable.dart';
 import '../core/leftovers.dart';
 import '../core/models.dart';
 import '../core/format.dart';
@@ -63,13 +64,13 @@ Future<FolderSize> _defaultFolderSizer(String path) => Isolate.run(() => measure
 
 typedef EmptyDirsScan = Future<List<String>> Function(List<String> roots);
 
-Future<List<String>> _defaultEmptyDirsScan(List<String> roots) =>
-    Isolate.run(() => findEmptyDirsSync(roots));
+Future<List<String>> _killableEmptyDirs(List<String> roots, KillGroup g) =>
+    runKillable(() => findEmptyDirsSync(roots), g);
 
 typedef LargeScan = Future<List<FileInfo>> Function(List<String> dirs, int n);
 
-Future<List<FileInfo>> _defaultDownloadsScan(String dir) =>
-    Isolate.run(() => scanAllFilesSync(dir));
+Future<List<FileInfo>> _killableDownloads(String dir, KillGroup g) =>
+    runKillable(() => scanAllFilesSync(dir), g);
 
 Future<int> _defaultSizeOf(String path, bool isDir) {
   if (!isDir) {
@@ -82,8 +83,8 @@ Future<int> _defaultSizeOf(String path, bool isDir) {
   return Isolate.run(() => measureFolderSync(path).bytes);
 }
 
-Future<List<FileInfo>> _defaultLargeScan(List<String> dirs, int n) =>
-    Isolate.run(() => scanLargestSync(dirs, n));
+Future<List<FileInfo>> _killableLarge(List<String> dirs, int n, KillGroup g) =>
+    runKillable(() => scanLargestSync(dirs, n), g);
 
 class AppController extends ChangeNotifier {
   AppController({
@@ -113,14 +114,14 @@ class AppController extends ChangeNotifier {
         speedNetwork = speedNetwork ?? CloudflareSpeedNetwork(),
         updateNetwork = updateNetwork ?? HttpUpdateNetwork(version: appVersion),
         _clock = clock ?? DateTime.now,
-        _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _dupScanner = dupScanner ?? startDupScan,
-        _emptyDirsScan = emptyDirsScan ?? _defaultEmptyDirsScan,
         _folderSizer = folderSizer ?? _defaultFolderSizer,
-        _largeScan = largeScan ?? _defaultLargeScan,
         _listDir = listDir ?? listDirReal,
         exePath = exePath ?? Platform.resolvedExecutable,
         _sizeOf = sizeOf ?? _defaultSizeOf {
+    _downloadsScan = downloadsScan ?? ((d) => _killableDownloads(d, _downloadsKill));
+    _emptyDirsScan = emptyDirsScan ?? ((r) => _killableEmptyDirs(r, _emptyKill));
+    _largeScan = largeScan ?? ((d, n) => _killableLarge(d, n, _bigKill));
     systemDrive = systemDriveRoot(this.env);
     // Журнал и статистика: %LOCALAPPDATA%\ChistoDisk, иначе %APPDATA%\ChistoDisk.
     // Во временную папку не пишем; если негде — очистка не запускается.
@@ -174,10 +175,13 @@ class AppController extends ChangeNotifier {
 
   final PlatformApi platform;
   final Env env;
-  final DownloadsScan _downloadsScan;
+  late final DownloadsScan _downloadsScan;
   final DupScanner _dupScanner;
-  final EmptyDirsScan _emptyDirsScan;
-  final LargeScan _largeScan;
+  late final EmptyDirsScan _emptyDirsScan;
+  late final LargeScan _largeScan;
+  final KillGroup _downloadsKill = KillGroup();
+  final KillGroup _emptyKill = KillGroup();
+  final KillGroup _bigKill = KillGroup();
   final FolderSizer _folderSizer;
   final DirLister _listDir;
   final SizeOf _sizeOf;
@@ -300,8 +304,23 @@ class AppController extends ChangeNotifier {
 
   bool get hasSelection => rows.any((r) => r.selected && r.active);
 
-  bool get canAnalyze => !_quickBusy && (phase == Phase.idle || phase == Phase.ready);
-  bool get canClean => !_quickBusy && phase == Phase.ready && hasSelection;
+  /// Идёт любая операция, при которой нельзя запускать другую (очистка, плитки, удаление).
+  bool get anyBusy =>
+      _quickBusy ||
+      tileBusy ||
+      cleanBusy ||
+      uninstallBusy ||
+      leftoverBusy ||
+      emptyBusy ||
+      phase == Phase.analyzing ||
+      phase == Phase.cleaning;
+
+  /// true, пока файлы плитки (Загрузки, Большие, Дубликаты) уходят в Корзину.
+  /// Это не «Быстрая очистка»: её полоса и итог не затрагиваются.
+  bool tileBusy = false;
+
+  bool get canAnalyze => !_quickBusy && !tileBusy && (phase == Phase.idle || phase == Phase.ready);
+  bool get canClean => !_quickBusy && !tileBusy && phase == Phase.ready && hasSelection;
 
   /// true, пока идёт быстрая очистка из трея.
   bool get quickBusy => _quickBusy;
@@ -309,7 +328,6 @@ class AppController extends ChangeNotifier {
   // ---------- навигация ----------
 
   void go(Section s) {
-    if (phase == Phase.done) reset();
     section = s;
     layer = Layer.none;
     showDetails = false;
@@ -327,6 +345,14 @@ class AppController extends ChangeNotifier {
   void openComputerLayer(Layer l) {
     layer = l;
     notifyListeners();
+  }
+
+  /// Окно спрятано в трей — опрос процессов не нужен.
+  void pauseComputerPolling() => _computer?.stopPolling();
+
+  /// Окно показано снова: опрос возобновляется, если открыт экран «Компьютер».
+  void resumeComputerPolling() {
+    if (section == Section.computer) _computer?.startPolling();
   }
 
   /// Данные экрана «Компьютер» (создаются при первом обращении).
@@ -359,6 +385,10 @@ class AppController extends ChangeNotifier {
     bigRecycled = null;
     _downloadsToken++;
     _bigToken++;
+    _emptyToken++;
+    _downloadsKill.killAll();
+    _bigKill.killAll();
+    _emptyKill.killAll();
     rows = rows.map((r) => CategoryRow(r.category)).toList();
     summary = null;
     failedAll = false;
@@ -368,6 +398,12 @@ class AppController extends ChangeNotifier {
     big = [];
     bigSelected.clear();
     bigState = LoadState.idle;
+    emptyDirs = [];
+    emptySelected.clear();
+    emptyRecycled = null;
+    emptySkipped = 0;
+    emptyState = LoadState.idle;
+    dupSkipped = 0;
     _dupToken++;
     _dupJob?.cancel();
     _dupJob = null;
@@ -380,6 +416,17 @@ class AppController extends ChangeNotifier {
   }
 
   // ---------- анализ ----------
+
+  bool _autoAnalyzed = false;
+
+  /// При первом открытии экрана «Очистка» в фоне считает, что можно убрать
+  /// (чтобы в полосе сразу была сумма). Один раз за запуск программы.
+  Future<void> autoAnalyzeOnce() async {
+    if (_autoAnalyzed) return;
+    _autoAnalyzed = true;
+    await init();
+    if (canAnalyze && phase == Phase.idle) await analyze();
+  }
 
   Future<void> analyze() async {
     if (!canAnalyze) return;
@@ -438,6 +485,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     final token = ++_downloadsToken;
+    _downloadsKill.killAll();
     downloadsRecycled = null;
     downloadsState = LoadState.loading;
     notifyListeners();
@@ -458,6 +506,7 @@ class AppController extends ChangeNotifier {
   /// «Стоп» в плитке: результат поиска будет проигнорирован.
   void cancelDownloads() {
     _downloadsToken++;
+    _downloadsKill.killAll();
     downloadsState = LoadState.idle;
     notifyListeners();
   }
@@ -485,14 +534,17 @@ class AppController extends ChangeNotifier {
   Future<void> recycleDownloads() async {
     final files = downloads.where((f) => downloadsSelected.contains(f.path)).toList();
     if (files.isEmpty) return;
-    await _runClean(categories: const [], files: files, skipBrowsers: false);
-    if (phase == Phase.done && !failedAll) {
-      downloadsRecycled = summary?.recycledBytes ?? 0;
-      downloads = [];
-      downloadsSelected.clear();
-      downloadsState = LoadState.idle;
+    final sum = await _recycleFiles(files);
+    if (sum == null) {
+      downloadsState = LoadState.error;
       notifyListeners();
+      return;
     }
+    downloadsRecycled = sum.recycledBytes;
+    downloads = [];
+    downloadsSelected.clear();
+    downloadsState = LoadState.idle;
+    notifyListeners();
   }
 
   // ---------- Дубликаты ----------
@@ -520,12 +572,14 @@ class AppController extends ChangeNotifier {
     final token = ++_dupToken;
     _dupJob?.cancel();
     dupRecycled = null;
+    dupSkipped = 0;
     dupProgress = 'Ищу…';
     dupState = LoadState.loading;
     notifyListeners();
     try {
+      final throttle = ProgressThrottle();
       final job = _dupScanner(roots, (t) {
-        if (token != _dupToken) return;
+        if (token != _dupToken || !throttle.allow()) return;
         dupProgress = t;
         notifyListeners();
       });
@@ -568,14 +622,17 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    await _runClean(categories: const [], files: plan.files, skipBrowsers: false);
-    if (phase == Phase.done && !failedAll) {
-      dupRecycled = summary?.recycledBytes ?? 0;
-      dupGroups = [];
-      dupSelected.clear();
-      dupState = LoadState.idle;
+    final sum = await _recycleFiles(plan.files);
+    if (sum == null) {
+      dupState = LoadState.error;
       notifyListeners();
+      return;
     }
+    dupRecycled = sum.recycledBytes;
+    dupGroups = [];
+    dupSelected.clear();
+    dupState = LoadState.idle;
+    notifyListeners();
   }
 
   // ---------- Пустые папки ----------
@@ -591,7 +648,9 @@ class AppController extends ChangeNotifier {
   Future<void> loadEmptyDirs() async {
     final roots = userRoots.where((d) => Directory(d).existsSync()).toList();
     final token = ++_emptyToken;
+    _emptyKill.killAll();
     emptyRecycled = null;
+    emptySkipped = 0;
     emptyState = LoadState.loading;
     notifyListeners();
     try {
@@ -612,6 +671,7 @@ class AppController extends ChangeNotifier {
 
   void cancelEmptyDirs() {
     _emptyToken++;
+    _emptyKill.killAll();
     emptyState = LoadState.idle;
     notifyListeners();
   }
@@ -664,6 +724,7 @@ class AppController extends ChangeNotifier {
   Future<void> loadBig() async {
     final dirs = userRoots.where((d) => Directory(d).existsSync()).toList();
     final token = ++_bigToken;
+    _bigKill.killAll();
     bigRecycled = null;
     bigState = LoadState.loading;
     notifyListeners();
@@ -682,6 +743,7 @@ class AppController extends ChangeNotifier {
 
   void cancelBig() {
     _bigToken++;
+    _bigKill.killAll();
     bigState = LoadState.idle;
     notifyListeners();
   }
@@ -695,14 +757,17 @@ class AppController extends ChangeNotifier {
   Future<void> recycleBig() async {
     final files = big.where((f) => bigSelected.contains(f.path)).toList();
     if (files.isEmpty) return;
-    await _runClean(categories: const [], files: files, skipBrowsers: false);
-    if (phase == Phase.done && !failedAll) {
-      bigRecycled = summary?.recycledBytes ?? 0;
-      big = [];
-      bigSelected.clear();
-      bigState = LoadState.idle;
+    final sum = await _recycleFiles(files);
+    if (sum == null) {
+      bigState = LoadState.error;
       notifyListeners();
+      return;
     }
+    bigRecycled = sum.recycledBytes;
+    big = [];
+    bigSelected.clear();
+    bigState = LoadState.idle;
+    notifyListeners();
   }
 
   // ---------- Очистка ----------
@@ -725,12 +790,51 @@ class AppController extends ChangeNotifier {
     await _runClean(categories: cats, files: files, skipBrowsers: skipBrowsers);
   }
 
+  /// Отправляет файлы плитки в Корзину. Не трогает фазу «Быстрой очистки» и
+  /// результаты других плиток. null — не удалось (нет журнала, ошибка, занято).
+  Future<CleanSummary?> _recycleFiles(List<FileInfo> files) async {
+    if (anyBusy) return null;
+    final lf = logFile;
+    if (lf == null) {
+      errorMessage =
+          'Некуда писать журнал: не найдены папки LOCALAPPDATA и APPDATA. Очистка не запущена.';
+      return null;
+    }
+    tileBusy = true;
+    errorMessage = null;
+    notifyListeners();
+    final sum = CleanSummary();
+    var ok = true;
+    try {
+      final log = CleanLog(lf);
+      await log.note('Файлы в Корзину: начато');
+      await Cleaner(platform, log, systemDrive: systemDrive, systemRoot: _systemRoot, admin: adminMode)
+          .run(
+        categories: const [],
+        filesToRecycle: files,
+        userRoots: userRoots,
+        skipBrowsers: false,
+        into: sum,
+      );
+    } catch (_) {
+      ok = false;
+      errorMessage = 'Операция прервана из-за ошибки. Уже сделанное сохранено в журнале.';
+    }
+    try {
+      disk = await platform.diskSpace(systemDrive) ?? disk;
+    } catch (_) {}
+    layer = Layer.none;
+    tileBusy = false;
+    notifyListeners();
+    return ok ? sum : null;
+  }
+
   Future<void> _runClean({
     required List<Category> categories,
     required List<FileInfo> files,
     required bool skipBrowsers,
   }) async {
-    if (_quickBusy || phase == Phase.cleaning || phase == Phase.analyzing) return;
+    if (_quickBusy || tileBusy || phase == Phase.cleaning || phase == Phase.analyzing) return;
     if (logFile == null) {
       failedAll = true;
       errorMessage =
@@ -873,22 +977,37 @@ class AppController extends ChangeNotifier {
   final AsyncPool _sizePool = AsyncPool(2);
   int _sizeToken = 0;
 
+  @visibleForTesting
+  Future<void> debugStartProgramSizes() => _startProgramSizes();
+
+  /// Кэш «папка → размер»: одна папка считается один раз.
+  final Map<String, Future<int>> _folderSizeCache = {};
+
   /// Считает размеры папок программ без EstimatedSize в фоне (очередь, не более 2).
-  void _startProgramSizes() {
+  Future<void> _startProgramSizes() async {
     final token = ++_sizeToken;
     programApprox.clear();
+    String? steam;
+    try {
+      steam = await platform.steamPath();
+    } catch (_) {}
+    if (token != _sizeToken) return;
+    final plan = planProgramSizeFolders(programs,
+        env: env.vars, steamPath: steam, dirExists: dirExists, fileExists: fileExists);
     for (final prog in programs) {
-      if (prog.sizeKb > 0) continue;
-      final dir = sizeFolderOf(prog, env: env.vars, dirExists: dirExists, fileExists: fileExists);
+      final dir = plan[prog.keyPath];
       if (dir == null) continue;
       _sizePool.run(() async {
         if (token != _sizeToken) return;
         try {
-          final bytes = await _sizeOf(dir, true);
+          final bytes =
+              await _folderSizeCache.putIfAbsent(dir.toLowerCase(), () => _sizeOf(dir, true));
           if (token != _sizeToken || bytes <= 0) return;
           programApprox[prog.keyPath] = bytes;
           notifyListeners();
-        } catch (_) {}
+        } catch (_) {
+          _folderSizeCache.remove(dir.toLowerCase());
+        }
       });
     }
   }
@@ -929,11 +1048,12 @@ class AppController extends ChangeNotifier {
     if (programsState == LoadState.loading) return;
     programsState = LoadState.loading;
     _folderCache.clear();
+    _folderSizeCache.clear();
     notifyListeners();
     try {
       programs = buildPrograms(await platform.readUninstallEntries());
       programsState = LoadState.loaded;
-      _startProgramSizes();
+      unawaited(_startProgramSizes());
     } catch (_) {
       programsState = LoadState.error;
     }
@@ -1274,6 +1394,7 @@ class AppController extends ChangeNotifier {
   bool get canToggleAdmin =>
       !adminBusy &&
       !cleanBusy &&
+      !tileBusy &&
       !uninstallBusy &&
       !leftoverBusy &&
       phase != Phase.analyzing &&
@@ -1322,7 +1443,7 @@ class AppController extends ChangeNotifier {
   /// файлов и кэша запущенных браузеров; тот же Cleaner. Итог — уведомление.
   /// Возвращает текст итога (null — уже что-то делается).
   Future<String?> quickClean() async {
-    if (_quickBusy || cleanBusy || phase == Phase.analyzing || phase == Phase.cleaning) {
+    if (_quickBusy || tileBusy || cleanBusy || phase == Phase.analyzing || phase == Phase.cleaning) {
       return null;
     }
     _quickBusy = true;
@@ -1450,31 +1571,89 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Этап обновления и скачанные байты (для диалога).
+  UpdateStage updateStage = UpdateStage.downloading;
+  int updateReceived = 0;
+  int updateTotal = 0;
+  Completer<void>? _updateCancel;
+
+  /// «Отмена» в диалоге обновления: скачивание прерывается, частичный файл удаляется.
+  void cancelUpdate() {
+    final c = _updateCancel;
+    if (c != null && !c.isCompleted) c.complete();
+  }
+
   /// Качает установщик, сверяет SHA-256, запускает тихую установку и выходит.
-  /// Возвращает текст ошибки или null (установщик запущен, программа закрывается).
+  /// Возвращает текст ошибки, '' (отмена) или null (установщик запущен, программа закрывается).
   Future<String?> installUpdate() async {
     final info = availableUpdate;
     final dir = updateDir;
     if (info == null || dir == null) return 'Не удалось скачать обновление.';
     if (updateInstalling) return null;
+    if (anyBusy ||
+        downloadsState == LoadState.loading ||
+        bigState == LoadState.loading ||
+        dupState == LoadState.loading ||
+        emptyState == LoadState.loading) {
+      return 'Дождитесь окончания операции.';
+    }
+    final version = parseVersion(info.version)?.join('.');
+    if (version == null) return 'Не удалось скачать обновление.';
     updateInstalling = true;
     updateProgress = 0;
+    updateStage = UpdateStage.downloading;
+    updateReceived = 0;
+    updateTotal = 0;
+    final cancel = _updateCancel = Completer<void>();
     notifyListeners();
-    final file = File('$dir${Platform.pathSeparator}ChistoDisk-setup-${info.version}.exe');
+    final file = File('$dir${Platform.pathSeparator}ChistoDisk-setup-$version.exe');
+    void dropFile() {
+      try {
+        if (file.existsSync()) file.deleteSync();
+      } catch (_) {}
+    }
+
     try {
-      final expected = parseSha256(await updateNetwork.fetchText(info.checksumUrl));
+      final text = await updateNetwork.fetchText(info.checksumUrl);
+      if (text.length > maxChecksumBytes) throw const FormatException('sha256');
+      final expected = parseSha256(text);
       if (expected == null) throw const FormatException('sha256');
-      await updateNetwork.download(info.installerUrl, file, (got, total) {
+      final digest = info.installerDigest;
+      if (digest != null && digest != expected) {
+        return 'Файл повреждён, попробуйте позже.';
+      }
+      final dl = updateNetwork.download(info.installerUrl, file, (got, total) {
+        if (cancel.isCompleted) throw const _UpdateCancelled();
+        updateReceived = got;
+        updateTotal = total;
         updateProgress = total > 0 ? (got / total).clamp(0.0, 1.0) : null;
         notifyListeners();
       });
-      final actual = (await sha256.bind(file.openRead()).first).toString();
-      if (actual != expected) {
+      final first = await Future.any<bool>([dl.then((_) => true), cancel.future.then((_) => false)]);
+      if (!first) {
+        // Дадим загрузке закрыть файл (она остановится на следующем куске), затем удалим.
         try {
-          file.deleteSync();
+          await dl.timeout(const Duration(seconds: 3));
         } catch (_) {}
+        dropFile();
+        return '';
+      }
+      updateStage = UpdateStage.verifying;
+      updateProgress = null;
+      notifyListeners();
+      final size = file.lengthSync();
+      if (size <= 0 || size > maxInstallerBytes) {
+        dropFile();
         return 'Файл повреждён, попробуйте позже.';
       }
+      final head = await file.openRead(0, 2).expand((b) => b).toList();
+      final actual = (await sha256.bind(file.openRead()).first).toString();
+      if (!looksLikeExe(head) || actual != expected || (digest != null && actual != digest)) {
+        dropFile();
+        return 'Файл повреждён, попробуйте позже.';
+      }
+      updateStage = UpdateStage.launching;
+      notifyListeners();
       const args = ['/SP-', '/SILENT', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'];
       final launch = launchInstaller ??
           ((exe, a) => Process.start(exe, a, mode: ProcessStartMode.detached).then((_) {}));
@@ -1483,16 +1662,20 @@ class AppController extends ChangeNotifier {
       await exitFn();
       return null;
     } catch (_) {
-      try {
-        if (file.existsSync()) file.deleteSync();
-      } catch (_) {}
+      dropFile();
+      if (cancel.isCompleted) return '';
       return 'Не удалось скачать обновление. Проверьте интернет и попробуйте позже.';
     } finally {
       updateInstalling = false;
       updateProgress = null;
+      _updateCancel = null;
       notifyListeners();
     }
   }
+}
+
+class _UpdateCancelled implements Exception {
+  const _UpdateCancelled();
 }
 
 enum UpdateCheck { upToDate, available, error }

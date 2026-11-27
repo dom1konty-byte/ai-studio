@@ -188,6 +188,76 @@ void main() {
     expect(c.programApprox.length, 6);
     expect(c.programApprox.values.every((v) => v == 2048), isTrue);
   });
+
+  group('план размеров: общие папки', () {
+    Program game(String n, {String install = '', String? sizeless}) => Program(
+          name: n,
+          publisher: '',
+          sizeKb: 0,
+          installDate: null,
+          displayIcon: '',
+          installLocation: install,
+          uninstallString: r'"C:\Program Files (x86)\Steam\steam.exe" steam://uninstall/',
+          quietUninstallString: '',
+          hive: 'HKLM',
+          keyPath: r'HKLM\U\' + n,
+        );
+
+    Map<String, String> plan(List<Program> l, {String? steam}) => planProgramSizeFolders(l,
+        env: _env, steamPath: steam, dirExists: (_) => true, fileExists: (_) => true);
+
+    test('игры Steam не получают размер всего Steam', () {
+      final a = game('A', install: r'C:\Program Files (x86)\Steam\steamapps\common\A');
+      final b = game('B');
+      final steam = prog(name: 'Steam', install: r'C:\Program Files (x86)\Steam');
+      final p = plan([a, b, steam], steam: r'C:\Program Files (x86)\Steam');
+      expect(p[a.keyPath], r'C:\Program Files (x86)\Steam\steamapps\common\A');
+      expect(p.containsKey(b.keyPath), isFalse); // запасная папка общая — «—»
+      expect(p.containsKey(steam.keyPath), isFalse); // Steam целиком и предок игры
+    });
+
+    test('запасная папка одной программы берётся, общей двух — нет', () {
+      final one = prog(name: 'Solo App', uninstall: r'"C:\Program Files\Solo\unins.exe"');
+      expect(plan([one])[one.keyPath], r'C:\Program Files\Solo');
+      final x = prog(name: 'Xapp', uninstall: r'"C:\Program Files\Shared\u.exe"');
+      final y = prog(name: 'Yapp', icon: r'C:\Program Files\Shared\y.exe,0');
+      expect(plan([x, y]), isEmpty);
+    });
+
+    test('Package Cache и предок чужого InstallLocation исключены', () {
+      final cache = prog(name: 'Redist', install: r'C:\ProgramData\Package Cache\{abc}');
+      expect(plan([cache]), isEmpty);
+      final parent = prog(name: 'Suite', install: r'C:\Program Files\Vendor');
+      final child = prog(name: 'Child', install: r'C:\Program Files\Vendor\Child');
+      final p = plan([parent, child]);
+      expect(p.containsKey(parent.keyPath), isFalse);
+      expect(p[child.keyPath], r'C:\Program Files\Vendor\Child');
+    });
+
+    test('контроллер: одна папка считается один раз (кэш)', () async {
+      var calls = 0;
+      final a = prog(name: 'AppA', install: r'C:\Program Files\Same');
+      final b = prog(name: 'AppB', install: r'C:\Program Files\Same');
+      final platform = FakePlatform()..uninstallEntries = [];
+      final c = AppController(
+        platform: platform,
+        env: const Env(_env),
+        dataDir: '/tmp/x',
+        downloadsScan: (_) async => [],
+        largeScan: (_, __) async => [],
+        dirExists: (_) => true,
+        sizeOf: (path, isDir) async {
+          calls++;
+          return 1000;
+        },
+      );
+      c.programs = [a, b];
+      await c.debugStartProgramSizes();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(calls, 1);
+      expect(c.programApprox.length, 2);
+    });
+  });
 }
 
 String _fmt(int b) => programsSummary([prog(kb: b ~/ 1024)]).split(' · ').last;

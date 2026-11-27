@@ -35,6 +35,29 @@ int compareKeeper(FileInfo a, FileInfo b) {
   return a.path.compareTo(b.path);
 }
 
+/// Текст прогресса поиска: «Ищу… N %».
+String dupProgressText(int done, int total) {
+  final pct = total <= 0 ? 0 : (done * 100 ~/ total).clamp(0, 100);
+  return 'Ищу… $pct %';
+}
+
+/// Пропускает обновления не чаще раза в [every]; первое проходит сразу.
+class ProgressThrottle {
+  ProgressThrottle({this.every = const Duration(milliseconds: 200), DateTime Function()? clock})
+      : _clock = clock ?? DateTime.now;
+  final Duration every;
+  final DateTime Function() _clock;
+  DateTime? _last;
+
+  bool allow() {
+    final now = _clock();
+    final l = _last;
+    if (l != null && now.difference(l) < every) return false;
+    _last = now;
+    return true;
+  }
+}
+
 Digest? _hashParts(File f, int size, {required bool partial}) {
   RandomAccessFile? raf;
   try {
@@ -92,7 +115,7 @@ List<DupGroup> groupDuplicatesSync(
   for (final f in files) {
     (bySize[f.size] ??= []).add(f);
   }
-  onStage?.call('Сравниваю по размеру…');
+  onStage?.call('Ищу… 0 %');
   final cand = bySize.values.where((l) => l.length > 1).toList();
 
   var n = 0;
@@ -103,7 +126,7 @@ List<DupGroup> groupDuplicatesSync(
     final byPartial = <String, List<FileInfo>>{};
     for (final f in sameSize) {
       n++;
-      if (n % 20 == 0) onStage?.call('Проверяю начало и конец… $n из $total');
+      if (n % 20 == 0) onStage?.call(dupProgressText(n, total));
       final h = _hashParts(File(f.path), f.size, partial: true);
       if (h != null) (byPartial[h.toString()] ??= []).add(f);
     }
@@ -112,7 +135,7 @@ List<DupGroup> groupDuplicatesSync(
       if (stop()) return const [];
       final byFull = <String, List<FileInfo>>{};
       for (final f in part) {
-        onStage?.call('Полная проверка: ${f.name}');
+        onStage?.call(dupProgressText(n, total));
         final h = _hashParts(File(f.path), f.size, partial: false);
         if (h != null) (byFull[h.toString()] ??= []).add(f);
       }
@@ -131,6 +154,7 @@ List<DupGroup> scanDuplicatesSync(
   List<String> roots, {
   int minSize = minDuplicateSize,
   HiddenCheck hidden = isHiddenOrSystem,
+  HiddenCheck cloudOnly = isCloudOnly,
   void Function(String stage)? onStage,
   bool Function()? cancelled,
 }) {
@@ -139,11 +163,12 @@ List<DupGroup> scanDuplicatesSync(
   var counter = 0;
   for (final r in roots) {
     final label = r.split(RegExp(r'[\\/]')).last;
-    onStage?.call('Сравниваю: $label…');
+    onStage?.call('Ищу файлы: $label…');
     walkTreeSync(Directory(r), (f) {
-      if (++counter % 500 == 0) onStage?.call('Сравниваю: $label… найдено файлов: ${files.length}');
+      if (++counter % 500 == 0) onStage?.call('Ищу файлы: ${files.length}…');
       try {
         if (hidden(f.path)) return;
+        if (cloudOnly(f.path)) return; // облачный файл OneDrive: чтение скачало бы его
         final st = f.statSync();
         if (st.size < minSize) return;
         if (seen.add(f.path.toLowerCase())) files.add(FileInfo(f.path, st.size, st.modified));
@@ -171,7 +196,10 @@ class _Args {
 
 void _worker(_Args a) {
   try {
-    final res = scanDuplicatesSync(a.roots, onStage: (s) => a.port.send(s));
+    final th = ProgressThrottle();
+    final res = scanDuplicatesSync(a.roots, onStage: (s) {
+      if (th.allow()) a.port.send(s);
+    });
     a.port.send(res);
   } catch (_) {
     a.port.send(0); // ошибка
@@ -246,12 +274,18 @@ class DupDeletePlan {
   final int skipped;
 }
 
+/// Дата изменения не сдвинулась (допуск 2 с: точность файловых систем разная).
+bool sameModified(DateTime actual, DateTime expected) =>
+    actual.difference(expected).abs() <= const Duration(seconds: 2);
+
 bool _sameFile(FileInfo f) {
   try {
     if (FileSystemEntity.typeSync(f.path, followLinks: false) != FileSystemEntityType.file) {
       return false;
     }
-    return File(f.path).lengthSync() == f.size;
+    final file = File(f.path);
+    if (file.lengthSync() != f.size) return false;
+    return sameModified(file.lastModifiedSync(), f.modified);
   } catch (_) {
     return false;
   }

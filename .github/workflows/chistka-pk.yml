@@ -82,6 +82,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v7
         with:
           name: ChistoDisk-setup
@@ -91,9 +93,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=$(grep -E '^version:' projects/chistka-pk/pubspec.yaml | sed -E 's/version:[[:space:]]*([0-9.]+).*/\1/')
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Версия в pubspec должна быть x.y.z, сейчас: $VERSION"; exit 1; }
           TAG="chistka-pk-v$VERSION"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Релиз $TAG уже есть — ничего не делаю"
+            echo "::warning::Релиз уже есть — поднимите версию в pubspec"
             exit 0
           fi
           cd dist

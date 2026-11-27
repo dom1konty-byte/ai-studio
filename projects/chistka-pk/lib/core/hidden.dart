@@ -49,3 +49,17 @@ bool isHiddenOrSystem(String path) {
   final a = fileAttributes(path);
   return a != null && (a & (_attrHidden | _attrSystem)) != 0;
 }
+
+const _attrOffline = 0x1000;
+const _attrRecallOnOpen = 0x40000;
+const _attrRecallOnDataAccess = 0x400000;
+
+/// Файл только в облаке (OneDrive и др.): чтение содержимого скачало бы его.
+bool isCloudAttributes(int attrs) =>
+    (attrs & (_attrOffline | _attrRecallOnOpen | _attrRecallOnDataAccess)) != 0;
+
+/// По пути: true, если у файла облачные атрибуты (не Windows или ошибка — false).
+bool isCloudOnly(String path) {
+  final a = fileAttributes(path);
+  return a != null && isCloudAttributes(a);
+}

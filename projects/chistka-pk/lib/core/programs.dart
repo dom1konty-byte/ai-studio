@@ -402,6 +402,33 @@ bool isSizeableProgramFolder(String dir, String name, Map<String, String> env) {
   return parts.last.replaceAll(_nonWord, '').contains(nm);
 }
 
+/// Кандидаты папок для подсчёта размера: (папка, запасной ли вариант).
+/// InstallLocation → папка программы удаления → папка DisplayIcon.
+List<({String dir, bool fallback})> _sizeCandidates(Program p,
+    {Map<String, String> env = const {}, bool Function(String file)? fileExists}) {
+  String? parent(String file) {
+    final i = file.lastIndexOf(r'\');
+    return i <= 0 ? null : file.substring(0, i);
+  }
+
+  final raw = <String?>[
+    _expandEnv(p.installLocation.trim().replaceAll('"', ''), env),
+    parseUninstallString(p.uninstallString, env: env, fileExists: fileExists)?.exe,
+    parseDisplayIcon(p.displayIcon, env: env)?.path,
+  ];
+  final out = <({String dir, bool fallback})>[];
+  for (var i = 0; i < raw.length; i++) {
+    var c = raw[i];
+    if (c == null || c.isEmpty) continue;
+    if (i > 0) c = parent(c);
+    if (c == null) continue;
+    final n = normalizeWinPath(c);
+    if (n == null) continue;
+    out.add((dir: n, fallback: i > 0));
+  }
+  return out;
+}
+
 /// Папка для подсчёта размера программы без EstimatedSize: InstallLocation →
 /// папка программы удаления → папка DisplayIcon; первая существующая и допустимая
 /// ([isSizeableProgramFolder]). Нет подходящей — null (в списке «—»).
@@ -410,25 +437,78 @@ String? sizeFolderOf(Program p,
     bool Function(String dir)? dirExists,
     bool Function(String file)? fileExists}) {
   final exists = dirExists ?? _defaultDirExists;
-  String? parent(String file) {
-    final i = file.lastIndexOf(r'\');
-    return i <= 0 ? null : file.substring(0, i);
-  }
-
-  final candidates = <String?>[
-    _expandEnv(p.installLocation.trim().replaceAll('"', ''), env),
-    parseUninstallString(p.uninstallString, env: env, fileExists: fileExists)?.exe,
-    parseDisplayIcon(p.displayIcon, env: env)?.path,
-  ];
-  for (var i = 0; i < candidates.length; i++) {
-    var c = candidates[i];
-    if (c == null || c.isEmpty) continue;
-    if (i > 0) c = parent(c);
-    if (c == null) continue;
-    final n = normalizeWinPath(c);
-    if (n == null) continue;
-    if (!isSizeableProgramFolder(n, p.name, env)) continue;
-    if (exists(n)) return n;
+  for (final c in _sizeCandidates(p, env: env, fileExists: fileExists)) {
+    if (!isSizeableProgramFolder(c.dir, p.name, env)) continue;
+    if (exists(c.dir)) return c.dir;
   }
   return null;
+}
+
+String _key(String path) => path_pkg.windows.normalize(path).toLowerCase();
+
+/// Папка, которую нельзя считать размером программы: кэш установщиков
+/// (ProgramData\Package Cache) и папка Steam целиком.
+bool isForbiddenSizeFolder(String dir, Map<String, String> env, String? steamPath) {
+  final w = path_pkg.windows;
+  final n = normalizeWinPath(dir);
+  if (n == null) return true;
+  final lower = {for (final e in env.entries) e.key.toLowerCase(): e.value};
+  final pd = normalizeWinPath(lower['programdata'] ?? r'C:\ProgramData');
+  if (pd != null) {
+    final cache = w.join(pd, 'Package Cache');
+    if (w.equals(cache, n) || w.isWithin(cache, n)) return true;
+  }
+  final parts = w.split(n).map((e) => e.toLowerCase()).toList();
+  for (var i = 0; i + 1 < parts.length; i++) {
+    if (parts[i] == 'programdata' && parts[i + 1] == 'package cache') return true;
+  }
+  final steam = steamPath == null ? null : normalizeWinPath(steamPath);
+  if (steam != null && w.equals(steam, n)) return true;
+  return false;
+}
+
+/// План подсчёта размеров: keyPath программы → папка. Правила:
+/// запасные варианты (папка программы удаления, DisplayIcon) берутся, только если
+/// эту папку не использует больше одной программы списка; никогда — Package Cache,
+/// папка Steam целиком и папка, внутри которой лежит InstallLocation другой программы.
+Map<String, String> planProgramSizeFolders(
+  List<Program> all, {
+  Map<String, String> env = const {},
+  String? steamPath,
+  bool Function(String dir)? dirExists,
+  bool Function(String file)? fileExists,
+}) {
+  final exists = dirExists ?? _defaultDirExists;
+  final w = path_pkg.windows;
+  final cands = {
+    for (final p in all) p.keyPath: _sizeCandidates(p, env: env, fileExists: fileExists)
+  };
+  // сколько программ используют папку (любым способом)
+  final users = <String, Set<String>>{};
+  for (final e in cands.entries) {
+    for (final c in e.value) {
+      (users[_key(c.dir)] ??= {}).add(e.key);
+    }
+  }
+  final installs = <(String, String)>[]; // (keyPath, installLocation normalized)
+  for (final p in all) {
+    final n = normalizeWinPath(_expandEnv(p.installLocation.trim().replaceAll('"', ''), env));
+    if (n != null) installs.add((p.keyPath, n));
+  }
+  final out = <String, String>{};
+  for (final p in all) {
+    if (p.sizeKb > 0) continue;
+    for (final c in cands[p.keyPath]!) {
+      if (!isSizeableProgramFolder(c.dir, p.name, env)) continue;
+      if (isForbiddenSizeFolder(c.dir, env, steamPath)) continue;
+      if (c.fallback && (users[_key(c.dir)]?.length ?? 0) > 1) continue;
+      final holdsOther =
+          installs.any((i) => i.$1 != p.keyPath && w.isWithin(c.dir, i.$2));
+      if (holdsOther) continue;
+      if (!exists(c.dir)) continue;
+      out[p.keyPath] = c.dir;
+      break;
+    }
+  }
+  return out;
 }

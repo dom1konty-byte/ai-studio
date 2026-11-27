@@ -26,9 +26,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('Очистка'), findsWidgets); // панель + заголовок экрана
-    expect(find.textContaining('Можно освободить'), findsNothing);
-    expect(find.text('Сначала посчитаю, что можно убрать'), findsOneWidget);
-    expect(c.phase, Phase.idle);
+    // Анализ стартует сам (в фоне), но ничего не удаляет.
+    expect(c.phase, isNot(Phase.cleaning));
+    expect(c.phase, isNot(Phase.done));
     expect(c.downloadsSelected, isEmpty);
     expect(c.downloadsState, LoadState.idle);
     expect(find.text('Найти'), findsNWidgets(4)); // Загрузки, Большие файлы, Дубликаты, Пустые папки

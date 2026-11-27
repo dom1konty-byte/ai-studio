@@ -46,15 +46,38 @@ class UpdateInfo {
     required this.version,
     required this.installerUrl,
     required this.checksumUrl,
+    this.installerDigest,
   });
+
+  /// Нормализованная версия x.y.z (по ней собирается имя файла).
   final String version;
   final Uri installerUrl;
   final Uri checksumUrl;
+
+  /// sha256 из поля `digest` ассета GitHub (если есть), нижний регистр.
+  final String? installerDigest;
+}
+
+/// Репозиторий релизов: только отсюда берём установщик.
+const releaseDownloadPrefix = 'https://github.com/dom1konty-byte/ai-studio/releases/download/';
+
+/// Установщик больше этого размера не качаем (300 МБ).
+const maxInstallerBytes = 300 * 1024 * 1024;
+
+/// Файл .sha256 больше этого размера не читаем (1 КБ).
+const maxChecksumBytes = 1024;
+
+/// Часть тега после префикса → нормализованная версия x.y.z.
+/// Мусор после версии (`-beta`, `+4`, пробелы, буквы) — null: такой релиз отбрасывается.
+String? normalizeReleaseVersion(String tagSuffix) {
+  if (!RegExp(r'^\d{1,6}(\.\d{1,6}){0,2}$').hasMatch(tagSuffix)) return null;
+  final v = parseVersion(tagSuffix);
+  return v?.join('.');
 }
 
 /// Выбор самого свежего подходящего релиза из JSON GitHub API:
 /// тег `chistka-pk-v…`, не draft, не prerelease, есть установщик и .sha256
-/// с безопасными адресами. Иначе null.
+/// с адресами именно этого релиза. Иначе null.
 UpdateInfo? pickLatestRelease(Object? json) {
   if (json is! List) return null;
   UpdateInfo? best;
@@ -63,36 +86,90 @@ UpdateInfo? pickLatestRelease(Object? json) {
     if (r['draft'] == true || r['prerelease'] == true) continue;
     final tag = r['tag_name'];
     if (tag is! String || !tag.startsWith(releaseTagPrefix)) continue;
-    final version = tag.substring(releaseTagPrefix.length);
-    if (parseVersion(version) == null) continue;
+    final tagVersion = tag.substring(releaseTagPrefix.length);
+    final version = normalizeReleaseVersion(tagVersion);
+    if (version == null) continue;
     final assets = r['assets'];
     if (assets is! List) continue;
-    final exe = _assetUrl(assets, installerAssetName);
-    final sum = _assetUrl(assets, checksumAssetName);
+    final exe = _asset(assets, installerAssetName, tagVersion);
+    final sum = _asset(assets, checksumAssetName, tagVersion);
     if (exe == null || sum == null) continue;
+    // digest у установщика: есть, но непонятный — релиз не берём.
+    String? digest;
+    final raw = exe.digest;
+    if (raw != null) {
+      digest = parseDigest(raw);
+      if (digest == null) continue;
+    }
     if (best == null || compareVersions(version, best.version) > 0) {
-      best = UpdateInfo(version: version, installerUrl: exe, checksumUrl: sum);
+      best = UpdateInfo(
+          version: version, installerUrl: exe.url, checksumUrl: sum.url, installerDigest: digest);
     }
   }
   return best;
 }
 
-Uri? _assetUrl(List assets, String name) {
+/// «sha256:<64 hex>» → hex в нижнем регистре; иное — null.
+String? parseDigest(Object? raw) {
+  if (raw is! String) return null;
+  final m = RegExp(r'^sha256:([0-9a-fA-F]{64})$').firstMatch(raw.trim());
+  return m?.group(1)!.toLowerCase();
+}
+
+({Uri url, Object? digest})? _assetFrom(Map a, String tagVersion) {
+  final s = a['browser_download_url'];
+  if (s is! String) return null;
+  if (!s.startsWith('$releaseDownloadPrefix$releaseTagPrefix$tagVersion/')) return null;
+  final u = Uri.tryParse(s);
+  if (u == null || !isSafeDownloadUrl(u) || u.host.toLowerCase() != 'github.com') return null;
+  if (u.hasPort || u.userInfo.isNotEmpty || u.hasQuery || u.hasFragment) return null;
+  return (url: u, digest: a['digest']);
+}
+
+({Uri url, String? digest})? _asset(List assets, String name, String tagVersion) {
   for (final a in assets) {
-    if (a is Map && a['name'] == name && a['browser_download_url'] is String) {
-      final u = Uri.tryParse(a['browser_download_url'] as String);
-      if (u != null && isSafeDownloadUrl(u)) return u;
+    if (a is Map && a['name'] == name) {
+      final r = _assetFrom(a, tagVersion);
+      if (r == null) return null;
+      final d = r.digest;
+      // digest не строка и не null — считаем непонятным (parseDigest вернёт null).
+      return (url: r.url, digest: d == null ? null : (d is String ? d : ''));
     }
   }
   return null;
 }
 
-/// Скачивать можно только по https с github.com или *.githubusercontent.com.
+/// Скачивать можно только по https с github.com и серверов файлов GitHub.
+const _safeHosts = {
+  'github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+};
+
 bool isSafeDownloadUrl(Uri u) {
   if (u.scheme != 'https') return false;
-  final h = u.host.toLowerCase();
-  return h == 'github.com' || h.endsWith('.githubusercontent.com');
+  return _safeHosts.contains(u.host.toLowerCase());
 }
+
+/// Установщик Windows начинается с «MZ».
+bool looksLikeExe(List<int> head) => head.length >= 2 && head[0] == 0x4D && head[1] == 0x5A;
+
+/// Текст этапа обновления для диалога.
+String updateStageText(UpdateStage stage, int received, int total) {
+  switch (stage) {
+    case UpdateStage.downloading:
+      if (total <= 0) return 'Скачиваю…';
+      return 'Скачиваю ${_mb(received)} из ${_mb(total)} МБ';
+    case UpdateStage.verifying:
+      return 'Проверяю файл…';
+    case UpdateStage.launching:
+      return 'Запускаю установщик…';
+  }
+}
+
+String _mb(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1).replaceAll('.', ',');
+
+enum UpdateStage { downloading, verifying, launching }
 
 /// Первый sha256 (64 hex) из файла «<хеш>  имя»; нет — null. Приводится к нижнему регистру.
 String? parseSha256(String text) {

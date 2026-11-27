@@ -108,7 +108,7 @@ void main() {
     await tester.pump();
     expect(find.text('ЦП 40 % · Память 61 %'), findsOneWidget);
     expect(find.text('Износ 14 %'), findsOneWidget);
-    expect(fp.utf8Calls, hasLength(1));
+    expect(fp.utf8Calls.where((x) => x.contains('powershell')), hasLength(1));
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     final n = fp.sampleCalls;
     await tester.pump(const Duration(seconds: 6));
@@ -149,6 +149,20 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('здоровье без данных при включённом админе: «Нет данных», без кнопки', (tester) async {
+    fp.utf8Output = '{"FriendlyName":"X","MediaType":"SSD","HealthStatus":"Healthy"}';
+    final c = make();
+    await c.init();
+    c.adminMode = true;
+    await open(tester, c);
+    await tester.tap(find.text('Открыть').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Нет данных'), findsOneWidget);
+    expect(find.text('Нужен режим администратора'), findsNothing);
+    expect(find.byKey(const Key('admin-enable')), findsNothing);
+    await close(tester);
+  });
+
   testWidgets('здоровье: сбой запроса — «Не удалось», повтор', (tester) async {
     fp.utf8Output = null;
     final c = make();
@@ -173,7 +187,8 @@ void main() {
     expect(find.text('Сейчас 43\u00A0000 мВт·ч'), findsOneWidget);
     expect(find.text('Циклов зарядки: 187'), findsOneWidget);
     expect(File('${tmp.path}/local/ChistoDisk/tmp/battery.xml').existsSync(), isFalse);
-    expect(fp.tools.single, contains('powercfg.exe /batteryreport /xml /output'));
+    expect(fp.utf8Calls.any((x) => x.contains('powercfg.exe /batteryreport /xml /output')), isTrue);
+    expect(fp.utf8Timeout, const Duration(seconds: 30));
     await close(tester);
   });
 

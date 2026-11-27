@@ -47,8 +47,15 @@ void main() {
     });
     test('всё хорошо', () {
       final t = speedTips(r());
-      expect(t.single.title, 'Всё в порядке');
+      expect(t.single.title, 'Связь в норме');
       expect(t.single.kind, TipKind.ok);
+    });
+    test('пинг 80 мс — граница; 100 мс больше не «нормально»', () {
+      expect(speedTips(r(ping: 80)).single.kind, TipKind.ok);
+      expect(speedTips(r(ping: 81)).single.title, 'Высокая задержка');
+      // скорость скромная, но без предупреждений — всё равно один зелёный совет
+      final slow = speedTips(r(ping: 60, down: 20, up: 10));
+      expect(slow.single.kind, TipKind.ok);
     });
     test('пинг, джиттер, скорость, отдача', () {
       expect(speedTips(r(ping: 150)).single.title, 'Высокая задержка');
@@ -62,8 +69,10 @@ void main() {
       expect(t.first.title, 'Высокая задержка');
       expect(t.last.title, 'Связь нестабильна');
     });
-    test('средний результат без советов-похвал', () {
-      expect(speedTips(r(ping: 60, down: 30)), isEmpty);
+    test('средний результат без предупреждений — один зелёный совет «Связь в норме»', () {
+      final t = speedTips(r(ping: 60, down: 30));
+      expect(t.single.title, 'Связь в норме');
+      expect(t.single.kind, TipKind.ok);
     });
   });
 

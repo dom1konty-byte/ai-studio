@@ -45,7 +45,8 @@ class AdminHint extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 8,
       children: [
-        Text('Нужен режим администратора',
+        Text(controller.adminMode ? 'Нет данных' : 'Нужен режим администратора',
+            key: const Key('admin-hint-text'),
             style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant)),
         if (!controller.adminMode)
           TextButton(
@@ -231,7 +232,10 @@ class ProcsDetails extends StatelessWidget {
             ]),
             const SizedBox(height: 12),
             if (s.sampleFailed && rows.isEmpty) const Text('Не удалось получить список процессов.'),
-            SingleChildScrollView(
+            MouseRegion(
+              onEnter: (_) => s.setHoverFreeze(true),
+              onExit: (_) => s.setHoverFreeze(false),
+              child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columnSpacing: 24,
@@ -271,7 +275,7 @@ class ProcsDetails extends StatelessWidget {
                     ]),
                 ],
               ),
-            ),
+            )),
           ],
         );
       },
@@ -345,7 +349,7 @@ class BatteryDetails extends StatelessWidget {
                       Text('Новая ёмкость ${groupDigits(b.design)} мВт·ч',
                           style: const TextStyle(fontSize: 16)),
                       const SizedBox(height: 6),
-                      Text('Сейчас ${groupDigits(b.full)} мВт·ч',
+                      Text(b.noData ? 'Сейчас: нет данных' : 'Сейчас ${groupDigits(b.full)} мВт·ч',
                           style: const TextStyle(fontSize: 16)),
                       const SizedBox(height: 6),
                       Text(
@@ -372,16 +376,16 @@ class _WearRing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final high = info.wearPercent >= 40;
+    final high = !info.noData && info.wearPercent >= 40;
     final color = high ? const Color(0xFF8F5500) : const Color(0xFF0F9D9A);
     return SizedBox(
       key: const Key('wear-ring'),
       width: 140,
       height: 140,
       child: CustomPaint(
-        painter: _RingPainter(info.wear, color, _border),
+        painter: _RingPainter(info.noData ? 0 : info.wear, color, _border),
         child: Center(
-          child: Text('Износ\n${info.wearPercent} %',
+          child: Text(info.noData ? 'Износ:\nнет данных' : 'Износ\n${info.wearPercent} %',
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
         ),

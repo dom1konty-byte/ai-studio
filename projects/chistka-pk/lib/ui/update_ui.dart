@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../core/update.dart';
 import '../state/app_controller.dart';
 
 /// Баннер вверху контента: «Доступна версия X · Обновить» / «Позже».
@@ -60,7 +61,7 @@ Future<void> checkUpdatesManually(BuildContext context, AppController c) async {
   messenger?.showSnackBar(SnackBar(content: Text(text)));
 }
 
-/// Диалог скачивания и установки с прогрессом.
+/// Диалог скачивания и установки: этапы, «Отмена», при ошибке — «Повторить».
 Future<void> showUpdateDialog(BuildContext context, AppController c) async {
   final done = c.installUpdate();
   final err = await showDialog<String?>(
@@ -78,25 +79,40 @@ Future<void> showUpdateDialog(BuildContext context, AppController c) async {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(c.updateProgress == null
-                  ? 'Скачиваю…'
-                  : 'Скачиваю… ${(c.updateProgress! * 100).round()} %'),
+              Text(updateStageText(c.updateStage, c.updateReceived, c.updateTotal),
+                  key: const Key('update-stage')),
               const SizedBox(height: 12),
               LinearProgressIndicator(key: const Key('update-progress'), value: c.updateProgress),
             ],
           ),
+          actions: [
+            if (c.updateStage == UpdateStage.downloading)
+              TextButton(
+                key: const Key('update-cancel'),
+                onPressed: c.cancelUpdate,
+                child: const Text('Отмена'),
+              ),
+          ],
         ),
       );
     },
   );
   if (err != null && err.isNotEmpty && context.mounted) {
-    await showDialog<void>(
+    final retry = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Не получилось обновить'),
         content: Text(err),
-        actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Закрыть'))],
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Закрыть')),
+          FilledButton(
+              key: const Key('update-retry'),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Повторить')),
+        ],
       ),
     );
+    if (retry == true && context.mounted) await showUpdateDialog(context, c);
   }
 }

@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 
@@ -55,20 +57,31 @@ const _th32csSnapProcess = 0x2;
 const _processQueryLimited = 0x1000;
 const _processTerminate = 0x1;
 const _errorAccessDenied = 5;
-final _stopwatch = Stopwatch()..start();
+
+/// Адреса функций kernel32: ищутся один раз на Isolate (при первом обращении).
+class _Api {
+  final k = DynamicLibrary.open('kernel32.dll');
+  late final snapshot = k.lookupFunction<_SnapN, _SnapD>('CreateToolhelp32Snapshot');
+  late final first = k.lookupFunction<_FirstN, _FirstD>('Process32FirstW');
+  late final next = k.lookupFunction<_FirstN, _FirstD>('Process32NextW');
+  late final open = k.lookupFunction<_OpenN, _OpenD>('OpenProcess');
+  late final close = k.lookupFunction<_CloseN, _CloseD>('CloseHandle');
+  late final times = k.lookupFunction<_TimesN, _TimesD>('GetProcessTimes');
+  late final memInfo = k.lookupFunction<_MemInfoN, _MemInfoD>('K32GetProcessMemoryInfo');
+  late final sysTimes = k.lookupFunction<_SysTimesN, _SysTimesD>('GetSystemTimes');
+  late final memStatus = k.lookupFunction<_MemStatusN, _MemStatusD>('GlobalMemoryStatusEx');
+  late final term = k.lookupFunction<_TermN, _TermD>('TerminateProcess');
+  late final lastErr = k.lookupFunction<_LastErrN, _LastErrD>('GetLastError');
+}
+
+final _api = _Api();
 
 /// Снимок процессов и системы. Бросает исключение при сбое — вызывающий ловит.
+/// Тяжёлый (сотни процессов): из интерфейса вызывать через [sampleInWorker].
 SysSample takeSystemSample() {
-  final k = DynamicLibrary.open('kernel32.dll');
-  final snapshot = k.lookupFunction<_SnapN, _SnapD>('CreateToolhelp32Snapshot');
-  final first = k.lookupFunction<_FirstN, _FirstD>('Process32FirstW');
-  final next = k.lookupFunction<_FirstN, _FirstD>('Process32NextW');
-  final open = k.lookupFunction<_OpenN, _OpenD>('OpenProcess');
-  final close = k.lookupFunction<_CloseN, _CloseD>('CloseHandle');
-  final times = k.lookupFunction<_TimesN, _TimesD>('GetProcessTimes');
-  final memInfo = k.lookupFunction<_MemInfoN, _MemInfoD>('K32GetProcessMemoryInfo');
-  final sysTimes = k.lookupFunction<_SysTimesN, _SysTimesD>('GetSystemTimes');
-  final memStatus = k.lookupFunction<_MemStatusN, _MemStatusD>('GlobalMemoryStatusEx');
+  final a = _api;
+  final snapshot = a.snapshot, first = a.first, next = a.next, open = a.open, close = a.close;
+  final times = a.times, memInfo = a.memInfo, sysTimes = a.sysTimes, memStatus = a.memStatus;
 
   final t = calloc<Uint64>(4);
   final pmc = calloc<IntPtr>(9); // PROCESS_MEMORY_COUNTERS: 72 байта
@@ -116,7 +129,8 @@ SysSample takeSystemSample() {
     ms.cast<Uint32>().value = 64;
     if (memStatus(ms) == 0) throw StateError('memory');
     return SysSample(
-      wallMs: _stopwatch.elapsedMilliseconds,
+      // часы общие для всех Isolate (в рабочем Isolate свой Stopwatch сбрасывался бы)
+      wallMs: DateTime.now().millisecondsSinceEpoch,
       idle: st[0],
       kernel: st[1],
       user: st[2],
@@ -136,14 +150,62 @@ SysSample takeSystemSample() {
   }
 }
 
+// ---------- постоянный рабочий Isolate: снимки не блокируют интерфейс ----------
+
+void _workerMain(SendPort ready) {
+  final requests = ReceivePort();
+  ready.send(requests.sendPort);
+  requests.listen((m) {
+    final reply = m as SendPort;
+    try {
+      reply.send(takeSystemSample());
+    } catch (e) {
+      reply.send('$e');
+    }
+  });
+}
+
+SendPort? _worker;
+Future<SendPort>? _workerStarting;
+
+Future<SendPort> _ensureWorker() {
+  final w = _worker;
+  if (w != null) return Future.value(w);
+  return _workerStarting ??= () async {
+    final ready = ReceivePort();
+    try {
+      await Isolate.spawn(_workerMain, ready.sendPort);
+      final port = await ready.first as SendPort;
+      _worker = port;
+      return port;
+    } finally {
+      ready.close();
+      _workerStarting = null;
+    }
+  }();
+}
+
+/// Снимок в фоновом Isolate (создаётся один раз, функции kernel32 ищутся один раз).
+Future<SysSample> sampleInWorker() async {
+  final worker = await _ensureWorker();
+  final reply = ReceivePort();
+  try {
+    worker.send(reply.sendPort);
+    final r = await reply.first.timeout(const Duration(seconds: 10));
+    if (r is SysSample) return r;
+    throw StateError('$r');
+  } catch (_) {
+    _worker = null; // при следующем вызове рабочий Isolate создастся заново
+    rethrow;
+  } finally {
+    reply.close();
+  }
+}
+
 /// TerminateProcess по PID.
 KillResult terminateProcessByPid(int pid) {
   try {
-    final k = DynamicLibrary.open('kernel32.dll');
-    final open = k.lookupFunction<_OpenN, _OpenD>('OpenProcess');
-    final close = k.lookupFunction<_CloseN, _CloseD>('CloseHandle');
-    final term = k.lookupFunction<_TermN, _TermD>('TerminateProcess');
-    final lastErr = k.lookupFunction<_LastErrN, _LastErrD>('GetLastError');
+    final open = _api.open, close = _api.close, term = _api.term, lastErr = _api.lastErr;
     final h = open(_processTerminate, 0, pid);
     if (h == 0) return lastErr() == _errorAccessDenied ? KillResult.denied : KillResult.failed;
     try {

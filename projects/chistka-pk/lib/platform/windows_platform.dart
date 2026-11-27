@@ -568,7 +568,7 @@ $n.Dispose()
   @override
   Future<SysSample?> systemSample() async {
     try {
-      return takeSystemSample();
+      return await sampleInWorker();
     } catch (_) {
       return null;
     }

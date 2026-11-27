@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -33,12 +34,13 @@ Map<String, Object?> rel(String tag, {bool draft = false, bool pre = false, bool
     };
 
 class FakeNet implements UpdateNetwork {
-  FakeNet(this.latest, {this.payload = const [1, 2, 3], this.sum});
+  FakeNet(this.latest, {this.payload = const [0x4D, 0x5A, 3], this.sum, this.gate});
   UpdateInfo? latest;
   bool fail = false;
   int calls = 0;
   final List<int> payload;
   String? sum;
+  Completer<void>? gate;
 
   @override
   Future<UpdateInfo?> fetchLatest() async {
@@ -54,11 +56,14 @@ class FakeNet implements UpdateNetwork {
   Future<void> download(Uri url, File dest, void Function(int, int) onProgress) async {
     await dest.parent.create(recursive: true);
     await dest.writeAsBytes(payload);
+    onProgress(1, payload.length);
+    if (gate != null) await gate!.future;
     onProgress(payload.length, payload.length);
   }
 }
 
-UpdateInfo info(String v) => UpdateInfo(
+UpdateInfo info(String v, {String? digest}) => UpdateInfo(
+      installerDigest: digest,
       version: v,
       installerUrl: Uri.parse('https://github.com/x/ChistoDisk-setup.exe'),
       checksumUrl: Uri.parse('https://github.com/x/ChistoDisk-setup.exe.sha256'),
@@ -114,6 +119,57 @@ void main() {
     expect(ok('https://github.com.evil.com/a'), isFalse);
     expect(ok('https://evilgithubusercontent.com/a'), isFalse);
     expect(ok('ftp://github.com/a'), isFalse);
+    expect(ok('https://release-assets.githubusercontent.com/x'), isTrue);
+    expect(ok('https://other.githubusercontent.com/x'), isFalse);
+    expect(ok('https://raw.githubusercontent.com/x'), isFalse);
+  });
+
+  group('безопасность выбора релиза', () {
+    test('версия нормализуется, мусор после версии отбрасывает релиз', () {
+      expect(normalizeReleaseVersion('1.3'), '1.3.0');
+      expect(normalizeReleaseVersion('01.3.0'), '1.3.0');
+      expect(normalizeReleaseVersion('1.3.0-beta'), isNull);
+      expect(normalizeReleaseVersion('1.3.0+4'), isNull);
+      expect(normalizeReleaseVersion('1.3.0/../x'), isNull);
+      expect(normalizeReleaseVersion('1.3.0 '), isNull);
+      expect(pickLatestRelease([rel('chistka-pk-v2.0.0-evil')]), isNull);
+      expect(pickLatestRelease([rel('chistka-pk-v2.0')])?.version, '2.0.0');
+    });
+
+    test('адрес ассета обязан быть из релиза этого тега', () {
+      final r = rel('chistka-pk-v2.0.0');
+      ((r['assets'] as List)[0] as Map)['browser_download_url'] =
+          'https://github.com/dom1konty-byte/ai-studio/releases/download/chistka-pk-v1.0.0/ChistoDisk-setup.exe';
+      expect(pickLatestRelease([r]), isNull);
+      final r2 = rel('chistka-pk-v2.0.0');
+      ((r2['assets'] as List)[1] as Map)['browser_download_url'] =
+          'https://github.com/evil/repo/releases/download/chistka-pk-v2.0.0/ChistoDisk-setup.exe.sha256';
+      expect(pickLatestRelease([r2]), isNull);
+      final r3 = rel('chistka-pk-v2.0.0');
+      ((r3['assets'] as List)[0] as Map)['browser_download_url'] =
+          'https://objects.githubusercontent.com/dom1konty-byte/ai-studio/releases/download/chistka-pk-v2.0.0/ChistoDisk-setup.exe';
+      expect(pickLatestRelease([r3]), isNull);
+    });
+
+    test('digest: берётся sha256, непонятный — релиз отбрасывается', () {
+      final good = rel('chistka-pk-v2.0.0');
+      ((good['assets'] as List)[0] as Map)['digest'] = 'sha256:${'AB' * 32}';
+      expect(pickLatestRelease([good])?.installerDigest, 'ab' * 32);
+      final bad = rel('chistka-pk-v2.0.0');
+      ((bad['assets'] as List)[0] as Map)['digest'] = 'md5:123';
+      expect(pickLatestRelease([bad]), isNull);
+      expect(pickLatestRelease([rel('chistka-pk-v2.0.0')])?.installerDigest, isNull);
+    });
+
+    test('MZ и тексты этапов', () {
+      expect(looksLikeExe([0x4D, 0x5A, 0]), isTrue);
+      expect(looksLikeExe([0x50, 0x4B]), isFalse);
+      expect(looksLikeExe([0x4D]), isFalse);
+      expect(updateStageText(UpdateStage.downloading, 24537907, 63963136), 'Скачиваю 23,4 из 61,0 МБ');
+      expect(updateStageText(UpdateStage.downloading, 5, 0), 'Скачиваю…');
+      expect(updateStageText(UpdateStage.verifying, 0, 0), 'Проверяю файл…');
+      expect(updateStageText(UpdateStage.launching, 0, 0), 'Запускаю установщик…');
+    });
   });
 
   test('разбор sha256', () {
@@ -202,6 +258,76 @@ void main() {
       expect(await c.installUpdate(), 'Файл повреждён, попробуйте позже.');
       expect(log, isEmpty);
       expect(Directory('${tmp.path}/update').listSync(), isEmpty);
+    });
+  });
+
+  group('установка: защита', () {
+    late Directory tmp;
+    setUp(() => tmp = Directory.systemTemp.createTempSync('chisto_upd2'));
+    tearDown(() => tmp.deleteSync(recursive: true));
+    AppController make(FakeNet net, {List<String>? launched}) => AppController(
+          platform: FakePlatform(),
+          env: const Env({}),
+          dataDir: '${tmp.path}/data',
+          downloadsScan: (_) async => [],
+          largeScan: (_, __) async => [],
+          updateNetwork: net,
+          exitApp: () async => launched?.add('exit'),
+          launchInstaller: (exe, args) async => launched?.add(exe),
+        );
+
+    test('не MZ — файл удалён, установщик не запущен', () async {
+      final log = <String>[];
+      final c = make(FakeNet(info('9.0.0'), payload: [1, 2, 3]), launched: log);
+      await c.checkForUpdates();
+      expect(await c.installUpdate(), 'Файл повреждён, попробуйте позже.');
+      expect(log, isEmpty);
+      expect(Directory('${tmp.path}/data/update').listSync(), isEmpty);
+    });
+
+    test('digest не совпал с .sha256 — отказ до скачивания', () async {
+      final log = <String>[];
+      final c = make(FakeNet(info('9.0.0', digest: 'f' * 64)), launched: log);
+      await c.checkForUpdates();
+      expect(await c.installUpdate(), 'Файл повреждён, попробуйте позже.');
+      expect(log, isEmpty);
+    });
+
+    test('digest совпал — установка идёт', () async {
+      final log = <String>[];
+      final payload = [0x4D, 0x5A, 3];
+      final c = make(FakeNet(info('9.0.0', digest: sha256.convert(payload).toString()), payload: payload),
+          launched: log);
+      await c.checkForUpdates();
+      expect(await c.installUpdate(), isNull);
+      expect(log.last, 'exit');
+    });
+
+    test('занято: операция идёт — обновление не стартует', () async {
+      final c = make(FakeNet(info('9.0.0')));
+      await c.checkForUpdates();
+      c.uninstallBusy = true;
+      expect(await c.installUpdate(), 'Дождитесь окончания операции.');
+      c.uninstallBusy = false;
+      c.bigState = LoadState.loading;
+      expect(await c.installUpdate(), 'Дождитесь окончания операции.');
+    });
+
+    test('отмена: скачивание прервано, частичный файл удалён', () async {
+      final log = <String>[];
+      final gate = Completer<void>();
+      final c = make(FakeNet(info('9.0.0'), gate: gate), launched: log);
+      await c.checkForUpdates();
+      final f = c.installUpdate();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(c.updateInstalling, isTrue);
+      expect(c.updateReceived, 1);
+      c.cancelUpdate();
+      expect(await f, '');
+      gate.complete();
+      expect(log, isEmpty);
+      expect(Directory('${tmp.path}/data/update').listSync(), isEmpty);
+      expect(c.updateInstalling, isFalse);
     });
   });
 

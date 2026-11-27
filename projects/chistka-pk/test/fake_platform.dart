@@ -200,6 +200,7 @@ class FakePlatform implements PlatformApi {
   Future<String?> runToolUtf8(String exe, List<String> args, {required Duration timeout}) async {
     utf8Calls.add('$exe ${args.join(' ')}');
     utf8Timeout = timeout;
+    onTool?.call('$exe ${args.join(' ')}');
     return utf8Output;
   }
 

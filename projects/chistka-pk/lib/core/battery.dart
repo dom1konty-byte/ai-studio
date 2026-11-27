@@ -16,6 +16,9 @@ class BatteryInfo {
   /// Износ, доли 0–1: 1 − full/design.
   double get wear => (1 - full / design).clamp(0.0, 1.0);
   int get wearPercent => (wear * 100).round();
+
+  /// Полная ёмкость не прочиталась (0): износ считать нельзя.
+  bool get noData => full <= 0;
 }
 
 int? _num(XmlElement b, String name) {

@@ -397,7 +397,7 @@ List<Tip> speedTips(SpeedResult? result, {int limit = 2}) {
     return const [Tip(TipKind.warning, 'Нет соединения', 'Проверьте кабель, Wi-Fi и роутер.')];
   }
   final tips = <Tip>[];
-  if (result.pingMs > 100) {
+  if (result.pingMs > 80) {
     tips.add(const Tip(TipKind.warning, 'Высокая задержка',
         'Подключите кабель или подойдите к роутеру.'));
   }
@@ -412,8 +412,8 @@ List<Tip> speedTips(SpeedResult? result, {int limit = 2}) {
     tips.add(const Tip(TipKind.warning, 'Отдача заметно ниже загрузки',
         'Это обычно для домашнего тарифа; для видеозвонков может не хватить.'));
   }
-  if (tips.isEmpty && result.pingMs < 40 && result.downMbps >= 50) {
-    tips.add(const Tip(TipKind.ok, 'Всё в порядке', 'Связь быстрая и стабильная.'));
+  if (tips.isEmpty) {
+    tips.add(const Tip(TipKind.ok, 'Связь в норме', 'Задержка, стабильность и скорость в порядке.'));
   }
   return tips.take(limit).toList();
 }

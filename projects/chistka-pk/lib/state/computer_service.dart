@@ -97,7 +97,8 @@ class ComputerService extends ChangeNotifier {
       try {
         await Directory(dir).create(recursive: true);
         if (await file.exists()) await file.delete();
-        await platform.runTool('$_systemRoot\\System32\\powercfg.exe', batteryReportArgs(file.path));
+        await platform.runToolUtf8('$_systemRoot\\System32\\powercfg.exe', batteryReportArgs(file.path),
+            timeout: const Duration(seconds: 30));
         if (await file.exists()) {
           info = parseBatteryReport(await file.readAsString());
         }
@@ -168,9 +169,37 @@ class ComputerService extends ChangeNotifier {
     }
   }
 
-  List<ProcGroup> get sortedGroups => sortGroups(groups, sort, ascending: sortAscending);
+  /// Курсор над таблицей процессов: порядок строк не меняется (иначе кнопка
+  /// «Завершить» уезжает из-под курсора).
+  bool hoverFreeze = false;
+  List<String> _shownOrder = const [];
+
+  List<ProcGroup> get sortedGroups {
+    final fresh = sortGroups(groups, sort, ascending: sortAscending);
+    if (!hoverFreeze || _shownOrder.isEmpty) {
+      _shownOrder = [for (final g in fresh) g.name.toLowerCase()];
+      return fresh;
+    }
+    final idx = {for (var i = 0; i < _shownOrder.length; i++) _shownOrder[i]: i};
+    final out = [...fresh];
+    final big = _shownOrder.length + 1;
+    // sort в Dart не стабилен: при равенстве (новые имена) держим порядок свежего списка
+    final pos = {for (var i = 0; i < fresh.length; i++) fresh[i]: i};
+    out.sort((a, b) {
+      final c = (idx[a.name.toLowerCase()] ?? big).compareTo(idx[b.name.toLowerCase()] ?? big);
+      return c != 0 ? c : pos[a]!.compareTo(pos[b]!);
+    });
+    return out;
+  }
+
+  void setHoverFreeze(bool on) {
+    if (hoverFreeze == on) return;
+    hoverFreeze = on;
+    if (!on) _shownOrder = const [];
+  }
 
   void setSort(ProcSort by, {bool? ascending}) {
+    _shownOrder = const [];
     if (ascending != null) {
       sort = by;
       sortAscending = ascending;

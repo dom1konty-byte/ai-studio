@@ -34,6 +34,9 @@ IconData categoryIcon(CategoryId id) {
   }
 }
 
+/// «, пропущено N» (пусто, если ничего не пропущено).
+String skippedText(int n) => n > 0 ? ', пропущено $n' : '';
+
 RoundedRectangleBorder cardShape() =>
     RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
 
@@ -50,6 +53,14 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   AppController get c => widget.controller;
   bool _open = false; // выпадающая панель «Что чистить?»
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) c.autoAnalyzeOnce();
+    });
+  }
 
   Future<void> _quick() async {
     if (c.cleanBusy) return; // защита от двойного нажатия
@@ -414,7 +425,7 @@ class _FilesTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = downloads ? c.downloadsState : c.bigState;
     final recycled = downloads ? c.downloadsRecycled : c.bigRecycled;
-    final busyApp = c.phase == Phase.analyzing || c.phase == Phase.cleaning;
+    final busyApp = c.anyBusy;
     final find = downloads ? c.loadDownloads : c.loadBig;
     final layer = downloads ? Layer.downloads : Layer.big;
     final title = downloads ? 'Загрузки' : 'Большие файлы';
@@ -491,7 +502,7 @@ class _DupTile extends StatelessWidget {
     const color = Color(0xFF7B5EA7);
     const title = 'Дубликаты';
     const caption = 'Одинаковые файлы';
-    final busyApp = c.phase == Phase.analyzing || c.phase == Phase.cleaning;
+    final busyApp = c.anyBusy;
     final recycled = c.dupRecycled;
     if (recycled != null) {
       return PultTile(
@@ -500,7 +511,7 @@ class _DupTile extends StatelessWidget {
         title: title,
         caption: caption,
         kind: TileKind.result,
-        resultText: 'В Корзину ${formatSize(recycled)}',
+        resultText: 'В Корзину ${formatSize(recycled)}${skippedText(c.dupSkipped)}',
         onAgain: c.loadDuplicates,
       );
     }
@@ -561,7 +572,7 @@ class _EmptyDirsTile extends StatelessWidget {
     const color = Color(0xFF566B6B);
     const title = 'Пустые папки';
     const caption = 'Папки без файлов';
-    final busyApp = c.phase == Phase.analyzing || c.phase == Phase.cleaning;
+    final busyApp = c.anyBusy;
     final recycled = c.emptyRecycled;
     if (recycled != null) {
       return PultTile(
@@ -570,7 +581,7 @@ class _EmptyDirsTile extends StatelessWidget {
         title: title,
         caption: caption,
         kind: TileKind.result,
-        resultText: 'В Корзину ${emptyDirsWord(recycled)}',
+        resultText: 'В Корзину ${emptyDirsWord(recycled)}${skippedText(c.emptySkipped)}',
         onAgain: c.loadEmptyDirs,
       );
     }

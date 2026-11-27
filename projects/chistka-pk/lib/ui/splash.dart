@@ -62,10 +62,16 @@ class _SplashState extends State<Splash> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    if (_done) return widget.child;
+    // Stack держим всегда: иначе при смене дерева состояние экрана потерялось бы.
+    // Пока идёт заставка, ввод под ней (мышь и клавиатура) заблокирован.
     return Stack(
+      fit: StackFit.expand,
       children: [
-        widget.child,
+        ExcludeFocus(
+          excluding: !_done,
+          child: AbsorbPointer(absorbing: !_done, child: widget.child),
+        ),
+        if (!_done)
         Positioned.fill(
           child: GestureDetector(
             key: const Key('splash'),

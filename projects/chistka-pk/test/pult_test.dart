@@ -115,7 +115,13 @@ void main() {
     final p = FakePlatform();
     final c = _make(tmp: tmp, platform: p);
     await _pump(tester, c);
-    expect(find.textContaining('Можно освободить'), findsNothing);
+    // Анализ при открытии экрана идёт сам; ждём его конца.
+    for (var i = 0; i < 100 && c.phase != Phase.ready; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
+    expect(c.phase, Phase.ready);
+    expect(p.binEmptied, isFalse);
     await tester.tap(find.byKey(const Key('quick-clean')));
     await _untilDone(tester, c);
     expect(p.binEmptied, isTrue);
@@ -275,13 +281,88 @@ void main() {
     await tester.pumpAndSettle();
     expect(p.moved, isEmpty); // ждём подтверждения
     await tester.tap(find.widgetWithText(FilledButton, 'В Корзину').last);
-    await _untilDone(tester, c);
+    for (var i = 0; i < 100 && c.downloadsRecycled == null; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
     // Путь Linux не проходит Windows-защиту очистки: файл пропущен, но слой закрыт,
-    // а итог показан (удаление насовсем невозможно: только moveToRecycleBin).
+    // а итог показан в своей плитке (удаление насовсем невозможно: только moveToRecycleBin).
     expect(p.moved.every((m) => m == file.path), isTrue);
     expect(c.layer, Layer.none);
-    expect(c.phase, Phase.done);
     expect(c.downloadsRecycled, isNotNull);
+    expect(find.textContaining('В Корзину'), findsWidgets);
+  });
+
+  testWidgets('Удаление из плитки не трогает «Быструю очистку» и другие плитки; go() не сбрасывает',
+      (tester) async {
+    final p = FakePlatform();
+    final now = DateTime.now();
+    final c = _make(tmp: tmp, platform: p, downloads: (_) async => [
+          FileInfo('C:/d/old.iso', 5, now.subtract(const Duration(days: 90))),
+        ], large: (_, __) async => [FileInfo('C:/d/big.bin', 9, now)]);
+    await c.init();
+    await _pump(tester, c);
+    // Большие файлы найдены, Пустые папки с результатом, анализ готов.
+    await c.loadBig();
+    c.emptyRecycled = 3;
+    c.emptySkipped = 1;
+    c.dupRecycled = 7;
+    c.dupSkipped = 2;
+    for (var i = 0; i < 100 && c.phase != Phase.ready; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
+    expect(c.phase, Phase.ready);
+    await c.loadDownloads();
+    c.toggleDownload('C:/d/old.iso', true);
+    await tester.runAsync(c.recycleDownloads);
+    await tester.pumpAndSettle();
+    expect(c.phase, Phase.ready); // полоса «Быстрая очистка» не тронута
+    expect(c.summary, isNull);
+    expect(c.tileBusy, isFalse);
+    expect(c.downloadsRecycled, isNotNull);
+    expect(c.bigState, LoadState.loaded);
+    expect(c.big, isNotEmpty);
+    expect(c.emptyRecycled, 3);
+    expect(c.dupRecycled, 7);
+    expect(find.textContaining('пропущено 2'), findsOneWidget);
+    expect(find.textContaining('пропущено 1'), findsOneWidget);
+    // Смена раздела не сбрасывает результаты.
+    c.go(Section.settings);
+    c.go(Section.main);
+    expect(c.downloadsRecycled, isNotNull);
+    expect(c.emptyRecycled, 3);
+    // «Готово» (reset) сбрасывает всё, включая пустые папки.
+    c.reset();
+    expect(c.emptyRecycled, isNull);
+    expect(c.emptySkipped, 0);
+    expect(c.emptyState, LoadState.idle);
+    expect(c.emptyDirs, isEmpty);
+  });
+
+  test('«Стоп» убивает поиск Загрузок/Больших/Пустых по-настоящему', () async {
+    final d = Directory.systemTemp.createTempSync('chisto_kill');
+    addTearDown(() => d.deleteSync(recursive: true));
+    final c = AppController(
+      platform: FakePlatform(),
+      env: Env({'USERPROFILE': d.path}),
+      dataDir: '${d.path}/data',
+    );
+    Directory('${d.path}\\Downloads').createSync();
+    // реальный поиск запускается и отменяется без ошибок; поздний результат игнорируется
+    final f = c.loadDownloads();
+    c.cancelDownloads();
+    await f;
+    expect(c.downloadsState, LoadState.idle);
+    final g = c.loadBig();
+    c.cancelBig();
+    await g;
+    expect(c.bigState, LoadState.idle);
+    final h = c.loadEmptyDirs();
+    c.cancelEmptyDirs();
+    await h;
+    expect(c.emptyState, LoadState.idle);
   });
 
   testWidgets('Карта диска: «Открыть» → экран поверх, Esc закрывает', (tester) async {
