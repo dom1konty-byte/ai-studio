@@ -199,6 +199,39 @@ jobs:
         run: |
           python3 ../../scripts/telegram_notify.py --text "❌ <b>Заметки</b>: сборка для iPhone упала на шаге: ${{ steps.build.outcome == 'failure' && 'сборка .ipa' || steps.pubget.outcome == 'failure' && 'пакеты' || 'другой шаг' }}. Студия чинит сама."
 
+  preview:
+    # HTML-макет для проверки: по коммиту с [preview] — на Cloudflare Pages (если есть секреты) + файл в Telegram.
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[preview]') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/zametki
+    steps:
+      - uses: actions/checkout@v7
+      - name: Публикация макета (Cloudflare Pages)
+        id: publish
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::Секретов Cloudflare нет — макет не опубликован, только Telegram."
+            exit 0
+          fi
+          mkdir -p _site && cp preview/zametki.html _site/index.html
+          npx --yes wrangler@4 pages project create zametki-preview --production-branch=main 2>/dev/null || true
+          npx --yes wrangler@4 pages deploy _site --project-name=zametki-preview --branch=main --commit-dirty=true
+          echo "url=https://zametki-preview.pages.dev" >> "$GITHUB_OUTPUT"
+      - name: Telegram — макет
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+          URL: ${{ steps.publish.outputs.url }}
+        run: |
+          if [ -n "$URL" ]; then LINK="\nОткрыть: $URL"; else LINK=""; fi
+          python3 ../../scripts/telegram_notify.py --file preview/zametki.html --text "🗒 <b>Заметки</b>: макет для проверки. Открой файл в браузере.$LINK"
+
   board:
     # после сборки — обновить табло студии (ссылка на свежий файл)
     needs: [android, ios]
