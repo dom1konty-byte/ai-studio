@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:chistka_pk/core/catalog.dart';
@@ -36,6 +37,36 @@ SpeedResult _r(int i) => SpeedResult(
     time: DateTime(2026, 1, 1, 0, i), pingMs: 10, jitterMs: 1, downMbps: i.toDouble(), upMbps: 2);
 
 void main() {
+  group('speedTips', () {
+    SpeedResult r({double ping = 20, double jit = 5, double down = 100, double up = 50}) =>
+        SpeedResult(
+            time: DateTime(2026), pingMs: ping, jitterMs: jit, downMbps: down, upMbps: up);
+    test('нет соединения', () {
+      expect(speedTips(null).single.title, 'Нет соединения');
+      expect(speedTips(r(down: 0)).single.kind, TipKind.warning);
+    });
+    test('всё хорошо', () {
+      final t = speedTips(r());
+      expect(t.single.title, 'Всё в порядке');
+      expect(t.single.kind, TipKind.ok);
+    });
+    test('пинг, джиттер, скорость, отдача', () {
+      expect(speedTips(r(ping: 150)).single.title, 'Высокая задержка');
+      expect(speedTips(r(jit: 40)).single.title, 'Связь нестабильна');
+      expect(speedTips(r(down: 5, up: 5)).single.title, 'Низкая скорость');
+      expect(speedTips(r(up: 10)).single.title, 'Отдача заметно ниже загрузки');
+    });
+    test('не больше двух, по важности', () {
+      final t = speedTips(r(ping: 150, jit: 40, down: 5, up: 0.5));
+      expect(t.length, 2);
+      expect(t.first.title, 'Высокая задержка');
+      expect(t.last.title, 'Связь нестабильна');
+    });
+    test('средний результат без советов-похвал', () {
+      expect(speedTips(r(ping: 60, down: 30)), isEmpty);
+    });
+  });
+
   test('расчёты', () {
     expect(mbps(1250000, 1), 10);
     expect(mbps(100, 0), 0);
@@ -152,7 +183,50 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('Готово'), findsOneWidget);
     expect(find.byKey(const Key('speed-ping')), findsOneWidget);
-    expect(find.text('12.0'), findsWidgets);
+    expect(find.text('12.0 мс'), findsWidgets);
     expect(find.text('Замеров пока нет'), findsNothing);
+    expect(find.byKey(const Key('speed-down')), findsOneWidget);
+    expect(find.byKey(const Key('speed-up')), findsOneWidget);
+    expect(find.byKey(const Key('speed-jitter')), findsOneWidget);
+    expect(find.byKey(const Key('speed-chart')), findsOneWidget);
+    expect(find.text('Повторить замер'), findsOneWidget);
+    // у фейка нет советов-предупреждений кроме отдачи; всегда не больше двух
+    final tipCards = find.descendant(
+        of: find.byKey(const Key('speed-tips')), matching: find.byIcon(Icons.warning_amber_rounded));
+    final ok = find.descendant(of: find.byKey(const Key('speed-tips')), matching: find.byIcon(Icons.check));
+    expect(tipCards.evaluate().length + ok.evaluate().length, inInclusiveRange(1, 2));
+    expect(find.descendant(of: find.byKey(const Key('speed-history')), matching: find.byType(Row)).evaluate().length,
+        lessThanOrEqualTo(3));
+  });
+
+  testWidgets('история: не больше 3 строк, в 1000×680 без переполнения', (tester) async {
+    tester.view.physicalSize = const Size(1000, 680);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final dir = Directory.systemTemp.createTempSync('speedui2');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}${Platform.pathSeparator}speed.json');
+    file.writeAsStringSync(jsonEncode([for (var i = 0; i < 8; i++) _r(i + 1).toJson()]));
+    final c = AppController(
+      platform: FakePlatform(),
+      env: const Env({}),
+      dataDir: dir.path,
+      speedNetwork: FakeNet(),
+      downloadsScan: (_) async => [],
+      largeScan: (_, __) async => [],
+    );
+    c.speedStore = SpeedHistoryStore(file);
+    await tester.pumpWidget(ChistoApp(controller: c));
+    await tester.pump();
+    await tester.tap(find.text('Интернет'));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 5; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.descendant(of: find.byKey(const Key('speed-history')), matching: find.byType(Row)).evaluate().length, 3);
+    expect(find.text('Очистить историю'), findsOneWidget);
   });
 }

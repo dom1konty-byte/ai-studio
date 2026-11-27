@@ -378,3 +378,42 @@ class CloudflareSpeedNetwork implements SpeedNetwork {
     return out.stream;
   }
 }
+
+/// Важность совета: внимание или норма.
+enum TipKind { warning, ok }
+
+/// Совет по итогам замера.
+class Tip {
+  const Tip(this.kind, this.title, this.text);
+  final TipKind kind;
+  final String title;
+  final String text;
+}
+
+/// Не больше двух советов, самые важные первыми.
+/// [result] == null или загрузка 0 — нет соединения.
+List<Tip> speedTips(SpeedResult? result, {int limit = 2}) {
+  if (result == null || result.downMbps <= 0) {
+    return const [Tip(TipKind.warning, 'Нет соединения', 'Проверьте кабель, Wi-Fi и роутер.')];
+  }
+  final tips = <Tip>[];
+  if (result.pingMs > 100) {
+    tips.add(const Tip(TipKind.warning, 'Высокая задержка',
+        'Подключите кабель или подойдите к роутеру.'));
+  }
+  if (result.jitterMs > 30) {
+    tips.add(const Tip(TipKind.warning, 'Связь нестабильна', 'Перезагрузите роутер.'));
+  }
+  if (result.downMbps < 10) {
+    tips.add(const Tip(TipKind.warning, 'Низкая скорость',
+        'Проверьте, не качается ли что-то, или тариф.'));
+  }
+  if (result.upMbps < result.downMbps * 0.2) {
+    tips.add(const Tip(TipKind.warning, 'Отдача заметно ниже загрузки',
+        'Это обычно для домашнего тарифа; для видеозвонков может не хватить.'));
+  }
+  if (tips.isEmpty && result.pingMs < 40 && result.downMbps >= 50) {
+    tips.add(const Tip(TipKind.ok, 'Всё в порядке', 'Связь быстрая и стабильная.'));
+  }
+  return tips.take(limit).toList();
+}
