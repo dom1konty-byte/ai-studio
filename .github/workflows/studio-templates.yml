@@ -84,6 +84,24 @@ jobs:
           type start.log
           findstr /C:"401" start.log
 
+  ios:
+    # Mac-минуты дорогие: только по кнопке или если в сообщении коммита есть [ios]
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ios]') }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with: { flutter-version: 3.50.1, channel: stable, cache: true }
+      - run: python3 scripts/new_project.py "Проверка айфона" app --no-branch
+      - name: iOS включается и собирается .ipa без подписи
+        working-directory: projects/proverka-aifona
+        run: |
+          flutter create --platforms=ios --org com.aistudio --project-name proverka_aifona .
+          flutter pub get
+          flutter build ios --release --no-codesign
+          mkdir -p build/ipa/Payload && cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/
+          (cd build/ipa && zip -qr ../proverka.ipa Payload) && ls -la build/proverka.ipa
+
   windows:
     runs-on: windows-latest
     steps:

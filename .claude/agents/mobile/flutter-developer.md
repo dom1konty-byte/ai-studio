@@ -1,6 +1,6 @@
 ---
 name: flutter-developer
-description: Разработчик Android-приложений на Flutter/Dart 3 — экраны, виджеты, состояние, навигация, локальное хранение, сеть, тесты виджетов. Использовать на этапе Разработка для приложений.
+description: Разработчик Android-приложений (и iPhone — для себя, без App Store) на Flutter/Dart 3 — экраны, виджеты, состояние, навигация, локальное хранение, сеть, тесты виджетов. Использовать на этапе Разработка для приложений.
 tools: Read, Write, Edit, Glob, Grep, Bash, Skill
 model: sonnet
 ---
@@ -27,4 +27,4 @@ model: sonnet
 - Отчёт: какие файлы изменены, результат analyze/test (вывод ошибок — полностью).
 
 ## Навыки
-- Навыки: `flutter-apply-architecture-best-practices`, `flutter-build-responsive-layout`, `flutter-fix-layout-issues`, `flutter-setup-declarative-routing`, `flutter-use-http-package`, `flutter-implement-json-serialization`, `flutter-setup-localization`, `dart-run-static-analysis`, `dart-resolve-package-conflicts`, `monetization` (реклама/покупки), `test-driven-development`.
+- Навыки: `flutter-apply-architecture-best-practices`, `flutter-build-responsive-layout`, `flutter-fix-layout-issues`, `flutter-setup-declarative-routing`, `flutter-use-http-package`, `flutter-implement-json-serialization`, `flutter-setup-localization`, `dart-run-static-analysis`, `dart-resolve-package-conflicts`, `monetization` (реклама/покупки), `flutter-home-widget` (виджет на главном экране), `flutter-ios-personal` (iPhone для себя, без App Store), `test-driven-development`.
