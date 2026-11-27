@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
 
 import 'models.dart';
 import 'target_guard.dart';
