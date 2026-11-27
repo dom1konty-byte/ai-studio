@@ -4,7 +4,13 @@ import '../core/programs.dart';
 
 /// Результат запуска программы удаления.
 class UninstallRun {
-  const UninstallRun({required this.started, this.cancelled = false, this.exitCode, this.error});
+  const UninstallRun({
+    required this.started,
+    this.cancelled = false,
+    this.exitCode,
+    this.error,
+    this.timedOut = false,
+  });
 
   /// Процесс запущен (и завершился — запуск ждёт окончания).
   final bool started;
@@ -13,6 +19,9 @@ class UninstallRun {
   final bool cancelled;
   final int? exitCode;
   final String? error;
+
+  /// Процесс удаления не завершился за отведённое время (10 минут).
+  final bool timedOut;
 }
 
 /// Всё, что зависит от Windows, спрятано за этим интерфейсом (в тестах — фейк).

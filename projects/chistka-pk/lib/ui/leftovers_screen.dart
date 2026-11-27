@@ -29,9 +29,10 @@ class LeftoversScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Expanded(child: _body(cs)),
+        if (c.leftoverBusy) const LinearProgressIndicator(),
         if (c.leftoverMessage != null)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.only(top: 8, bottom: 8),
             child: Text(c.leftoverMessage!, style: TextStyle(color: cs.primary)),
           ),
         Text('Файлы уйдут в Корзину, реестр — с резервной копией',

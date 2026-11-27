@@ -14,9 +14,9 @@ Future<void> main(List<String> args) async {
   final trayOnly = args.contains('--tray');
   final controller = AppController(platform: WindowsPlatform());
   if (Platform.isWindows) {
-    // Второй запуск: показать уже открытое окно и выйти.
+    // Второй запуск: показать уже открытое окно и выйти (при --tray — просто выйти).
     if (!SingleInstance.acquire()) {
-      SingleInstance.showExisting();
+      if (!trayOnly) SingleInstance.showExisting();
       exit(0);
     }
     await windowManager.ensureInitialized();

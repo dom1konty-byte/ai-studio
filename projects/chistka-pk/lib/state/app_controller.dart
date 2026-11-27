@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -82,7 +83,11 @@ class AppController extends ChangeNotifier {
     this.leftoverGuard,
     FolderLister? startupLister,
     String? exePath,
-  })  : env = env ?? Env.system(),
+    bool Function(String path)? fileExists,
+    this.uninstallPollInterval = const Duration(seconds: 3),
+    this.uninstallTimeout = const Duration(minutes: 10),
+  })  : _fileExists = fileExists,
+        env = env ?? Env.system(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _folderSizer = folderSizer ?? _defaultFolderSizer,
         _largeScan = largeScan ?? _defaultLargeScan,
@@ -133,6 +138,11 @@ class AppController extends ChangeNotifier {
   final DirLister _listDir;
   final SizeOf _sizeOf;
   final PathGuard? leftoverGuard;
+  final bool Function(String path)? _fileExists;
+
+  /// Как часто и как долго смотреть, исчезла ли запись удаляемой программы.
+  final Duration uninstallPollInterval;
+  final Duration uninstallTimeout;
   final String exePath;
   late final StartupService startupService;
   SettingsStore? _settingsStore;
@@ -206,8 +216,11 @@ class AppController extends ChangeNotifier {
   bool get hasSelection =>
       rows.any((r) => r.selected && r.active) || downloadsSelected.isNotEmpty;
 
-  bool get canAnalyze => phase == Phase.idle || phase == Phase.ready;
-  bool get canClean => phase == Phase.ready && hasSelection;
+  bool get canAnalyze => !_quickBusy && (phase == Phase.idle || phase == Phase.ready);
+  bool get canClean => !_quickBusy && phase == Phase.ready && hasSelection;
+
+  /// true, пока идёт быстрая очистка из трея.
+  bool get quickBusy => _quickBusy;
   bool get downloadsOn => downloadsSelected.isNotEmpty;
 
   // ---------- навигация ----------
@@ -364,6 +377,7 @@ class AppController extends ChangeNotifier {
     required List<FileInfo> files,
     required bool skipBrowsers,
   }) async {
+    if (_quickBusy || phase == Phase.cleaning || phase == Phase.analyzing) return;
     if (logFile == null) {
       failedAll = true;
       errorMessage =
@@ -518,13 +532,36 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Штатное удаление: запуск программы удаления, ожидание, затем «Остатки».
+  /// Программа, для которой ждали удаление, но запись не исчезла (таймаут/отмена):
+  /// на экране кнопка «Проверить и найти остатки».
+  Program? recheckProgram;
+
+  /// Программа без найденной программы удаления: кнопка «Принудительно удалить…».
+  Program? forceOffer;
+
+  /// true, пока ждём исчезновения записи из реестра (кнопка «Отмена»).
+  bool uninstallWaiting = false;
+  Completer<void>? _waitCancel;
+
+  void cancelUninstallWait() {
+    final c = _waitCancel;
+    if (c != null && !c.isCompleted) c.complete();
+  }
+
+  bool _entryGone(List<Program> list, Program prog) =>
+      !list.any((a) => a.keyPath.toLowerCase() == prog.keyPath.toLowerCase());
+
+  /// Штатное удаление: запуск программы удаления, ожидание исчезновения записи
+  /// (опрос реестра), затем «Остатки».
   Future<void> uninstall(Program prog) async {
     if (uninstallBusy) return;
-    final cmd = parseUninstallString(prog.uninstallString, env: env.vars);
+    recheckProgram = null;
+    forceOffer = null;
+    final cmd = parseUninstallString(prog.uninstallString,
+        env: env.vars, fileExists: _fileExists);
     if (cmd == null) {
-      programMessage =
-          'У «${prog.name}» нет программы удаления. Можно выбрать «Принудительно удалить…».';
+      programMessage = 'Программа удаления не найдена. Можно выбрать «Принудительно удалить…».';
+      forceOffer = prog;
       notifyListeners();
       return;
     }
@@ -537,33 +574,103 @@ class AppController extends ChangeNotifier {
     } catch (e) {
       run = UninstallRun(started: false, error: '$e');
     }
-    uninstallBusy = false;
     if (!run.started) {
+      uninstallBusy = false;
       programMessage = run.cancelled
           ? 'Удаление отменено (не дали права администратора).'
-          : 'Не удалось запустить удаление «${prog.name}».';
+          : run.error == 'Программа удаления не найдена'
+              ? 'Программа удаления не найдена. Можно выбрать «Принудительно удалить…».'
+              : 'Не удалось запустить удаление «${prog.name}».';
+      if (run.error == 'Программа удаления не найдена') forceOffer = prog;
       notifyListeners();
       return;
     }
-    // Удаление могли отменить внутри программы: если запись осталась — остатки не ищем.
+    final code = run.exitCode;
+    final codeText = code != null && code != 0 ? ' Программа удаления завершилась с кодом $code.' : '';
+    final procText = run.timedOut ? ' Программа удаления не закрылась за 10 минут.' : '';
+
+    // Ждём, пока запись исчезнет из списка (удаление могут отменить или передать другому процессу).
+    uninstallWaiting = true;
+    final cancel = _waitCancel = Completer<void>();
+    programMessage = 'Жду завершения удаления…';
+    notifyListeners();
+    final deadline = DateTime.now().add(uninstallTimeout);
+    var gone = false;
+    var cancelled = false;
+    var sawList = false;
+    List<Program> after = const [];
+    while (true) {
+      List<Program> cur = const [];
+      try {
+        cur = buildPrograms(await platform.readUninstallEntries());
+      } catch (_) {}
+      if (cur.isNotEmpty) {
+        sawList = true;
+        after = cur;
+        if (_entryGone(cur, prog)) {
+          gone = true;
+          break;
+        }
+      }
+      if (cancel.isCompleted) {
+        cancelled = true;
+        break;
+      }
+      if (!DateTime.now().isBefore(deadline)) break;
+      await Future.any<void>([Future<void>.delayed(uninstallPollInterval), cancel.future]);
+      if (cancel.isCompleted) {
+        cancelled = true;
+        // последняя проверка перед выходом выполнится на следующем витке
+      }
+    }
+    uninstallWaiting = false;
+    _waitCancel = null;
+    uninstallBusy = false;
+    if (sawList) {
+      programs = after;
+      programsState = LoadState.loaded;
+    }
+    if (!gone) {
+      recheckProgram = prog;
+      programMessage = !sawList
+          ? 'Не удалось проверить список программ. Остатки не ищу.$codeText$procText '
+              'Когда удаление закончится, нажмите «Проверить и найти остатки».'
+          : cancelled
+              ? 'Ожидание отменено: «${prog.name}» всё ещё в списке.$codeText$procText '
+                  'Когда удаление закончится, нажмите «Проверить и найти остатки».'
+              : '«${prog.name}» всё ещё в списке: удаление отменено или не завершилось за '
+                  '${uninstallTimeout.inMinutes} мин.$codeText$procText '
+                  'Остатки не ищу. Когда удаление закончится, нажмите «Проверить и найти остатки».';
+      notifyListeners();
+      return;
+    }
+    programMessage = null;
+    await startLeftovers(prog, forced: false);
+    if (codeText.isNotEmpty) leftoverMessage = codeText.trim();
+    notifyListeners();
+  }
+
+  /// Кнопка «Проверить и найти остатки»: запись исчезла — ищем остатки; нет — сообщение.
+  Future<void> recheckAndFindLeftovers() async {
+    final prog = recheckProgram;
+    if (prog == null || uninstallBusy) return;
     List<Program> after = const [];
     try {
       after = buildPrograms(await platform.readUninstallEntries());
     } catch (_) {}
     if (after.isEmpty) {
-      programMessage = 'Не удалось проверить список программ после удаления. Остатки не ищу.';
+      programMessage = 'Не удалось проверить список программ. Остатки не ищу.';
       notifyListeners();
       return;
     }
     programs = after;
     programsState = LoadState.loaded;
-    final still = after.any((a) => a.keyPath.toLowerCase() == prog.keyPath.toLowerCase());
-    if (still) {
-      programMessage =
-          '«${prog.name}» всё ещё в списке: удаление отменено или ещё идёт. Остатки не ищу.';
+    if (!_entryGone(after, prog)) {
+      programMessage = '«${prog.name}» всё ещё в списке программ. Остатки не ищу.';
       notifyListeners();
       return;
     }
+    recheckProgram = null;
     programMessage = null;
     await startLeftovers(prog, forced: false);
   }
@@ -603,6 +710,11 @@ class AppController extends ChangeNotifier {
         listDir: _listDir,
         regSubKeys: platform.regSubKeys,
         sizeOf: _sizeOf,
+        otherPrograms: [
+          for (final o in programs)
+            if (o.keyPath.toLowerCase() != prog.keyPath.toLowerCase())
+              OtherProgram(o.name, o.installLocation),
+        ],
       );
       if (forced) {
         list.insert(
@@ -621,7 +733,7 @@ class AppController extends ChangeNotifier {
       }
       leftovers = list;
       for (final l in list) {
-        if (l.exact && l.deletable) leftoverSelected.add(l);
+        if (l.exact && l.deletable && l.preselect) leftoverSelected.add(l);
       }
       leftoverState = LoadState.loaded;
     } catch (_) {
@@ -652,7 +764,7 @@ class AppController extends ChangeNotifier {
       return;
     }
     leftoverBusy = true;
-    leftoverMessage = null;
+    leftoverMessage = 'Удаляю остатки…';
     notifyListeners();
     final log = CleanLog(lf);
     final cleaner = LeftoverCleaner(
@@ -664,7 +776,10 @@ class AppController extends ChangeNotifier {
     );
     final todo = leftovers.where(leftoverSelected.contains).toList();
     try {
-      final outcomes = await cleaner.run(todo);
+      final outcomes = await cleaner.run(todo, onProgress: (t) {
+        leftoverMessage = t;
+        notifyListeners();
+      });
       var ok = 0;
       var bad = 0;
       for (final o in outcomes) {
@@ -749,8 +864,11 @@ class AppController extends ChangeNotifier {
   /// файлов и кэша запущенных браузеров; тот же Cleaner. Итог — уведомление.
   /// Возвращает текст итога (null — уже что-то делается).
   Future<String?> quickClean() async {
-    if (_quickBusy || phase == Phase.analyzing || phase == Phase.cleaning) return null;
+    if (_quickBusy || cleanBusy || phase == Phase.analyzing || phase == Phase.cleaning) {
+      return null;
+    }
     _quickBusy = true;
+    notifyListeners();
     String msg;
     try {
       if (settings.quickCategories.isEmpty) {
@@ -792,6 +910,11 @@ class AppController extends ChangeNotifier {
     } finally {
       _quickBusy = false;
     }
+    if (phase == Phase.ready) {
+      // размеры в списке устарели
+      phase = Phase.idle;
+      rows = rows.map((r) => CategoryRow(r.category)).toList();
+    }
     await platform.notify('ЧистоДиск', msg);
     notifyListeners();
     return msg;
@@ -818,7 +941,7 @@ class AppController extends ChangeNotifier {
   Future<bool> toggleStartup(StartupItem item, bool on) async {
     final ok = await startupService.setEnabled(item, on);
     if (ok) {
-      final i = startupItems.indexWhere((e) => e.source == item.source && e.path == item.path);
+      final i = startupItems.indexWhere((e) => e.source == item.source && e.name == item.name);
       if (i >= 0) startupItems[i] = startupItems[i].copyWith(enabled: on);
     }
     notifyListeners();

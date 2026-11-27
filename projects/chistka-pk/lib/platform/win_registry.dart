@@ -39,6 +39,9 @@ const _keyRead = 0x20019;
 const _wow64Key64 = 0x100;
 const _wow64Key32 = 0x200;
 const _errorNoMoreItems = 259;
+const _errorMoreData = 234;
+const _maxEnum = 200000; // страховка от бесконечного цикла
+const _keyCreateSubKey = 0x4;
 const _regSz = 1;
 const _regExpandSz = 2;
 const _regDword = 4;
@@ -96,11 +99,12 @@ class WinRegistry {
     final buf = calloc<Uint16>(cap).cast<Utf16>();
     final len = calloc<Uint32>();
     try {
-      for (var i = 0;; i++) {
+      for (var i = 0; i < _maxEnum; i++) {
         len.value = cap;
         final rc = _enum(h, i, buf, len, nullptr, nullptr, nullptr, nullptr);
         if (rc == _errorNoMoreItems) break;
-        if (rc != 0) continue;
+        if (rc == _errorMoreData) continue; // слишком длинное имя — пропускаем
+        if (rc != 0) break;
         res.add(buf.toDartString(length: len.value));
       }
     } finally {
@@ -198,11 +202,12 @@ class WinRegistry {
     final buf = calloc<Uint16>(cap).cast<Utf16>();
     final len = calloc<Uint32>();
     try {
-      for (var i = 0;; i++) {
+      for (var i = 0; i < _maxEnum; i++) {
         len.value = cap;
         final rc = _enumVal(h, i, buf, len, nullptr, nullptr, nullptr, nullptr);
         if (rc == _errorNoMoreItems) break;
-        if (rc != 0) continue;
+        if (rc == _errorMoreData) continue; // слишком длинное имя — пропускаем
+        if (rc != 0) break;
         final name = buf.toDartString(length: len.value);
         final v = _value(h, name);
         if (v != null) res[name] = v;
@@ -294,17 +299,19 @@ class WinRegistry {
     }
   }
 
-  /// Можно ли писать значения в ключ: пробуем открыть с KEY_SET_VALUE
-  /// (если ключа ещё нет — ближайший существующий родитель).
+  /// Можно ли писать значения в ключ: открываем с KEY_SET_VALUE. Если ключа ещё
+  /// нет — проверяем KEY_CREATE_SUB_KEY у ближайшего существующего родителя
+  /// (чтобы создать ключ и значение).
   bool canWrite(String key) {
     final k = parseKey(key);
     if (k == null) return false;
     var sub = k.sub;
-    while (true) {
+    var wanted = _keySetValue;
+    for (var guard = 0; guard < 64; guard++) {
       final s = sub.toNativeUtf16();
       final out = calloc<IntPtr>();
       try {
-        final rc = _open(k.hive, s, 0, _keySetValue, out);
+        final rc = _open(k.hive, s, 0, wanted, out);
         if (rc == 0) {
           _close(out.value);
           return true;
@@ -316,7 +323,9 @@ class WinRegistry {
       }
       final i = sub.lastIndexOf(r'\');
       sub = i < 0 ? '' : sub.substring(0, i);
+      wanted = _keyCreateSubKey; // ключа нет: нужно право создавать подключи у родителя
     }
+    return false;
   }
 
   /// HKCU, HKLM и HKLM\WOW6432Node.
@@ -333,21 +342,39 @@ class WinRegistry {
 /// Для Isolate.run.
 List<RawUninstall> readUninstallSync() => WinRegistry.instance.readUninstall();
 
-/// Ждёт завершения процесса по дескриптору и возвращает код выхода (null — не удалось).
-int? waitForProcessSync(int handle) {
-  final k = DynamicLibrary.open('kernel32.dll');
-  final wait = k.lookupFunction<Uint32 Function(IntPtr, Uint32), int Function(int, int)>(
-      'WaitForSingleObject');
-  final getCode = k.lookupFunction<Int32 Function(IntPtr, Pointer<Uint32>),
-      int Function(int, Pointer<Uint32>)>('GetExitCodeProcess');
-  final close = k.lookupFunction<Int32 Function(IntPtr), int Function(int)>('CloseHandle');
-  final code = calloc<Uint32>();
+/// Ждать процесс удаления не дольше 10 минут.
+const uninstallWaitMs = 10 * 60 * 1000;
+
+/// Закрывает дескриптор процесса.
+void closeHandleSync(int handle) {
   try {
-    wait(handle, 0xFFFFFFFF);
-    final ok = getCode(handle, code);
-    return ok != 0 ? code.value : null;
-  } finally {
-    calloc.free(code);
+    final k = DynamicLibrary.open('kernel32.dll');
+    final close = k.lookupFunction<Int32 Function(IntPtr), int Function(int)>('CloseHandle');
     close(handle);
+  } catch (_) {}
+}
+
+/// Ждёт завершения процесса по дескриптору (до [timeoutMs]) и возвращает код
+/// выхода. Никогда не бросает исключений; дескриптор закрывается всегда.
+({int? code, bool timedOut}) waitForProcessSync(int handle, int timeoutMs) {
+  try {
+    final k = DynamicLibrary.open('kernel32.dll');
+    final wait = k.lookupFunction<Uint32 Function(IntPtr, Uint32), int Function(int, int)>(
+        'WaitForSingleObject');
+    final getCode = k.lookupFunction<Int32 Function(IntPtr, Pointer<Uint32>),
+        int Function(int, Pointer<Uint32>)>('GetExitCodeProcess');
+    final code = calloc<Uint32>();
+    try {
+      final w = wait(handle, timeoutMs);
+      if (w == 0x102) return (code: null, timedOut: true); // WAIT_TIMEOUT
+      final ok = getCode(handle, code);
+      return (code: ok != 0 ? code.value : null, timedOut: false);
+    } finally {
+      calloc.free(code);
+    }
+  } catch (_) {
+    return (code: null, timedOut: false);
+  } finally {
+    closeHandleSync(handle);
   }
 }

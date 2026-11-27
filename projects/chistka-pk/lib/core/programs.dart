@@ -2,6 +2,8 @@
 /// строки удаления, поиск и сортировка. Чистые функции — без обращения к системе.
 library;
 
+import 'dart:io';
+
 /// Запись раздела Uninstall «как есть»: [hive] — `HKCU`, `HKLM` или `HKLM32`
 /// (HKLM\WOW6432Node), [keyPath] — полный путь ключа для reg.exe,
 /// [values] — значения (DWORD уже переведены в десятичную строку).
@@ -150,43 +152,93 @@ String _expandEnv(String s, Map<String, String> env) {
   return s.replaceAllMapped(RegExp(r'%([^%]+)%'), (m) => lower[m.group(1)!.toLowerCase()] ?? m.group(0)!);
 }
 
-/// Разбирает UninstallString на exe и аргументы. Понимает кавычки, пути с
-/// пробелами без кавычек (`C:\Program Files\X\unins000.exe /SILENT`),
-/// `MsiExec.exe /I{GUID}` → `/X{GUID}`. Пустая или негодная строка → null.
-UninstallCommand? parseUninstallString(String raw, {Map<String, String> env = const {}}) {
+final RegExp _absPath = RegExp(r'^[A-Za-z]:\\');
+
+bool _defaultFileExists(String path) {
+  try {
+    return File(path).existsSync();
+  } catch (_) {
+    return false;
+  }
+}
+
+String _sysDir(Map<String, String> env) {
+  final root = env['SystemRoot'] ?? env['SYSTEMROOT'] ?? env['windir'] ?? r'C:\Windows';
+  return '$root\\System32';
+}
+
+/// «msiexec»/«rundll32» (с .exe или без) → полный системный путь, иначе null.
+String? _systemTool(String exe, Map<String, String> env) {
+  final base = exe.split(RegExp(r'[\\/]')).last.toLowerCase();
+  if (base == 'msiexec.exe' || base == 'msiexec') return '${_sysDir(env)}\\msiexec.exe';
+  if (base == 'rundll32.exe' || base == 'rundll32') return '${_sysDir(env)}\\rundll32.exe';
+  return null;
+}
+
+bool _isRealExe(String path, bool Function(String) exists) =>
+    _absPath.hasMatch(path) && path.toLowerCase().endsWith('.exe') && exists(path);
+
+/// Разбирает UninstallString на exe и аргументы. Годится только:
+/// абсолютный путь `X:\…\*.exe`, который существует; либо msiexec.exe /
+/// rundll32.exe (запускаются из System32). `MsiExec.exe /I{GUID}` → `/X{GUID}`.
+/// Путь без кавычек с пробелами: берётся самый короткий префикс (по пробелам),
+/// который является существующим .exe. Иначе — null («программа удаления не найдена»).
+UninstallCommand? parseUninstallString(String raw,
+    {Map<String, String> env = const {}, bool Function(String path)? fileExists}) {
+  final exists = fileExists ?? _defaultFileExists;
   final s = _expandEnv(raw.trim(), env);
-  if (s.isEmpty) return null;
-  String exe;
-  String args;
+  if (s.isEmpty || RegExp(r'[\x00-\x1f]').hasMatch(s)) return null;
+  String? exe;
+  String args = '';
   if (s.startsWith('"')) {
     final end = s.indexOf('"', 1);
     if (end < 0) return null;
-    exe = s.substring(1, end);
-    args = s.substring(end + 1).trim();
+    final cand = s.substring(1, end).trim();
+    final rest = s.substring(end + 1).trim();
+    final sys = _systemTool(cand, env);
+    if (sys != null) {
+      exe = sys;
+      args = rest;
+    } else if (_isRealExe(cand, exists)) {
+      exe = cand;
+      args = rest;
+    }
   } else {
-    final m = RegExp(r'\.(exe|msi|bat|cmd|com)(?=\s|$)', caseSensitive: false).firstMatch(s);
-    if (m != null) {
-      exe = s.substring(0, m.end);
-      args = s.substring(m.end).trim();
+    final first = s.split(RegExp(r'\s'))[0];
+    final sys = _systemTool(first, env);
+    if (sys != null && !RegExp(r'[\\/]').hasMatch(first)) {
+      exe = sys;
+      args = s.substring(first.length).trim();
     } else {
-      final sp = s.indexOf(RegExp(r'\s'));
-      exe = sp < 0 ? s : s.substring(0, sp);
-      args = sp < 0 ? '' : s.substring(sp).trim();
+      // самый короткий существующий .exe среди префиксов по границам пробелов
+      final cuts = <int>[
+        for (final m in RegExp(r'\s').allMatches(s)) m.start,
+        s.length,
+      ];
+      for (final cut in cuts) {
+        final cand = s.substring(0, cut).trim();
+        if (cand.isEmpty) continue;
+        final sysTool = _systemTool(cand, env);
+        if (sysTool != null && RegExp(r'[\\/]').hasMatch(cand) && _absPath.hasMatch(cand)) {
+          exe = sysTool;
+          args = s.substring(cut).trim();
+          break;
+        }
+        if (_isRealExe(cand, exists)) {
+          exe = cand;
+          args = s.substring(cut).trim();
+          break;
+        }
+      }
     }
   }
-  exe = exe.trim();
-  if (exe.isEmpty || RegExp(r'[\x00-\x1f]').hasMatch(exe)) return null;
-
+  if (exe == null) return null;
   final base = exe.split(RegExp(r'[\\/]')).last.toLowerCase();
-  if (base == 'msiexec.exe' || base == 'msiexec') {
+  if (base == 'msiexec.exe') {
     args = args.replaceAllMapped(
       RegExp(r'/[iI]\s*(\{[0-9A-Fa-f-]+\})'),
       (m) => '/X${m.group(1)}',
     );
-    if (!RegExp(r'[\\/]').hasMatch(exe)) {
-      final root = env['SystemRoot'] ?? env['SYSTEMROOT'] ?? env['windir'] ?? r'C:\Windows';
-      exe = '$root\\System32\\msiexec.exe';
-    }
   }
   return UninstallCommand(exe, args);
 }

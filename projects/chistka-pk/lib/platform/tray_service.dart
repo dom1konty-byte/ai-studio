@@ -59,6 +59,13 @@ class TrayService with TrayListener, WindowListener {
     }
   }
 
+  Future<void> _quickClean() async {
+    await controller.quickClean().catchError((Object _) => null);
+  }
+
+  // Значок после перезапуска Проводника (TaskbarCreated) не восстанавливается:
+  // tray_manager не отдаёт оконные сообщения Windows, поэтому перехватить его нельзя.
+
   @override
   void onTrayIconMouseDown() => showWindow();
 
@@ -71,7 +78,7 @@ class TrayService with TrayListener, WindowListener {
       case _open:
         showWindow();
       case _quick:
-        controller.quickClean();
+        _quickClean();
       case _exit:
         quit();
     }

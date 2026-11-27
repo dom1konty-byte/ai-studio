@@ -3,7 +3,9 @@
 /// реестру — через передаваемые функции (в тестах подменяются).
 library;
 
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:path/path.dart' as p;
 
@@ -144,6 +146,7 @@ class Leftover {
     this.deletable = true,
     this.isUninstallEntry = false,
     this.note,
+    this.preselect = true,
   });
 
   final LeftoverKind kind;
@@ -159,7 +162,12 @@ class Leftover {
 
   /// Запись самой программы в списке Uninstall (принудительное удаление).
   final bool isUninstallEntry;
-  final String? note;
+
+  /// Пометка в списке (например, «Общая папка издателя»).
+  String? note;
+
+  /// false — не отмечать автоматически (общая папка, может быть чужой).
+  bool preselect;
 
   String get name => path.split(r'\').last;
 }
@@ -169,6 +177,13 @@ class FsEntry {
   final String name;
   final bool isDir;
   final bool isLink;
+}
+
+/// Другая установленная программа (для защиты от удаления чужих папок).
+class OtherProgram {
+  const OtherProgram(this.name, this.installLocation);
+  final String name;
+  final String installLocation;
 }
 
 typedef DirLister = Future<List<FsEntry>> Function(String dir);
@@ -262,6 +277,7 @@ Future<List<Leftover>> findLeftovers({
   required DirLister listDir,
   required RegSubKeys regSubKeys,
   required SizeOf sizeOf,
+  List<OtherProgram> otherPrograms = const [],
 }) async {
   final k = NameKey(name, publisher);
   final roots = LeftoverRoots(env);
@@ -290,7 +306,13 @@ Future<List<Leftover>> findLeftovers({
               isDir: true,
               exact: m == MatchLevel.exact));
         } else if (matchesPublisher(e1.name, k)) {
-          add(Leftover(kind: LeftoverKind.folder, path: path1, isDir: true, exact: false));
+          add(Leftover(
+              kind: LeftoverKind.folder,
+              path: path1,
+              isDir: true,
+              exact: false,
+              note: sharedPublisherNote,
+              preselect: false));
         }
       }
       if (black && !_isContainerName(e1.name)) continue; // в Microsoft, Common Files и т.п. не заходим
@@ -402,6 +424,7 @@ Future<List<Leftover>> findLeftovers({
   }
 
   final res = found.values.toList();
+  markShared(res, k, otherPrograms);
   for (final l in res) {
     if (l.kind != LeftoverKind.registry) {
       try {
@@ -421,6 +444,48 @@ Future<List<Leftover>> findLeftovers({
       return c != 0 ? c : a.path.toLowerCase().compareTo(b.path.toLowerCase());
     });
   return ok;
+}
+
+const sharedPublisherNote = 'Общая папка издателя';
+
+/// Пометка «может принадлежать другой программе»: в списке есть другая программа
+/// с тем же нормализованным именем, либо её InstallLocation совпадает с найденным
+/// путём, лежит внутри него или найденный путь лежит внутри InstallLocation.
+/// Такие находки не отмечаются заранее. Пометка издателя не затирается.
+void markShared(List<Leftover> items, NameKey k, List<OtherProgram> others) {
+  if (others.isEmpty) return;
+  OtherProgram? sameName;
+  for (final o in others) {
+    final n = normalizeName(o.name);
+    if (n.isNotEmpty && n == k.name) {
+      sameName = o;
+      break;
+    }
+  }
+  final locs = <(OtherProgram, String)>[];
+  for (final o in others) {
+    final il = normalizeWinPath(o.installLocation.trim().replaceAll('"', ''));
+    if (il != null) locs.add((o, il));
+  }
+  for (final l in items) {
+    OtherProgram? owner = sameName;
+    if (owner == null && l.kind != LeftoverKind.registry) {
+      final np = normalizeWinPath(l.path);
+      if (np != null) {
+        for (final (o, il) in locs) {
+          if (_win.equals(np, il) || _win.isWithin(np, il) || _win.isWithin(il, np)) {
+            owner = o;
+            break;
+          }
+        }
+      }
+    }
+    if (owner == null) continue;
+    l.preselect = false;
+    if (l.note != sharedPublisherNote) {
+      l.note = 'Может принадлежать другой программе: ${owner.name}';
+    }
+  }
 }
 
 bool _insideAny(String path, List<String> roots) => isInsideAllowedRoot(path, roots);
@@ -482,7 +547,16 @@ class LeftoverOutcome {
 
 /// Проверка пути перед отправкой в Корзину (null — можно). Реальная реализация:
 /// не ссылка, файл или папка без ссылок внутри, цепочка от корня без ссылок.
-typedef PathGuard = String? Function(String path, String root, bool isDir);
+typedef PathGuard = FutureOr<String?> Function(String path, String root, bool isDir);
+
+/// Та же проверка, но обход папки идёт в отдельном Isolate (окно не зависает).
+Future<String?> realPathGuardAsync(String path, String root, bool isDir) async {
+  try {
+    return await Isolate.run(() => realPathGuard(path, root, isDir));
+  } catch (_) {
+    return 'не удалось проверить';
+  }
+}
 
 String? realPathGuard(String path, String root, bool isDir) {
   try {
@@ -518,7 +592,7 @@ class LeftoverCleaner {
     required this.backupDir,
     PathGuard? guard,
     DateTime Function()? now,
-  })  : guard = guard ?? realPathGuard,
+  })  : guard = guard ?? realPathGuardAsync,
         now = now ?? DateTime.now;
 
   final PlatformApi platform;
@@ -540,7 +614,8 @@ class LeftoverCleaner {
     return '${d.year}${t(d.month)}${t(d.day)}-${t(d.hour)}${t(d.minute)}${t(d.second)}_$safe.reg';
   }
 
-  Future<List<LeftoverOutcome>> run(List<Leftover> items) async {
+  Future<List<LeftoverOutcome>> run(List<Leftover> items,
+      {void Function(String text)? onProgress}) async {
     final roots = LeftoverRoots(env);
     final admin = roots.adminRoots(env);
     final out = <LeftoverOutcome>[];
@@ -584,32 +659,35 @@ class LeftoverCleaner {
         (r) => isInsideAllowedRoot(l.path, [r]),
         orElse: () => '',
       );
-      final reason = guard(l.path, root, l.isDir);
+      onProgress?.call('Проверяю: ${l.name}');
+      final reason = await guard(l.path, root, l.isDir);
       if (reason != null) {
         await fail(l, 'пропущено ($reason)');
         continue;
       }
       fsOk.add(l);
     }
-    if (fsOk.isNotEmpty) {
+    // По одной папке, между ними — await: окно успевает перерисоваться.
+    var done = 0;
+    for (final l in fsOk) {
+      onProgress?.call('Удаляю остатки… ${++done} из ${fsOk.length}');
       Map<String, String?> res;
       try {
-        res = await platform.moveToRecycleBin(fsOk.map((l) => l.path).toList());
+        res = await platform.moveToRecycleBin([l.path]);
       } catch (_) {
-        res = {for (final l in fsOk) l.path: 'ошибка вызова Windows'};
+        res = {l.path: 'ошибка вызова Windows'};
       }
-      for (final l in fsOk) {
-        if (res.containsKey(l.path) && res[l.path] == null) {
-          out.add(LeftoverOutcome(l, true, 'в Корзину'));
-          await log.add(category, l.path, l.bytes, 'в Корзину');
-        } else {
-          final needAdmin = admin.any((a) => isInsideAllowedRoot(l.path, [a]));
-          final msg = needAdmin
-              ? 'пропущено (нужны права администратора)'
-              : 'пропущено: ${res[l.path] ?? 'нет ответа'}';
-          await fail(l, msg);
-        }
+      if (res.containsKey(l.path) && res[l.path] == null) {
+        out.add(LeftoverOutcome(l, true, 'в Корзину'));
+        await log.add(category, l.path, l.bytes, 'в Корзину');
+      } else {
+        final needAdmin = admin.any((a) => isInsideAllowedRoot(l.path, [a]));
+        final msg = needAdmin
+            ? 'пропущено (нужны права администратора)'
+            : 'пропущено: ${res[l.path] ?? 'нет ответа'}';
+        await fail(l, msg);
       }
+      await Future<void>.delayed(Duration.zero);
     }
     for (final e in nested.entries) {
       final parentOk = out.any((o) => o.ok && identical(o.item, e.value));

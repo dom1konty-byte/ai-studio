@@ -361,4 +361,105 @@ void main() {
       expect(text, contains(r'HKCU\Software\Foo Editor'));
     });
   });
+
+  group('чужая программа и общие папки', () {
+    Future<List<Leftover>> findPy({List<OtherProgram> others = const []}) {
+      final tree = <String, List<FsEntry>>{
+        r'c:\users\x\appdata\local': [d('Programs'), d('Python Foundation')],
+        r'c:\users\x\appdata\local\programs': [d('Python')],
+        r'c:\program files': [d('Python311'), d('PSF'), d('Tools')],
+      };
+      return findLeftovers(
+        name: 'Python 3.11.5 (64-bit)',
+        publisher: 'PSF',
+        installLocation: '',
+        env: _env,
+        listDir: (dir) async => tree[dir.toLowerCase()] ?? const [],
+        regSubKeys: (k) async => const [],
+        sizeOf: (path, isDir) async => 1,
+        otherPrograms: others,
+      );
+    }
+
+    test(r'без других программ Programs\Python отмечается', () async {
+      final res = await findPy();
+      final py = res.firstWhere((l) => l.path.endsWith(r'Programs\Python'));
+      expect(py.exact, isTrue);
+      expect(py.preselect, isTrue);
+      expect(py.note, isNull);
+    });
+
+    test('удаление Python 3.11 при установленном Python 3.12: Programs\Python не отмечена', () async {
+      final res = await findPy(others: [
+        const OtherProgram('Python 3.12.1 (64-bit)', r'C:\Users\X\AppData\Local\Programs\Python\Python312'),
+      ]);
+      final py = res.firstWhere((l) => l.path.endsWith(r'Programs\Python'));
+      expect(py.preselect, isFalse);
+      expect(py.note, contains('Может принадлежать другой программе'));
+      expect(py.note, contains('Python 3.12'));
+    });
+
+    test('InstallLocation другой программы внутри найденной папки', () {
+      final l = Leftover(
+          kind: LeftoverKind.folder, path: r'C:\Program Files\Acme', isDir: true, exact: true);
+      markShared([l], NameKey('Acme Tool', ''),
+          const [OtherProgram('Acme Other', r'C:\Program Files\Acme\Other')]);
+      expect(l.preselect, isFalse);
+      expect(l.note, contains('Acme Other'));
+    });
+
+    test('найденная папка совпадает с InstallLocation другой / лежит внутри неё', () {
+      final a = Leftover(kind: LeftoverKind.folder, path: r'C:\Program Files\Acme', isDir: true, exact: true);
+      final b = Leftover(kind: LeftoverKind.folder, path: r'C:\Program Files\Acme\Sub', isDir: true, exact: true);
+      final c = Leftover(kind: LeftoverKind.folder, path: r'C:\Program Files\Zzz', isDir: true, exact: true);
+      markShared([a, b, c], NameKey('Acme Tool', ''),
+          const [OtherProgram('Beta', r'C:\Program Files\Acme')]);
+      expect(a.preselect, isFalse);
+      expect(b.preselect, isFalse);
+      expect(c.preselect, isTrue);
+    });
+
+    test('папка издателя: пометка и без предвыбора', () async {
+      final res = await findPy();
+      final psf = res.firstWhere((l) => l.path.endsWith(r'Program Files\PSF'));
+      expect(psf.note, 'Общая папка издателя');
+      expect(psf.preselect, isFalse);
+    });
+
+    test('пометка издателя не затирается пометкой чужой программы', () {
+      final l = Leftover(
+          kind: LeftoverKind.folder,
+          path: r'C:\Program Files\Acme',
+          isDir: true,
+          exact: false,
+          note: sharedPublisherNote,
+          preselect: false);
+      markShared([l], NameKey('Acme Tool', 'Acme'),
+          const [OtherProgram('Acme Other', r'C:\Program Files\Acme\Other')]);
+      expect(l.note, sharedPublisherNote);
+    });
+  });
+
+  group('Корзина по папкам', () {
+    test('каждая папка — отдельный вызов, guard может быть асинхронным', () async {
+      final tmp = Directory.systemTemp.createTempSync('chisto_left2');
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final platform = FakePlatform();
+      final cleaner = LeftoverCleaner(
+        platform: platform,
+        log: CleanLog(File('${tmp.path}${Platform.pathSeparator}log.txt')),
+        env: _env,
+        backupDir: tmp.path,
+        guard: (path, root, isDir) async => null,
+      );
+      final texts = <String>[];
+      final out = await cleaner.run([
+        Leftover(kind: LeftoverKind.folder, path: r'C:\Program Files\Foo', isDir: true, exact: true),
+        Leftover(kind: LeftoverKind.folder, path: r'C:\Program Files\Bar', isDir: true, exact: true),
+      ], onProgress: texts.add);
+      expect(out.every((o) => o.ok), isTrue);
+      expect(platform.moveCalls, 2);
+      expect(texts.any((t) => t.contains('Удаляю остатки')), isTrue);
+    });
+  });
 }

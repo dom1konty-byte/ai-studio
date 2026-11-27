@@ -315,6 +315,13 @@ class WindowsPlatform implements PlatformApi {
 
   @override
   Future<UninstallRun> runUninstaller(String exe, String args) async {
+    // Повторная проверка: только X:\…\*.exe, который существует (msiexec/rundll32 — из System32).
+    final okExe = RegExp(r'^[A-Za-z]:\\').hasMatch(exe) &&
+        exe.toLowerCase().endsWith('.exe') &&
+        File(exe).existsSync();
+    if (!okExe) {
+      return const UninstallRun(started: false, error: 'Программа удаления не найдена');
+    }
     final file = exe.toNativeUtf16();
     final verb = 'open'.toNativeUtf16();
     final params = args.isEmpty ? nullptr : args.toNativeUtf16();
@@ -357,11 +364,16 @@ class WindowsPlatform implements PlatformApi {
       // процесса нет (передача другой программе): ждать нечего
       return const UninstallRun(started: true);
     }
-    int? code;
+    // Ждём до 10 минут. Дескриптор закрывает сама waitForProcessSync (в Isolate);
+    // если Isolate не удалось запустить — закрываем здесь.
+    ({int? code, bool timedOut}) res;
     try {
-      code = await Isolate.run(() => waitForProcessSync(handle));
-    } catch (_) {}
-    return UninstallRun(started: true, exitCode: code);
+      res = await Isolate.run(() => waitForProcessSync(handle, uninstallWaitMs));
+    } catch (_) {
+      closeHandleSync(handle);
+      res = (code: null, timedOut: false);
+    }
+    return UninstallRun(started: true, exitCode: res.code, timedOut: res.timedOut);
   }
 
   @override
@@ -457,7 +469,7 @@ $n.Dispose()
 ''';
     try {
       await Process.start(
-        'powershell.exe',
+        '$_sysRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
         ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
         environment: {
           'CD_TITLE': title,

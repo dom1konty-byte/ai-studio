@@ -60,6 +60,7 @@ class FakePlatform implements PlatformApi {
   final uninstallCalls = <String>[];
   UninstallRun uninstallResult = const UninstallRun(started: true, exitCode: 0);
   void Function()? onUninstall;
+  void Function()? onRead;
   bool exportOk = true;
   bool deleteOk = true;
   final exported = <String>[];
@@ -67,7 +68,10 @@ class FakePlatform implements PlatformApi {
   final callOrder = <String>[];
 
   @override
-  Future<List<RawUninstall>> readUninstallEntries() async => uninstallEntries;
+  Future<List<RawUninstall>> readUninstallEntries() async {
+    onRead?.call();
+    return uninstallEntries;
+  }
 
   @override
   Future<List<String>> regSubKeys(String key) async => regTree[key] ?? const [];

@@ -40,6 +40,9 @@ void main() {
       listDir: (dir) async => const [],
       sizeOf: (p, d) async => 0,
       leftoverGuard: (p, r, d) => null,
+      fileExists: (p) => true,
+      uninstallPollInterval: const Duration(milliseconds: 1),
+      uninstallTimeout: const Duration(milliseconds: 200),
     );
   });
   tearDown(() => tmp.deleteSync(recursive: true));
@@ -61,7 +64,10 @@ void main() {
     expect(platform.uninstallCalls, [r'C:\Program Files\Foo\unins000.exe|/SILENT']);
     expect(c.leftoverProgram, isNull);
     expect(c.programMessage, contains('всё ещё в списке'));
+    expect(c.programMessage, contains('Проверить и найти остатки'));
+    expect(c.recheckProgram, isNotNull);
     expect(c.uninstallBusy, isFalse);
+    expect(c.uninstallWaiting, isFalse);
   });
 
   test('uninstall: запись исчезла — открывается экран остатков', () async {
@@ -92,7 +98,8 @@ void main() {
     await c.loadPrograms();
     await c.uninstall(c.programs.single);
     expect(platform.uninstallCalls, isEmpty);
-    expect(c.programMessage, contains('нет программы удаления'));
+    expect(c.programMessage, contains('Программа удаления не найдена'));
+    expect(c.forceOffer, isNotNull);
   });
 
   test('принудительное удаление HKCU: программа удаления не запускается, запись — с копией', () async {
@@ -129,6 +136,72 @@ void main() {
     await c.deleteLeftovers();
     expect(platform.deleted, isEmpty);
     expect(c.leftovers.any((l) => l.isUninstallEntry), isTrue);
+  });
+
+  test('uninstall: файл программы удаления не найден — не запускаем, предлагаем принудительное', () async {
+    final c2 = AppController(
+      platform: platform,
+      env: const Env({'LOCALAPPDATA': r'C:\Users\X\AppData\Local'}),
+      dataDir: tmp.path,
+      listDir: (dir) async => const [],
+      sizeOf: (p, d) async => 0,
+      leftoverGuard: (p, r, d) => null,
+      fileExists: (p) => false,
+    );
+    platform.uninstallEntries = [_entry('a')];
+    await c2.loadPrograms();
+    await c2.uninstall(c2.programs.single);
+    expect(platform.uninstallCalls, isEmpty);
+    expect(c2.forceOffer, isNotNull);
+  });
+
+  test('uninstall: запись исчезает позже — ждём опросом, затем остатки', () async {
+    platform.uninstallEntries = [_entry('a'), RawUninstall('HKCU', '$_uninst\\keep', {'DisplayName': 'Keep'})];
+    await c.loadPrograms();
+    final prog = c.programs.firstWhere((p) => p.name == 'Foo Editor');
+    var reads = 0;
+    platform.onRead = () {
+      if (++reads == 4) platform.uninstallEntries = [platform.uninstallEntries.last];
+    };
+    await c.uninstall(prog);
+    expect(reads, greaterThanOrEqualTo(4));
+    expect(c.leftoverProgram, same(prog));
+  });
+
+  test('uninstall: ненулевой код выхода попадает в сообщение', () async {
+    platform.uninstallEntries = [_entry('a')];
+    await c.loadPrograms();
+    platform.uninstallResult = const UninstallRun(started: true, exitCode: 5);
+    await c.uninstall(c.programs.single);
+    expect(c.programMessage, contains('кодом 5'));
+  });
+
+  test('uninstall: отмена ожидания, затем «Проверить и найти остатки»', () async {
+    final slow = AppController(
+      platform: platform,
+      env: const Env({'LOCALAPPDATA': r'C:\Users\X\AppData\Local'}),
+      dataDir: tmp.path,
+      listDir: (dir) async => const [],
+      sizeOf: (p, d) async => 0,
+      leftoverGuard: (p, r, d) => null,
+      fileExists: (p) => true,
+      uninstallPollInterval: const Duration(seconds: 30),
+      uninstallTimeout: const Duration(minutes: 5),
+    );
+    platform.uninstallEntries = [_entry('a'), RawUninstall('HKCU', '$_uninst\\keep', {'DisplayName': 'Keep'})];
+    await slow.loadPrograms();
+    final prog = slow.programs.firstWhere((p) => p.name == 'Foo Editor');
+    final fut = slow.uninstall(prog);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(slow.uninstallWaiting, isTrue);
+    slow.cancelUninstallWait();
+    await fut;
+    expect(slow.recheckProgram, same(prog));
+    expect(slow.leftoverProgram, isNull);
+    // пользователь дождался окончания удаления
+    platform.uninstallEntries = [platform.uninstallEntries.last];
+    await slow.recheckAndFindLeftovers();
+    expect(slow.leftoverProgram, same(prog));
   });
 
   test('closeLeftovers возвращает к списку', () async {

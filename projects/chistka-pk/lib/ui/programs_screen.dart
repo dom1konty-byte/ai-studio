@@ -139,6 +139,21 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2)),
                       ),
                     Expanded(child: Text(c.programMessage!, style: TextStyle(color: cs.primary))),
+                    if (c.uninstallWaiting)
+                      OutlinedButton(
+                        onPressed: c.cancelUninstallWait,
+                        child: const Text('Отмена'),
+                      ),
+                    if (!busy && c.recheckProgram != null)
+                      FilledButton(
+                        onPressed: c.recheckAndFindLeftovers,
+                        child: const Text('Проверить и найти остатки'),
+                      ),
+                    if (!busy && c.forceOffer != null)
+                      OutlinedButton(
+                        onPressed: () => _confirmForce(c.forceOffer!),
+                        child: const Text('Принудительно удалить…'),
+                      ),
                   ],
                 ),
               ),

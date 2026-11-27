@@ -35,7 +35,9 @@ jobs:
         shell: bash
         run: |
           # Показ окна делает window_manager (show/hide), а не шаблон runner.
-          sed -i -E 's#^([[:space:]]*)this->Show\(\);#\1// this->Show();#' windows/runner/flutter_window.cpp || true
+          sed -i -E 's#^([[:space:]]*)this->Show\(\);#\1// this->Show();#' windows/runner/flutter_window.cpp
+          # без этого окно мигнёт при запуске в трее — шаг должен упасть, если шаблон изменился
+          grep -q '// this->Show();' windows/runner/flutter_window.cpp
       - name: Иконка программы
         shell: bash
         run: cp assets/icon/app_icon.ico windows/runner/resources/app_icon.ico

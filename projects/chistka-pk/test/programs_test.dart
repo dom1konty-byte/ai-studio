@@ -74,40 +74,74 @@ void main() {
   });
 
   group('разбор строки удаления', () {
+    final existing = <String>{
+      r'c:\program files\foo\unins000.exe',
+      r'c:\foo\uninst.exe',
+      r'c:\program files\foo bar\uninstall.exe',
+      r'c:\program files\foo\u.exe',
+      r'c:\program files\foo\unins.exe',
+      r'c:\program\unins.exe',
+    };
+    bool ex(String p) => existing.contains(p.toLowerCase());
+    UninstallCommand? parse(String s, {Map<String, String> env = const {}}) =>
+        parseUninstallString(s, env: env, fileExists: ex);
+
     test('в кавычках с аргументами', () {
-      final c = parseUninstallString(r'"C:\Program Files\Foo\unins000.exe" /SILENT');
+      final c = parse(r'"C:\Program Files\Foo\unins000.exe" /SILENT');
       expect(c!.exe, r'C:\Program Files\Foo\unins000.exe');
       expect(c.args, '/SILENT');
     });
     test('в кавычках без аргументов', () {
-      final c = parseUninstallString(r'"C:\Foo\uninst.exe"');
+      final c = parse(r'"C:\Foo\uninst.exe"');
       expect(c!.exe, r'C:\Foo\uninst.exe');
       expect(c.args, '');
     });
     test('без кавычек, путь с пробелами', () {
-      final c = parseUninstallString(r'C:\Program Files\Foo Bar\uninstall.exe /allusers');
+      final c = parse(r'C:\Program Files\Foo Bar\uninstall.exe /allusers');
       expect(c!.exe, r'C:\Program Files\Foo Bar\uninstall.exe');
       expect(c.args, '/allusers');
     });
-    test('MsiExec /I{GUID} → /X{GUID}', () {
-      final c = parseUninstallString('MsiExec.exe /I{12345678-ABCD-1234-ABCD-1234567890AB}',
+    test('без кавычек: самый короткий существующий .exe, а не резка по первому пробелу', () {
+      // C:\Program не существует и не .exe → идём дальше по пробелам
+      final c = parse(r'C:\Program Files\Foo\unins.exe /S /x.exe');
+      expect(c!.exe, r'C:\Program Files\Foo\unins.exe');
+      expect(c.args, '/S /x.exe');
+    });
+    test('файла нет → null (программа удаления не найдена)', () {
+      expect(parse(r'"C:\Missing\u.exe" /S'), isNull);
+      expect(parse(r'C:\Missing Dir\u.exe /S'), isNull);
+    });
+    test('относительный, UNC и не-exe пути отвергаются', () {
+      expect(parse(r'u.exe /S'), isNull);
+      expect(parse(r'"..\Foo\u.exe"'), isNull);
+      expect(parse(r'"\\server\share\u.exe"'), isNull);
+      expect(parse(r'"C:\Foo\uninst.bat"'), isNull);
+      expect(parse(r'cmd.exe /c del x'), isNull);
+    });
+    test('MsiExec /I{GUID} → /X{GUID}, запуск из System32', () {
+      final c = parse('MsiExec.exe /I{12345678-ABCD-1234-ABCD-1234567890AB}',
           env: {'SystemRoot': r'C:\Windows'});
       expect(c!.exe, r'C:\Windows\System32\msiexec.exe');
       expect(c.args, '/X{12345678-ABCD-1234-ABCD-1234567890AB}');
     });
-    test('MsiExec /X остаётся, лишние аргументы сохраняются', () {
-      final c = parseUninstallString(r'"C:\Windows\System32\msiexec.exe" /X{AAAA-BBBB} /qn');
+    test('msiexec с чужим путём заменяется на системный', () {
+      final c = parse(r'"C:\evil\msiexec.exe" /X{AAAA-BBBB} /qn', env: {'SystemRoot': r'C:\Windows'});
       expect(c!.exe, r'C:\Windows\System32\msiexec.exe');
       expect(c.args, '/X{AAAA-BBBB} /qn');
     });
+    test('rundll32 → System32', () {
+      final c = parse(r'rundll32.exe advpack.dll,LaunchINFSection x.inf', env: {'SystemRoot': r'D:\Win'});
+      expect(c!.exe, r'D:\Win\System32\rundll32.exe');
+      expect(c.args, 'advpack.dll,LaunchINFSection x.inf');
+    });
     test('переменные окружения раскрываются', () {
-      final c = parseUninstallString(r'"%ProgramFiles%\Foo\u.exe" -x', env: {'ProgramFiles': r'C:\Program Files'});
+      final c = parse(r'"%ProgramFiles%\Foo\u.exe" -x', env: {'ProgramFiles': r'C:\Program Files'});
       expect(c!.exe, r'C:\Program Files\Foo\u.exe');
     });
     test('пустая и битая строки → null', () {
-      expect(parseUninstallString(''), isNull);
-      expect(parseUninstallString('   '), isNull);
-      expect(parseUninstallString(r'"C:\Foo\u.exe /S'), isNull);
+      expect(parse(''), isNull);
+      expect(parse('   '), isNull);
+      expect(parse(r'"C:\Foo\u.exe /S'), isNull);
     });
   });
 }
