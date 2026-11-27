@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
 import 'shell.dart';
+import 'splash.dart';
+import 'window_fx.dart';
 
 const brandTeal = Color(0xFF0F9D9A);
 const brandTealDark = Color(0xFF0B7C7A);
@@ -34,8 +36,11 @@ ThemeData _theme(Brightness b) {
 }
 
 class ChistoApp extends StatefulWidget {
-  const ChistoApp({super.key, required this.controller});
+  const ChistoApp({super.key, required this.controller, this.splash = false});
   final AppController controller;
+
+  /// Показать заставку при запуске (в трее/тестах — нет).
+  final bool splash;
 
   @override
   State<ChistoApp> createState() => _ChistoAppState();
@@ -56,6 +61,8 @@ class _ChistoAppState extends State<ChistoApp> {
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: ThemeMode.system,
+      builder: (context, child) =>
+          WindowFxHost(child: Splash(enabled: widget.splash, child: child ?? const SizedBox())),
       home: Shell(controller: widget.controller),
     );
   }

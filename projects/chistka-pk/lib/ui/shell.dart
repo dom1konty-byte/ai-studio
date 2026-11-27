@@ -1,7 +1,9 @@
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
 import 'anim.dart';
+import 'computer_screen.dart';
 import 'files_screen.dart';
 import 'internet_screen.dart';
 import 'nav_panel.dart';
@@ -46,16 +48,14 @@ class _ShellState extends State<Shell> {
   }
 
   Widget _content() {
-    if (c.phase == Phase.done) return ResultScreen(key: const ValueKey('done'), controller: c);
+    if (c.phase == Phase.done && c.showDetails) {
+      return ResultScreen(key: const ValueKey('done'), controller: c);
+    }
     switch (c.section) {
       case Section.main:
         return MainScreen(key: const ValueKey('main'), controller: c);
-      case Section.downloads:
-        return FilesScreen(key: const ValueKey('downloads'), controller: c, isDownloads: true);
-      case Section.big:
-        return FilesScreen(key: const ValueKey('big'), controller: c, isDownloads: false);
-      case Section.map:
-        return MapScreen(key: const ValueKey('map'), controller: c);
+      case Section.computer:
+        return ComputerScreen(key: const ValueKey('computer'), controller: c);
       case Section.programs:
         return ProgramsScreen(key: const ValueKey('programs'), controller: c);
       case Section.startup:
@@ -65,6 +65,69 @@ class _ShellState extends State<Shell> {
       case Section.internet:
         return InternetScreen(key: const ValueKey('internet'), controller: c);
     }
+  }
+
+  /// Экран поверх «Очистки»: справа панель 60 % ширины (узко — на весь экран),
+  /// вверху «Назад»; закрывается кнопкой, щелчком по затемнению и Esc.
+  Widget _layer(BuildContext context, BoxConstraints box) {
+    final l = c.layer;
+    final full = box.maxWidth < 720 || l == Layer.map;
+    final Widget screen;
+    switch (l) {
+      case Layer.downloads:
+        screen = FilesScreen(key: const ValueKey('downloads'), controller: c, isDownloads: true);
+      case Layer.big:
+        screen = FilesScreen(key: const ValueKey('big'), controller: c, isDownloads: false);
+      case Layer.map:
+        screen = MapScreen(key: const ValueKey('map'), controller: c);
+      case Layer.none:
+        return const SizedBox.shrink();
+    }
+    final cs = Theme.of(context).colorScheme;
+    return CallbackShortcuts(
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): c.closeLayer},
+      child: Focus(
+        autofocus: true,
+        child: Stack(
+          key: ValueKey('layer-${l.name}'),
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: c.closeLayer,
+                child: const ColoredBox(color: Color(0x33000000)),
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: SizedBox(
+                width: full ? box.maxWidth : box.maxWidth * 0.6,
+                height: box.maxHeight,
+                child: Material(
+                  elevation: 8,
+                  color: cs.surface,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextButton.icon(
+                          key: const Key('layer-back'),
+                          onPressed: c.closeLayer,
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('Назад'),
+                        ),
+                        Expanded(child: screen),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -93,9 +156,13 @@ class _ShellState extends State<Shell> {
                   ),
                 ),
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: AnimatedSwitcher(
+                  child: LayoutBuilder(
+                    builder: (context, box) => Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: AnimatedSwitcher(
                       duration: animDuration(context, const Duration(milliseconds: 200)),
                       switchInCurve: Curves.easeOutCubic,
                       transitionBuilder: (child, anim) => FadeTransition(
@@ -107,6 +174,21 @@ class _ShellState extends State<Shell> {
                         ),
                       ),
                       child: _content(),
+                            ),
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: AnimatedSwitcher(
+                            duration: animDuration(context, const Duration(milliseconds: 200)),
+                            transitionBuilder: (child, anim) => SlideTransition(
+                              position: Tween<Offset>(begin: const Offset(0.1, 0), end: Offset.zero)
+                                  .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                              child: FadeTransition(opacity: anim, child: child),
+                            ),
+                            child: _layer(context, box),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

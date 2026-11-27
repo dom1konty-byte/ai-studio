@@ -16,19 +16,15 @@ class _Item {
   final String label;
 }
 
-const _groupItems = [
+const _items = [
   _Item(Section.main, Icons.cleaning_services_outlined, 'Очистка'),
-  _Item(Section.downloads, Icons.download_outlined, 'Загрузки'),
-  _Item(Section.big, Icons.data_usage, 'Большие файлы'),
-  _Item(Section.map, Icons.pie_chart_outline, 'Карта диска'),
-];
-const _soloItems = [
+  _Item(Section.computer, Icons.computer_outlined, 'Компьютер'),
   _Item(Section.programs, Icons.apps_outlined, 'Программы'),
   _Item(Section.startup, Icons.rocket_launch_outlined, 'Автозагрузка'),
   _Item(Section.internet, Icons.network_check, 'Интернет'),
 ];
 
-/// Левая панель: логотип, группа «Очистка», остальные разделы, низ.
+/// Левая панель: логотип, плоский список из 5 пунктов, низ (Настройки, Журнал).
 class NavPanel extends StatefulWidget {
   const NavPanel({
     super.key,
@@ -56,7 +52,6 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
     super.dispose();
   }
 
-  bool _expanded = true;
   bool _edgeHover = false;
   bool _edgeDrag = false;
 
@@ -64,9 +59,9 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
   bool get _narrow => widget.width < navNarrowBelow;
   bool get _busy => c.phase == Phase.analyzing || c.phase == Phase.cleaning;
 
-  Section? get _selected => c.phase == Phase.done ? Section.main : c.section;
+  Section get _selected => c.section;
 
-  Widget _navTile(_Item it, {double indent = 0}) {
+  Widget _navTile(_Item it) {
     final cs = Theme.of(context).colorScheme;
     final selected = _selected == it.section;
     final fg = selected ? const Color(0xFF0B3F3E) : cs.onSurface;
@@ -74,7 +69,7 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
         ? cs.onSecondaryContainer
         : fg;
     final tile = Padding(
-      padding: EdgeInsets.fromLTRB(8 + indent, 2, 8, 2),
+      padding: EdgeInsets.fromLTRB(8, 2, 8, 2),
       child: Material(
         color: selected ? cs.secondaryContainer : Colors.transparent,
         borderRadius: BorderRadius.circular(24),
@@ -83,7 +78,7 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
           hoverColor: cs.primary.withValues(alpha: 0.08),
           onTap: _busy ? null : () => c.go(it.section),
           child: SizedBox(
-            height: 44,
+            height: 48,
             child: Row(
               mainAxisAlignment: _narrow ? MainAxisAlignment.center : MainAxisAlignment.start,
               children: [
@@ -111,89 +106,6 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
     return _narrow ? Tooltip(message: it.label, waitDuration: const Duration(milliseconds: 400), child: tile) : tile;
   }
 
-  Widget _group(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    if (_narrow) {
-      // Узкая панель: группа одной иконкой, подпункты — во всплывающем меню.
-      final selected = _groupItems.any((it) => it.section == _selected);
-      final bg = selected ? cs.secondaryContainer : Colors.transparent;
-      final fg = selected && Theme.of(context).brightness == Brightness.light
-          ? const Color(0xFF0B3F3E)
-          : (selected ? cs.onSecondaryContainer : cs.onSurface);
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        child: PopupMenuButton<Section>(
-          key: const Key('nav-group-popup'),
-          tooltip: 'Очистка',
-          enabled: !_busy,
-          position: PopupMenuPosition.over,
-          offset: const Offset(56, 0),
-          onSelected: c.go,
-          itemBuilder: (_) => [
-            for (final it in _groupItems)
-              PopupMenuItem<Section>(
-                value: it.section,
-                child: Row(children: [
-                  Icon(it.icon, size: 20),
-                  const SizedBox(width: 12),
-                  Text(it.label),
-                ]),
-              ),
-          ],
-          child: Container(
-            height: 44,
-            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(24)),
-            alignment: Alignment.center,
-            child: Icon(Icons.cleaning_services_outlined, size: 22, color: fg),
-          ),
-        ),
-      );
-    }
-    final d = animDuration(context, const Duration(milliseconds: 200));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(24),
-            hoverColor: cs.primary.withValues(alpha: 0.08),
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: SizedBox(
-              height: 44,
-              child: Row(
-                children: [
-                  const SizedBox(width: 12),
-                  Icon(Icons.cleaning_services_outlined, size: 22, color: cs.onSurface),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text('Очистка',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                  ),
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: d,
-                    child: const Icon(Icons.expand_more, size: 22),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-              ),
-            ),
-          ),
-        ),
-        AnimatedSize(
-          duration: d,
-          curve: Curves.easeInOut,
-          alignment: Alignment.topCenter,
-          child: _expanded
-              ? Column(children: [for (final it in _groupItems) _navTile(it, indent: 12)])
-              : const SizedBox(width: double.infinity),
-        ),
-      ],
-    );
-  }
-
   Widget _bottom(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final buttons = [
@@ -202,7 +114,7 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
         waitDuration: const Duration(milliseconds: 400),
         child: IconButton(
           constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-          isSelected: c.section == Section.settings && c.phase != Phase.done,
+          isSelected: c.section == Section.settings,
           onPressed: _busy ? null : () => c.go(Section.settings),
           icon: const Icon(Icons.settings_outlined),
         ),
@@ -372,9 +284,7 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _group(context),
-                          const SizedBox(height: 4),
-                          for (final it in _soloItems) _navTile(it),
+                          for (final it in _items) _navTile(it),
                         ],
                       ),
                     ),

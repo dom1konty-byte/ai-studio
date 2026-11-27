@@ -32,21 +32,28 @@ Future<void> _pump(WidgetTester tester, AppController c, {Size size = const Size
 }
 
 void main() {
-  testWidgets('Группа «Очистка» раскрывается и сворачивается', (tester) async {
+  testWidgets('Навигация плоская: 5 пунктов, групп нет, внизу Настройки и Журнал', (tester) async {
     await _pump(tester, _controller());
-    for (final t in ['Загрузки', 'Большие файлы', 'Карта диска']) {
+    for (final t in ['Очистка', 'Компьютер', 'Программы', 'Автозагрузка', 'Интернет']) {
       expect(_inNav(find.text(t)), findsOneWidget);
     }
-    expect(_inNav(find.text('Интернет')), findsOneWidget);
+    // Бывшие подпункты группы больше не пункты панели.
+    for (final t in ['Загрузки', 'Большие файлы', 'Карта диска']) {
+      expect(_inNav(find.text(t)), findsNothing);
+    }
+    expect(find.byType(ExpansionTile), findsNothing);
+    expect(_inNav(find.byType(PopupMenuButton<Section>)), findsNothing);
+    expect(find.byTooltip('Настройки'), findsOneWidget);
+    expect(find.byTooltip('Журнал'), findsOneWidget);
+    // Настройки и Журнал рядом, в одной строке.
+    final s = tester.getCenter(find.byTooltip('Настройки'));
+    final j = tester.getCenter(find.byTooltip('Журнал'));
+    expect(s.dy, j.dy);
 
-    await tester.tap(_inNav(find.text('Очистка')).first); // заголовок группы
+    await tester.tap(_inNav(find.text('Компьютер')));
     await tester.pumpAndSettle();
-    expect(_inNav(find.text('Загрузки')), findsNothing);
-    expect(_inNav(find.text('Программы')), findsOneWidget);
-
-    await tester.tap(_inNav(find.text('Очистка')).first);
-    await tester.pumpAndSettle();
-    expect(_inNav(find.text('Загрузки')), findsOneWidget);
+    expect(c0(tester), Section.computer);
+    expect(find.text('Здоровье диска'), findsOneWidget);
   });
 
   testWidgets('Узкая панель (< 120 px): только иконки с подсказками', (tester) async {
@@ -54,22 +61,24 @@ void main() {
     await _pump(tester, c);
     expect(_inNav(find.text('Программы')), findsNothing);
     expect(_inNav(find.text('ЧистоДиск')), findsNothing);
-    expect(_inNav(find.byIcon(Icons.apps_outlined)), findsOneWidget);
-    // Группа «Очистка» — одна иконка; подпункты во всплывающем меню.
-    expect(_inNav(find.byIcon(Icons.cleaning_services_outlined)), findsOneWidget);
-    expect(_inNav(find.byIcon(Icons.download_outlined)), findsNothing);
-    await tester.tap(find.byKey(const Key('nav-group-popup')));
+    for (final i in [
+      Icons.cleaning_services_outlined,
+      Icons.computer_outlined,
+      Icons.apps_outlined,
+      Icons.rocket_launch_outlined,
+      Icons.network_check,
+    ]) {
+      expect(_inNav(find.byIcon(i)), findsOneWidget);
+    }
+    for (final t in ['Очистка', 'Компьютер', 'Программы', 'Автозагрузка', 'Интернет', 'Настройки', 'Журнал']) {
+      expect(find.byTooltip(t), findsOneWidget);
+    }
+    await tester.tap(find.byTooltip('Компьютер'));
     await tester.pumpAndSettle();
-    expect(find.text('Загрузки'), findsOneWidget);
-    await tester.tap(find.text('Загрузки'));
-    await tester.pumpAndSettle();
-    expect(c.section, Section.downloads);
-    expect(find.byTooltip('Программы'), findsOneWidget);
-    expect(find.byTooltip('Настройки'), findsOneWidget);
-    expect(find.byTooltip('Журнал'), findsOneWidget);
+    expect(c.section, Section.computer);
   });
 
-  testWidgets('Узкое окно 900x600: панель с 6+4 пунктами помещается', (tester) async {
+  testWidgets('Узкое окно 900x600: панель помещается', (tester) async {
     await _pump(tester, _controller(), size: const Size(900, 600));
     expect(tester.takeException(), isNull);
   });
@@ -165,3 +174,6 @@ void main() {
     expect(appVersion, v);
   });
 }
+
+Section c0(WidgetTester tester) =>
+    (tester.widget<NavPanel>(find.byType(NavPanel))).controller.section;

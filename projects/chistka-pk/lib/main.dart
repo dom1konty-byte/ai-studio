@@ -54,5 +54,5 @@ Future<void> main(List<String> args) async {
       if (trayOnly) await windowManager.show();
     }
   }
-  runApp(ChistoApp(controller: controller));
+  runApp(ChistoApp(controller: controller, splash: !trayOnly));
 }

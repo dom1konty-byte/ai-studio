@@ -4,6 +4,8 @@ import '../core/format.dart';
 import '../core/models.dart';
 import '../state/app_controller.dart';
 import 'anim.dart';
+import 'app.dart';
+import 'pult_tile.dart';
 
 IconData categoryIcon(CategoryId id) {
   switch (id) {
@@ -35,16 +37,28 @@ IconData categoryIcon(CategoryId id) {
 RoundedRectangleBorder cardShape() =>
     RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
 
-class MainScreen extends StatelessWidget {
+
+/// Экран «Очистка» — пульт: полоска диска, «Быстрая очистка» и плитки.
+class MainScreen extends StatefulWidget {
   const MainScreen({super.key, required this.controller});
   final AppController controller;
 
-  Future<void> _onClean(BuildContext context) async {
-    final c = controller;
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  AppController get c => widget.controller;
+  bool _open = false; // выпадающая панель «Что чистить?»
+
+  Future<void> _quick() async {
     if (c.cleanBusy) return; // защита от двойного нажатия
     c.cleanBusy = true;
     try {
-      await _confirmAndClean(context, c);
+      // Перед очисткой — анализ, если его не было.
+      if (c.phase == Phase.idle) await c.analyze();
+      if (!mounted) return;
+      if (c.canClean) await _confirmAndClean(context, c);
     } finally {
       c.cleanBusy = false;
     }
@@ -84,266 +98,397 @@ class MainScreen extends StatelessWidget {
     await c.clean(skipBrowsers: skip);
   }
 
+  void _toggleOpen() {
+    setState(() => _open = !_open);
+    // Размеры в списке появятся после анализа.
+    if (_open && c.phase == Phase.idle && c.canAnalyze) c.analyze();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final c = controller;
     final theme = Theme.of(context);
-    final analyzing = c.phase == Phase.analyzing;
-    final cleaning = c.phase == Phase.cleaning;
-    final ready = c.phase == Phase.ready;
-    final busy = analyzing || cleaning;
-    final totalActive =
-        c.rows.where((r) => r.active).fold<int>(0, (a, r) => a + (r.bytes ?? 0));
-
-    double? ring;
-    if (analyzing) {
-      ring = null;
-    } else if (cleaning) {
-      ring = c.progressFraction;
-    } else if (ready && totalActive > 0) {
-      ring = (c.selectedBytes / totalActive).clamp(0.0, 1.0);
-    } else {
-      ring = 0;
-    }
-
-    final String heroText;
-    final String heroCaption;
-    if (cleaning) {
-      heroText = '…';
-      heroCaption = c.progressText;
-    } else if (analyzing) {
-      heroText = '…';
-      heroCaption = c.progressText;
-    } else if (ready) {
-      heroText = formatSize(c.selectedBytes);
-      heroCaption = 'Можно освободить';
-    } else {
-      heroText = '—';
-      heroCaption = 'Нажмите «Анализ»';
-    }
-
-    final general = <Widget>[];
-    final programs = <Widget>[];
-    for (final r in c.rows) {
-      (r.category.isProgram ? programs : general)
-          .add(_CategoryTile(row: r, controller: c, enabled: ready));
-    }
-
+    final busy = c.phase == Phase.analyzing || c.phase == Phase.cleaning;
     final disk = c.disk;
 
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(right: 8, bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Очистка', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          if (c.lowSpace)
+            Card(
+              elevation: 0,
+              color: theme.colorScheme.errorContainer,
+              shape: cardShape(),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber, color: theme.colorScheme.onErrorContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Мало места: свободно ${formatSize(disk!.free)}. Нажмите «Очистить».',
+                        style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (disk != null && disk.total > 0) _DiskStrip(c: c),
+          const SizedBox(height: 12),
+          _QuickStrip(c: c, onClean: _quick, open: _open, onToggle: _toggleOpen),
+          AnimatedSize(
+            duration: animDuration(context, const Duration(milliseconds: 200)),
+            alignment: Alignment.topCenter,
+            child: _open ? _WhatToClean(c: c, enabled: !busy) : const SizedBox(width: double.infinity),
+          ),
+          const SizedBox(height: 16),
+          TileGrid(children: [
+            _FilesTile(c: c, downloads: true),
+            _FilesTile(c: c, downloads: false),
+            const PultTile(
+              icon: Icons.file_copy_outlined,
+              color: Color(0xFF7B5EA7),
+              title: 'Дубликаты',
+              caption: 'Одинаковые файлы',
+              kind: TileKind.soon,
+            ),
+            const PultTile(
+              icon: Icons.folder_off_outlined,
+              color: Color(0xFF566B6B),
+              title: 'Пустые папки',
+              caption: 'Папки без файлов',
+              kind: TileKind.soon,
+            ),
+            PultTile(
+              icon: Icons.pie_chart_outline,
+              color: const Color(0xFF3D5A80),
+              title: 'Карта диска',
+              caption: 'Что занимает место',
+              actionLabel: 'Открыть',
+              onAction: busy ? null : () => c.openLayer(Layer.map),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiskStrip extends StatelessWidget {
+  const _DiskStrip({required this.c});
+  final AppController c;
+
+  @override
+  Widget build(BuildContext context) {
+    final disk = c.disk!;
+    final used = ((disk.total - disk.free) / disk.total).clamp(0.0, 1.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Очистка', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
-        Text('Выберите, что убрать',
-            style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant)),
-        const SizedBox(height: 8),
-        if (busy)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                LinearProgressIndicator(
-                  value: cleaning ? (1 - c.progressFraction).clamp(0.0, 1.0) : null,
-                ),
-                const SizedBox(height: 4),
-                Text(c.progressText, style: const TextStyle(fontSize: 12)),
-              ],
-            ),
-          ),
-        if (c.lowSpace)
-          Card(
-            elevation: 0,
-            color: theme.colorScheme.errorContainer,
-            shape: cardShape(),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Icon(Icons.warning_amber, color: theme.colorScheme.onErrorContainer),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Мало места: свободно ${formatSize(disk!.free)}. Нажмите «Анализ».',
-                      style: TextStyle(color: theme.colorScheme.onErrorContainer),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        if (disk != null && disk.total > 0) ...[
-          LinearProgressIndicator(
-            value: ((disk.total - disk.free) / disk.total).clamp(0.0, 1.0),
-            minHeight: 8,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Диск ${c.systemDriveLabel} свободно ${formatSize(disk.free)} из ${formatSize(disk.total)}',
-            style: const TextStyle(fontSize: 12),
-          ),
-        ],
-        const SizedBox(height: 8),
-        _Hero(
-          ring: ring,
-          indeterminate: analyzing,
-          bytes: ready ? c.selectedBytes : null,
-          text: heroText,
-          caption: heroCaption,
+        LinearProgressIndicator(
+          value: used,
+          minHeight: 8,
+          borderRadius: BorderRadius.circular(4),
+          color: used > 0.9 ? warningColor : null,
         ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, box) {
-              final twoCols = box.maxWidth >= 600;
-              Widget grid(List<Widget> items) => Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      for (final w in items)
-                        SizedBox(
-                          width: twoCols ? (box.maxWidth - 12 - 16) / 2 : box.maxWidth - 16,
-                          child: w,
-                        ),
-                    ],
-                  );
-              return ListView(
-                padding: const EdgeInsets.only(right: 16, top: 4, bottom: 4),
-                children: [
-                  grid(general),
-                  if (programs.isNotEmpty) ...[
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(4, 16, 4, 8),
-                      child: Text('Программы',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                    ),
-                    grid(programs),
-                  ],
-                  const SizedBox(height: 12),
-                  _DownloadsTile(controller: c, enabled: !busy),
-                ],
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            FilledButton.tonal(
-              onPressed: c.canAnalyze ? c.analyze : null,
-              child: const Text('Анализ'),
-            ),
-            const SizedBox(width: 16),
-            FilledButton(
-              onPressed: c.canClean ? () => _onClean(context) : null,
-              child: const Text('Очистить'),
-            ),
-          ],
+        const SizedBox(height: 4),
+        Text(
+          'Диск ${c.systemDriveLabel} свободно ${formatSize(disk.free)} из ${formatSize(disk.total)}',
+          style: const TextStyle(fontSize: 12),
         ),
       ],
     );
   }
 }
 
-class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.row, required this.controller, required this.enabled});
-  final CategoryRow row;
-  final AppController controller;
+/// «Быстрая очистка»: полоса 88 px (узко — в два ряда).
+class _QuickStrip extends StatelessWidget {
+  const _QuickStrip({required this.c, required this.onClean, required this.open, required this.onToggle});
+  final AppController c;
+  final VoidCallback onClean;
+  final bool open;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final light = Theme.of(context).brightness == Brightness.light;
+    final phase = c.phase;
+    final s = c.summary;
+    final analyzing = phase == Phase.analyzing;
+    final cleaning = phase == Phase.cleaning;
+    final busy = analyzing || cleaning;
+    final done = phase == Phase.done;
+    final failed = done && (c.failedAll || s == null);
+
+    const base = TextStyle(fontSize: 14);
+    const bold = TextStyle(fontSize: 14, fontWeight: FontWeight.w700);
+    Widget sub;
+    if (busy) {
+      sub = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LinearProgressIndicator(value: cleaning ? (1 - c.progressFraction).clamp(0.0, 1.0) : null),
+          const SizedBox(height: 2),
+          Text(c.progressText, style: const TextStyle(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+        ],
+      );
+    } else if (failed) {
+      sub = Text('Очистка прервана', style: base.copyWith(color: cs.error));
+    } else if (done) {
+      final freed = s!.freedBytes;
+      final recycled = s.recycledBytes;
+      sub = Text.rich(
+        TextSpan(style: base, children: [
+          if (freed == 0 && recycled == 0)
+            const TextSpan(text: 'Нечего было удалять')
+          else if (freed > 0) ...[
+            const TextSpan(text: 'Освобождено '),
+            TextSpan(text: formatSize(freed), style: bold),
+          ] else ...[
+            const TextSpan(text: 'В Корзине '),
+            TextSpan(text: formatSize(recycled), style: bold),
+          ],
+        ]),
+      );
+    } else if (phase == Phase.ready) {
+      sub = c.selectedBytes > 0
+          ? Text.rich(TextSpan(style: base, children: [
+              const TextSpan(text: 'Можно освободить '),
+              TextSpan(text: formatSize(c.selectedBytes), style: bold),
+            ]))
+          : const Text('Нечего очищать', style: base);
+    } else {
+      sub = Text('Сначала посчитаю, что можно убрать',
+          style: base.copyWith(color: cs.onSurfaceVariant));
+    }
+
+    final info = Row(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: const BoxDecoration(color: Color(0xFF0F9D9A), shape: BoxShape.circle),
+          child: const Icon(Icons.auto_fix_high, color: Colors.white),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Быстрая очистка',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              sub,
+            ],
+          ),
+        ),
+      ],
+    );
+
+    final List<Widget> actions;
+    if (done) {
+      actions = [
+        TextButton(onPressed: c.openDetails, child: const Text('Подробнее')),
+        FilledButton(onPressed: c.reset, child: Text(failed ? 'Назад' : 'Готово')),
+      ];
+    } else {
+      actions = [
+        TextButton(
+          key: const Key('what-to-clean'),
+          onPressed: busy ? null : onToggle,
+          child: Text(open ? 'Скрыть' : 'Что чистить?'),
+        ),
+        FilledButton(
+          key: const Key('quick-clean'),
+          onPressed: (c.phase == Phase.idle || c.canClean) && !c.quickBusy ? onClean : null,
+          child: const Text('Очистить'),
+        ),
+      ];
+    }
+
+    return LayoutBuilder(builder: (context, box) {
+      final narrow = box.maxWidth < 560;
+      return Container(
+        constraints: const BoxConstraints(minHeight: 88),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: light ? const Color(0xFFB5DEDC) : cs.outlineVariant),
+          gradient: light
+              ? const LinearGradient(colors: [Color(0xFFDDF2F1), Color(0xFFC6EAE8)])
+              : null,
+          color: light ? null : cs.surfaceContainerHigh,
+        ),
+        child: narrow
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  info,
+                  const SizedBox(height: 8),
+                  Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    for (final a in actions) ...[a, const SizedBox(width: 8)],
+                  ]),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(child: info),
+                  const SizedBox(width: 8),
+                  for (final a in actions) ...[const SizedBox(width: 8), a],
+                ],
+              ),
+      );
+    });
+  }
+}
+
+/// Выпадающая панель «Что чистить?»: галочки категорий с размерами.
+class _WhatToClean extends StatelessWidget {
+  const _WhatToClean({required this.c, required this.enabled});
+  final AppController c;
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    final cat = row.category;
     final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: HoverCard(
+        child: Column(
+          key: const Key('what-to-clean-panel'),
+          children: [
+            for (final r in c.rows) _row(r, cs),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(CategoryRow row, ColorScheme cs) {
+    final cat = row.category;
     Widget size;
-    String subtitle = cat.hint;
     switch (row.status) {
       case RowStatus.pending:
         size = const Text('—');
       case RowStatus.scanning:
-        size = const SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        );
+        size = const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2));
       case RowStatus.error:
         size = Icon(Icons.error_outline, color: cs.error);
-        subtitle = 'Не удалось посчитать';
       case RowStatus.done:
         size = row.isEmpty
             ? const Text('Пусто', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))
-            : CountSize(row.bytes ?? 0, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600));
+            : Text(formatSize(row.bytes ?? 0),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600));
     }
-    if (cat.id == CategoryId.recycle && row.selected && row.active) {
-      subtitle = 'Очищает Корзину на всех дисках';
-    }
-    return _HoverCard(
-      child: CheckboxListTile(
-        shape: cardShape(),
-        controlAffinity: ListTileControlAffinity.leading,
-        value: row.selected,
-        onChanged: enabled && row.active ? (v) => controller.toggleRow(row, v ?? false) : null,
-        title: Row(
-          children: [
-            _IconCircle(icon: categoryIcon(cat.id), color: categoryColor(cat.id)),
-            const SizedBox(width: 12),
-            Flexible(child: Text(cat.title)),
-          ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(left: 52),
-          child: Text(subtitle, style: const TextStyle(fontSize: 12)),
-        ),
-        secondary: size,
+    final ready = c.phase == Phase.ready;
+    return CheckboxListTile(
+      key: ValueKey('cat-${cat.id.name}'),
+      controlAffinity: ListTileControlAffinity.leading,
+      value: row.selected,
+      onChanged: enabled && ready && row.active ? (v) => c.toggleRow(row, v ?? false) : null,
+      title: Row(
+        children: [
+          IconCircle(icon: categoryIcon(cat.id), color: categoryColor(cat.id), size: 32),
+          const SizedBox(width: 12),
+          Flexible(child: Text(cat.title)),
+        ],
       ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(left: 44),
+        child: Text(
+          row.status == RowStatus.error
+              ? 'Не удалось посчитать'
+              : (cat.id == CategoryId.recycle && row.selected && row.active
+                  ? 'Очищает Корзину на всех дисках'
+                  : cat.hint),
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+      secondary: size,
     );
   }
 }
 
-class _DownloadsTile extends StatelessWidget {
-  const _DownloadsTile({required this.controller, required this.enabled});
-  final AppController controller;
-  final bool enabled;
+/// Плитки «Загрузки» и «Большие файлы»: «Найти» → поиск → «Найдено N, X» + «Выбрать».
+class _FilesTile extends StatelessWidget {
+  const _FilesTile({required this.c, required this.downloads});
+  final AppController c;
+  final bool downloads;
 
   @override
   Widget build(BuildContext context) {
-    final c = controller;
-    return _HoverCard(
-      child: CheckboxListTile(
-        shape: cardShape(),
-        controlAffinity: ListTileControlAffinity.leading,
-        value: c.downloadsOn,
-        onChanged: enabled
-            ? (v) {
-                if (v == true) {
-                  c.go(Section.downloads);
-                } else {
-                  c.setAllDownloads(false);
-                }
-              }
-            : null,
-        title: const Row(
-          children: [
-            _IconCircle(icon: Icons.download_outlined, color: Color(0xFF0F9D9A)),
-            SizedBox(width: 12),
-            Flexible(child: Text('Загрузки')),
-          ],
-        ),
-        subtitle: Text(
-          c.downloadsOn
-              ? 'Выбрано: ${filesWord(c.downloadsSelected.length)}, ${formatSize(c.downloadsSelectedBytes)}'
-              : 'Файлы старше 30 дней',
-          style: const TextStyle(fontSize: 12),
-        ),
-        secondary: TextButton(
-          onPressed: enabled ? () => c.go(Section.downloads) : null,
-          child: const Text('Выбрать файлы →'),
-        ),
-      ),
-    );
+    final state = downloads ? c.downloadsState : c.bigState;
+    final recycled = downloads ? c.downloadsRecycled : c.bigRecycled;
+    final busyApp = c.phase == Phase.analyzing || c.phase == Phase.cleaning;
+    final find = downloads ? c.loadDownloads : c.loadBig;
+    final layer = downloads ? Layer.downloads : Layer.big;
+    final title = downloads ? 'Загрузки' : 'Большие файлы';
+    final icon = downloads ? Icons.download_outlined : Icons.data_usage;
+    final color = downloads ? const Color(0xFF0F9D9A) : const Color(0xFF3D5A80);
+    final caption = downloads ? 'Что давно лежит в Загрузках' : 'Самые тяжёлые файлы';
+
+    if (recycled != null) {
+      return PultTile(
+        icon: icon,
+        color: color,
+        title: title,
+        caption: caption,
+        kind: TileKind.result,
+        resultText: 'В Корзину ${formatSize(recycled)}',
+        onAgain: find,
+      );
+    }
+    switch (state) {
+      case LoadState.idle:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          actionLabel: 'Найти',
+          onAction: busyApp ? null : find,
+        );
+      case LoadState.loading:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.busy,
+          progressText: 'Ищу…',
+          onStop: downloads ? c.cancelDownloads : c.cancelBig,
+        );
+      case LoadState.error:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.error,
+          onRetry: find,
+        );
+      case LoadState.loaded:
+        final files = downloads ? c.visibleDownloads : c.big;
+        final bytes = files.fold<int>(0, (a, f) => a + f.size);
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.result,
+          resultText: files.isEmpty ? 'Пусто ✓' : 'Найдено ${files.length}, ${formatSize(bytes)}',
+          actionLabel: 'Выбрать',
+          onAction: files.isEmpty || busyApp ? null : () => c.openLayer(layer),
+          onAgain: find,
+        );
+    }
   }
 }
 
@@ -371,61 +516,6 @@ Color categoryColor(CategoryId id) {
   }
 }
 
-/// Иконка в цветном кружке (фон — цвет с прозрачностью 14 %).
-class _IconCircle extends StatelessWidget {
-  const _IconCircle({required this.icon, required this.color});
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.14), shape: BoxShape.circle),
-        child: Icon(icon, size: 22, color: color),
-      );
-}
-
-/// Карточка с рамкой 1 px; при наведении поднимается на 1 px, рамка — бирюзовая.
-class _HoverCard extends StatefulWidget {
-  const _HoverCard({required this.child});
-  final Widget child;
-
-  @override
-  State<_HoverCard> createState() => _HoverCardState();
-}
-
-class _HoverCardState extends State<_HoverCard> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final light = Theme.of(context).brightness == Brightness.light;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
-        duration: animDuration(context, const Duration(milliseconds: 120)),
-        curve: Curves.easeOut,
-        transform: Matrix4.translationValues(0, _hover ? -1 : 0, 0),
-        decoration: BoxDecoration(
-          color: light ? Colors.white : cs.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: _hover ? const Color(0xFF0F9D9A) : (light ? const Color(0xFFD5E6E6) : cs.outlineVariant),
-          ),
-        ),
-        child: Material(
-          type: MaterialType.transparency,
-          borderRadius: BorderRadius.circular(16),
-          child: widget.child,
-        ),
-      ),
-    );
-  }
-}
-
 /// Размер, который «считает» от нуля (или от прошлого значения) до нового.
 class CountSize extends StatelessWidget {
   const CountSize(this.bytes, {super.key, this.style});
@@ -443,79 +533,3 @@ class CountSize extends StatelessWidget {
   }
 }
 
-/// Герой: градиентная карточка с кольцом и крупной цифрой.
-class _Hero extends StatelessWidget {
-  const _Hero({
-    required this.ring,
-    required this.indeterminate,
-    required this.bytes,
-    required this.text,
-    required this.caption,
-  });
-  final double? ring;
-  final bool indeterminate;
-  final int? bytes;
-  final String text;
-  final String caption;
-
-  @override
-  Widget build(BuildContext context) {
-    const big = TextStyle(fontSize: 56, fontWeight: FontWeight.w300, color: Colors.white);
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF0B7C7A), Color(0xFF17B3AE)],
-        ),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            height: 120,
-            child: indeterminate || ring == null
-                ? const CircularProgressIndicator(
-                    strokeWidth: 12,
-                    strokeCap: StrokeCap.round,
-                    color: Colors.white,
-                    backgroundColor: Color(0x33FFFFFF),
-                  )
-                : TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0, end: ring),
-                    duration: animDuration(context, const Duration(milliseconds: 800)),
-                    curve: Curves.easeOutCubic,
-                    builder: (_, v, __) => CircularProgressIndicator(
-                      value: v,
-                      strokeWidth: 12,
-                      strokeCap: StrokeCap.round,
-                      color: Colors.white,
-                      backgroundColor: const Color(0x33FFFFFF),
-                    ),
-                  ),
-          ),
-          const SizedBox(width: 24),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (bytes != null)
-                  TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0, end: bytes!.toDouble()),
-                    duration: animDuration(context, const Duration(milliseconds: 600)),
-                    curve: Curves.easeOut,
-                    builder: (_, v, __) => Text(formatSize(v.round()), style: big),
-                  )
-                else
-                  Text(text, style: big),
-                Text(caption, style: const TextStyle(fontSize: 14, color: Colors.white)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

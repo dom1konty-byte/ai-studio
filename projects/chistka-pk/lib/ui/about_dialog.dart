@@ -4,7 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'anim.dart';
 
 /// Версия программы (совпадает с version в pubspec.yaml; проверяется тестом).
-const appVersion = '1.2.0';
+const appVersion = '1.3.0';
 const publisherName = 'Дамир';
 final ideaUrl = Uri.parse('https://t.me/dmrzhvm');
 

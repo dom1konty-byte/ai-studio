@@ -1,7 +1,6 @@
 import 'package:chistka_pk/core/catalog.dart';
 import 'package:chistka_pk/state/app_controller.dart';
 import 'package:chistka_pk/ui/app.dart';
-import 'package:chistka_pk/ui/main_screen.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -15,30 +14,26 @@ AppController _controller([FakePlatform? p]) => AppController(
     );
 
 void main() {
-  testWidgets('Главный экран до анализа: «Очистить» неактивна, Загрузки выключены',
+  testWidgets('Пульт до анализа: размер не показан, Загрузки не запущены, ничего не удалено',
       (tester) async {
     tester.view.physicalSize = const Size(1000, 680);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(ChistoApp(controller: _controller()));
+    final p = FakePlatform();
+    final c = _controller(p);
+    await tester.pumpWidget(ChistoApp(controller: c));
     await tester.pump();
     await tester.pump();
 
     expect(find.text('Очистка'), findsWidgets); // панель + заголовок экрана
-    expect(find.text('Нажмите «Анализ»'), findsOneWidget);
-
-    final clean = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Очистить'));
-    expect(clean.onPressed, isNull);
-    final analyze = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Анализ'));
-    expect(analyze.onPressed, isNotNull);
-
-    final tile = find.widgetWithText(CheckboxListTile, 'Загрузки');
-    // В окне две прокручиваемые области (панель и список): берём список.
-    await tester.scrollUntilVisible(tile, 200,
-        scrollable: find.descendant(of: find.byType(MainScreen), matching: find.byType(Scrollable)).first);
-    final downloads = tester.widget<CheckboxListTile>(tile);
-    expect(downloads.value, isFalse);
+    expect(find.textContaining('Можно освободить'), findsNothing);
+    expect(find.text('Сначала посчитаю, что можно убрать'), findsOneWidget);
+    expect(c.phase, Phase.idle);
+    expect(c.downloadsSelected, isEmpty);
+    expect(c.downloadsState, LoadState.idle);
+    expect(find.text('Найти'), findsNWidgets(2)); // Загрузки и Большие файлы
+    expect(p.binEmptied, isFalse);
+    expect(p.moved, isEmpty);
   });
 
   Future<void> pumpWith(WidgetTester tester, int freeGb) async {

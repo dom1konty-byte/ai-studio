@@ -162,7 +162,7 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(programsSummary(list),
+              child: Text(programsSummary(list, c.programApprox),
                   style: TextStyle(color: cs.onSurfaceVariant)),
             ),
           ],
@@ -220,7 +220,14 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
         children: [
           SizedBox(
             width: 80,
-            child: Text(p.sizeKb > 0 ? formatSize(p.sizeBytes) : '—', textAlign: TextAlign.right),
+            child: Text(
+              p.sizeKb > 0
+                  ? formatSize(p.sizeBytes)
+                  : (c.programApprox[p.keyPath] != null
+                      ? '≈ ${formatSize(c.programApprox[p.keyPath]!)}'
+                      : '—'),
+              textAlign: TextAlign.right,
+            ),
           ),
           const SizedBox(width: 12),
           SizedBox(

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/format.dart';
 import '../core/models.dart';
+import '../core/scanner.dart';
 import '../state/app_controller.dart';
 import 'main_screen.dart';
 
@@ -32,8 +33,8 @@ class _FilesScreenState extends State<FilesScreen> {
   void _load() => dl ? c.loadDownloads() : c.loadBig();
 
   Future<void> _confirmRecycle() async {
-    final n = c.bigSelected.length;
-    final size = formatSize(c.bigSelectedBytes);
+    final n = dl ? c.downloadsSelected.length : c.bigSelected.length;
+    final size = formatSize(dl ? c.downloadsSelectedBytes : c.bigSelectedBytes);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -51,13 +52,13 @@ class _FilesScreenState extends State<FilesScreen> {
         ],
       ),
     );
-    if (ok == true) await c.recycleBig();
+    if (ok == true) await (dl ? c.recycleDownloads() : c.recycleBig());
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final files = dl ? c.downloads : c.big;
+    final files = dl ? c.visibleDownloads : c.big;
     final selected = dl ? c.downloadsSelected : c.bigSelected;
     final selBytes = dl ? c.downloadsSelectedBytes : c.bigSelectedBytes;
 
@@ -94,7 +95,7 @@ class _FilesScreenState extends State<FilesScreen> {
               children: [
                 const Icon(Icons.check_circle_outline, size: 48),
                 const SizedBox(height: 8),
-                Text(dl ? 'Старых файлов нет' : 'Файлов нет'),
+                Text(dl ? 'В этом списке файлов нет' : 'Файлов нет'),
               ],
             ),
           );
@@ -145,26 +146,37 @@ class _FilesScreenState extends State<FilesScreen> {
             style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
         Text(
           dl
-              ? 'Файлы старше 30 дней. Удаляются в Корзину.'
+              ? 'Удаляются в Корзину. Ничего не отмечено заранее.'
               : 'Только показ. Отмеченные уйдут в Корзину.',
           style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
         ),
+        if (dl) ...[
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<DownloadsFilter>(
+            key: const Key('downloads-filter'),
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: DownloadsFilter.all, label: Text('Все')),
+              ButtonSegment(value: DownloadsFilter.recent, label: Text('Новые (≤ 7 дней)')),
+              ButtonSegment(value: DownloadsFilter.old, label: Text('Старше 30 дней')),
+            ],
+            selected: {c.downloadsFilter},
+            onSelectionChanged: (v) => c.setDownloadsFilter(v.first),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         Expanded(child: body),
         const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            if (dl)
-              FilledButton(
-                onPressed: () => c.go(Section.main),
-                child: const Text('Готово'),
-              )
-            else
-              FilledButton(
-                onPressed: c.bigSelected.isEmpty ? null : _confirmRecycle,
-                child: const Text('В Корзину'),
-              ),
+            FilledButton(
+              onPressed: selected.isEmpty ? null : _confirmRecycle,
+              child: const Text('В Корзину'),
+            ),
           ],
         ),
       ],
@@ -190,6 +202,7 @@ class _FileTile extends StatelessWidget {
     final kind = fileKind(file.path);
     final IconData icon;
     String? chip;
+    final age = isDownloads ? ageLabel(file.modified, DateTime.now()) : null;
     switch (kind) {
       case FileKind.installer:
         icon = Icons.install_desktop;
@@ -217,7 +230,7 @@ class _FileTile extends StatelessWidget {
         title: Row(
           children: [
             Flexible(child: Text(file.name, overflow: TextOverflow.ellipsis)),
-            if (chip != null) ...[
+            for (final t in [?chip, ?age]) ...[
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -225,7 +238,7 @@ class _FileTile extends StatelessWidget {
                   color: cs.secondaryContainer,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(chip, style: const TextStyle(fontSize: 12)),
+                child: Text(t, style: const TextStyle(fontSize: 12)),
               ),
             ],
           ],
@@ -240,4 +253,13 @@ class _FileTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Чип возраста файла: «Сегодня», «12 дн.», «5 мес.», «2 г.».
+String ageLabel(DateTime modified, DateTime now) {
+  final d = now.difference(modified).inDays;
+  if (d < 1) return 'Сегодня';
+  if (d < 60) return '$d дн.';
+  if (d < 730) return '${d ~/ 30} мес.';
+  return '${d ~/ 365} г.';
 }

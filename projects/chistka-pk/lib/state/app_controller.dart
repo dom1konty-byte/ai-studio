@@ -13,6 +13,7 @@ import '../core/journal.dart';
 import '../core/leftovers.dart';
 import '../core/models.dart';
 import '../core/format.dart';
+import '../core/async_pool.dart';
 import '../core/programs.dart';
 import '../core/scanner.dart';
 import '../core/settings.dart';
@@ -25,7 +26,10 @@ import 'startup_service.dart';
 
 enum Phase { idle, analyzing, ready, cleaning, done }
 
-enum Section { main, downloads, big, map, programs, startup, settings, internet }
+enum Section { main, computer, programs, startup, internet, settings }
+
+/// Экран поверх «Очистки» (кнопка «Назад» возвращает к плиткам).
+enum Layer { none, downloads, big, map }
 
 /// Порог «Мало места»: свободно меньше 10 ГБ на системном диске.
 const lowSpaceBytes = 10 * 1024 * 1024 * 1024;
@@ -53,10 +57,8 @@ Future<FolderSize> _defaultFolderSizer(String path) => Isolate.run(() => measure
 
 typedef LargeScan = Future<List<FileInfo>> Function(List<String> dirs, int n);
 
-Future<List<FileInfo>> _defaultDownloadsScan(String dir) {
-  final now = DateTime.now();
-  return Isolate.run(() => scanOldDownloadsSync(dir, now));
-}
+Future<List<FileInfo>> _defaultDownloadsScan(String dir) =>
+    Isolate.run(() => scanAllFilesSync(dir));
 
 Future<int> _defaultSizeOf(String path, bool isDir) {
   if (!isDir) {
@@ -186,8 +188,21 @@ class AppController extends ChangeNotifier {
   ({int free, int total})? disk;
 
   LoadState downloadsState = LoadState.idle;
+
+  /// Все файлы Загрузок (фильтр «Все / Новые / Старше 30 дней» — в [visibleDownloads]).
   List<FileInfo> downloads = [];
   final Set<String> downloadsSelected = {};
+  DownloadsFilter downloadsFilter = DownloadsFilter.old;
+  int _downloadsToken = 0;
+
+  /// Сколько отправлено в Корзину из Загрузок / Больших файлов (null — не было).
+  int? downloadsRecycled;
+  int? bigRecycled;
+  int _bigToken = 0;
+
+  /// Экран поверх «Очистки» и подробный итог.
+  Layer layer = Layer.none;
+  bool showDetails = false;
 
   LoadState bigState = LoadState.idle;
   List<FileInfo> big = [];
@@ -226,6 +241,9 @@ class AppController extends ChangeNotifier {
 
   // ---------- вычисляемое ----------
 
+  List<FileInfo> get visibleDownloads =>
+      filterDownloads(downloads, DateTime.now(), downloadsFilter);
+
   int get downloadsSelectedBytes => downloads
       .where((f) => downloadsSelected.contains(f.path))
       .fold(0, (a, f) => a + f.size);
@@ -234,30 +252,59 @@ class AppController extends ChangeNotifier {
       big.where((f) => bigSelected.contains(f.path)).fold(0, (a, f) => a + f.size);
 
   int get selectedBytes =>
-      rows.where((r) => r.selected && r.active).fold(0, (a, r) => a + (r.bytes ?? 0)) +
-      downloadsSelectedBytes;
+      rows.where((r) => r.selected && r.active).fold(0, (a, r) => a + (r.bytes ?? 0));
 
-  bool get hasSelection =>
-      rows.any((r) => r.selected && r.active) || downloadsSelected.isNotEmpty;
+  bool get hasSelection => rows.any((r) => r.selected && r.active);
 
   bool get canAnalyze => !_quickBusy && (phase == Phase.idle || phase == Phase.ready);
   bool get canClean => !_quickBusy && phase == Phase.ready && hasSelection;
 
   /// true, пока идёт быстрая очистка из трея.
   bool get quickBusy => _quickBusy;
-  bool get downloadsOn => downloadsSelected.isNotEmpty;
 
   // ---------- навигация ----------
 
   void go(Section s) {
-    section = s;
     if (phase == Phase.done) reset();
+    section = s;
+    layer = Layer.none;
+    showDetails = false;
+    notifyListeners();
+  }
+
+  void openLayer(Layer l) {
+    if (phase == Phase.analyzing || phase == Phase.cleaning) return;
+    section = Section.main;
+    layer = l;
+    notifyListeners();
+  }
+
+  void closeLayer() {
+    if (layer == Layer.none) return;
+    layer = Layer.none;
+    notifyListeners();
+  }
+
+  void openDetails() {
+    if (phase != Phase.done) return;
+    showDetails = true;
+    notifyListeners();
+  }
+
+  void closeDetails() {
+    showDetails = false;
     notifyListeners();
   }
 
   void reset() {
     phase = Phase.idle;
     section = Section.main;
+    layer = Layer.none;
+    showDetails = false;
+    downloadsRecycled = null;
+    bigRecycled = null;
+    _downloadsToken++;
+    _bigToken++;
     rows = rows.map((r) => CategoryRow(r.category)).toList();
     summary = null;
     failedAll = false;
@@ -298,6 +345,11 @@ class AppController extends ChangeNotifier {
         }
         r.status = RowStatus.done;
         if (r.isEmpty) r.selected = false;
+        // Выбор прошлой очистки запоминается.
+        if (settings.quickCategories.isNotEmpty &&
+            !settings.quickCategories.contains(r.category.id.name)) {
+          r.selected = false;
+        }
       } catch (_) {
         r.status = RowStatus.error;
         r.selected = false;
@@ -324,16 +376,35 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    final token = ++_downloadsToken;
+    downloadsRecycled = null;
     downloadsState = LoadState.loading;
     notifyListeners();
     try {
       if (!Directory(dir).existsSync()) throw const FileSystemException('нет папки');
-      downloads = await _downloadsScan(dir);
+      final res = await _downloadsScan(dir);
+      if (token != _downloadsToken) return; // нажали «Стоп»
+      downloads = res;
       downloadsSelected.removeWhere((p) => !downloads.any((f) => f.path == p));
       downloadsState = LoadState.loaded;
     } catch (_) {
+      if (token != _downloadsToken) return;
       downloadsState = LoadState.error;
     }
+    notifyListeners();
+  }
+
+  /// «Стоп» в плитке: результат поиска будет проигнорирован.
+  void cancelDownloads() {
+    _downloadsToken++;
+    downloadsState = LoadState.idle;
+    notifyListeners();
+  }
+
+  void setDownloadsFilter(DownloadsFilter f) {
+    downloadsFilter = f;
+    final vis = visibleDownloads.map((x) => x.path).toSet();
+    downloadsSelected.removeWhere((p) => !vis.contains(p));
     notifyListeners();
   }
 
@@ -342,25 +413,51 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Отметить/снять все файлы текущего фильтра.
   void setAllDownloads(bool v) {
     downloadsSelected.clear();
-    if (v) downloadsSelected.addAll(downloads.map((f) => f.path));
+    if (v) downloadsSelected.addAll(visibleDownloads.map((f) => f.path));
     notifyListeners();
+  }
+
+  /// Отмеченные файлы Загрузок — только в Корзину (после подтверждения в UI).
+  Future<void> recycleDownloads() async {
+    final files = downloads.where((f) => downloadsSelected.contains(f.path)).toList();
+    if (files.isEmpty) return;
+    await _runClean(categories: const [], files: files, skipBrowsers: false);
+    if (phase == Phase.done && !failedAll) {
+      downloadsRecycled = summary?.recycledBytes ?? 0;
+      downloads = [];
+      downloadsSelected.clear();
+      downloadsState = LoadState.idle;
+      notifyListeners();
+    }
   }
 
   // ---------- Большие файлы ----------
 
   Future<void> loadBig() async {
     final dirs = userRoots.where((d) => Directory(d).existsSync()).toList();
+    final token = ++_bigToken;
+    bigRecycled = null;
     bigState = LoadState.loading;
     notifyListeners();
     try {
-      big = await _largeScan(dirs, 50);
+      final res = await _largeScan(dirs, 50);
+      if (token != _bigToken) return;
+      big = res;
       bigSelected.removeWhere((p) => !big.any((f) => f.path == p));
       bigState = LoadState.loaded;
     } catch (_) {
+      if (token != _bigToken) return;
       bigState = LoadState.error;
     }
+    notifyListeners();
+  }
+
+  void cancelBig() {
+    _bigToken++;
+    bigState = LoadState.idle;
     notifyListeners();
   }
 
@@ -374,6 +471,13 @@ class AppController extends ChangeNotifier {
     final files = big.where((f) => bigSelected.contains(f.path)).toList();
     if (files.isEmpty) return;
     await _runClean(categories: const [], files: files, skipBrowsers: false);
+    if (phase == Phase.done && !failedAll) {
+      bigRecycled = summary?.recycledBytes ?? 0;
+      big = [];
+      bigSelected.clear();
+      bigState = LoadState.idle;
+      notifyListeners();
+    }
   }
 
   // ---------- Очистка ----------
@@ -388,7 +492,7 @@ class AppController extends ChangeNotifier {
   Future<void> clean({bool skipBrowsers = false}) async {
     if (!canClean) return;
     final cats = rows.where((r) => r.selected && r.active).map((r) => r.category).toList();
-    final files = downloads.where((f) => downloadsSelected.contains(f.path)).toList();
+    const files = <FileInfo>[];
     if (cats.isNotEmpty) {
       // Запоминаем выбор для «Быстрой очистки» из трея.
       await _saveSettings(settings.copyWith(quickCategories: [for (final c in cats) c.id.name]));
@@ -406,6 +510,7 @@ class AppController extends ChangeNotifier {
       failedAll = true;
       errorMessage =
           'Некуда писать журнал: не найдены папки LOCALAPPDATA и APPDATA. Очистка не запущена.';
+      layer = Layer.none;
       phase = Phase.done;
       notifyListeners();
       return;
@@ -446,6 +551,8 @@ class AppController extends ChangeNotifier {
     try {
       disk = await platform.diskSpace(systemDrive) ?? disk;
     } catch (_) {}
+    layer = Layer.none;
+    showDetails = false;
     phase = Phase.done;
     notifyListeners();
   }
@@ -532,7 +639,34 @@ class AppController extends ChangeNotifier {
   /// true, пока идёт удаление программы (ждём её программу удаления).
   bool uninstallBusy = false;
 
-  List<Program> get visiblePrograms => filterAndSort(programs, programQuery, programSort);
+  List<Program> get visiblePrograms =>
+      filterAndSort(programs, programQuery, programSort, programApprox);
+
+  /// Размеры программ без EstimatedSize, посчитанные по папке (keyPath → байты).
+  /// Показываются как «≈ X».
+  final Map<String, int> programApprox = {};
+  final AsyncPool _sizePool = AsyncPool(2);
+  int _sizeToken = 0;
+
+  /// Считает размеры папок программ без EstimatedSize в фоне (очередь, не более 2).
+  void _startProgramSizes() {
+    final token = ++_sizeToken;
+    programApprox.clear();
+    for (final prog in programs) {
+      if (prog.sizeKb > 0) continue;
+      final dir = sizeFolderOf(prog, env: env.vars, dirExists: dirExists, fileExists: fileExists);
+      if (dir == null) continue;
+      _sizePool.run(() async {
+        if (token != _sizeToken) return;
+        try {
+          final bytes = await _sizeOf(dir, true);
+          if (token != _sizeToken || bytes <= 0) return;
+          programApprox[prog.keyPath] = bytes;
+          notifyListeners();
+        } catch (_) {}
+      });
+    }
+  }
 
   void setProgramQuery(String q) {
     programQuery = q;
@@ -574,6 +708,7 @@ class AppController extends ChangeNotifier {
     try {
       programs = buildPrograms(await platform.readUninstallEntries());
       programsState = LoadState.loaded;
+      _startProgramSizes();
     } catch (_) {
       programsState = LoadState.error;
     }

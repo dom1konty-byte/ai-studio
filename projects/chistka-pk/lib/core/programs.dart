@@ -4,6 +4,8 @@ library;
 
 import 'dart:io';
 
+import 'package:path/path.dart' as path_pkg;
+
 import 'format.dart';
 import 'whitelist.dart';
 
@@ -112,7 +114,8 @@ enum ProgramSort { size, date, name }
 
 /// Поиск по имени и издателю (без учёта регистра) и сортировка.
 /// Размер/дата — по убыванию (без значения — в конец), имя — по алфавиту.
-List<Program> filterAndSort(List<Program> all, String query, ProgramSort sort) {
+List<Program> filterAndSort(List<Program> all, String query, ProgramSort sort,
+    [Map<String, int> approx = const {}]) {
   final q = query.trim().toLowerCase();
   final res = q.isEmpty
       ? [...all]
@@ -124,7 +127,7 @@ List<Program> filterAndSort(List<Program> all, String query, ProgramSort sort) {
   res.sort((a, b) {
     switch (sort) {
       case ProgramSort.size:
-        final c = b.sizeKb.compareTo(a.sizeKb);
+        final c = programBytes(b, approx).compareTo(programBytes(a, approx));
         return c != 0 ? c : byName(a, b);
       case ProgramSort.date:
         final da = a.installDate, db = b.installDate;
@@ -338,10 +341,94 @@ bool _defaultDirExists(String path) {
   }
 }
 
-/// «Всего программ: 142 · 38,6 ГБ»: число и сумма EstimatedSize показанных программ
-/// (размер не пишем, если ни у одной он не указан).
-String programsSummary(List<Program> shown) {
-  final total = shown.fold<int>(0, (a, p) => a + p.sizeBytes);
+/// Размер программы для списка и сортировки: EstimatedSize, иначе посчитанный
+/// по папке ([approx] по keyPath), иначе 0.
+int programBytes(Program p, Map<String, int> approx) =>
+    p.sizeKb > 0 ? p.sizeBytes : (approx[p.keyPath] ?? 0);
+
+/// «Всего программ: 142 · 38,6 ГБ»: число и сумма размеров показанных программ
+/// (EstimatedSize + посчитанные по папке; если есть посчитанные — «≈ 38,6 ГБ»).
+/// Размер не пишем, если ни у одной он не известен.
+String programsSummary(List<Program> shown, [Map<String, int> approx = const {}]) {
+  var total = 0;
+  var hasApprox = false;
+  for (final p in shown) {
+    total += programBytes(p, approx);
+    if (p.sizeKb <= 0 && (approx[p.keyPath] ?? 0) > 0) hasApprox = true;
+  }
   final base = 'Всего программ: ${shown.length}';
-  return total > 0 ? '$base · ${formatSize(total)}' : base;
+  if (total <= 0) return base;
+  return '$base · ${hasApprox ? '≈ ' : ''}${formatSize(total)}';
+}
+
+final RegExp _nonWord = RegExp(r'[^\p{L}\p{N}]', unicode: true);
+
+/// Папки, размер которых считать нельзя: они общие для многих программ.
+const _sharedFolderNames = {
+  'common files', 'windowsapps', 'system32', 'syswow64', 'winsxs', 'windows',
+  'program files', 'program files (x86)', 'programdata', 'appdata', 'local', 'roaming',
+  'locallow', 'programs', 'microsoft', 'users', 'temp', 'desktop', 'documents', 'downloads',
+};
+
+/// Можно ли считать размер папки [dir] как размер программы [name]:
+/// строго внутри Program Files / Program Files (x86) / LOCALAPPDATA / APPDATA /
+/// ProgramData; либо (на другом диске) имя самой папки содержит имя программы.
+/// Никогда: корень диска, Windows/System32, общие папки (Common Files и т.п.).
+bool isSizeableProgramFolder(String dir, String name, Map<String, String> env) {
+  final n = normalizeWinPath(dir);
+  if (n == null) return false;
+  final w = path_pkg.windows;
+  if (w.dirname(n) == n) return false; // корень диска
+  final parts = w.split(n).skip(1).map((e) => e.toLowerCase()).toList();
+  if (parts.isEmpty) return false;
+  final lower = {for (final e in env.entries) e.key.toLowerCase(): e.value};
+  final winDir = normalizeWinPath(lower['systemroot'] ?? lower['windir'] ?? r'C:\Windows');
+  if (winDir != null && (w.equals(winDir, n) || w.isWithin(winDir, n))) return false;
+  if (parts.contains('system32') ||
+      parts.contains('syswow64') ||
+      parts.contains('common files') ||
+      parts.contains('windowsapps') ||
+      parts.first == 'windows') {
+    return false;
+  }
+  if (_sharedFolderNames.contains(parts.last)) return false;
+  final roots = [
+    for (final k in ['programfiles', 'programfiles(x86)', 'programw6432', 'localappdata', 'appdata', 'programdata'])
+      if (lower[k] != null) lower[k]!,
+  ];
+  if (isInsideAllowedRoot(n, roots)) return true;
+  final nm = name.toLowerCase().replaceAll(_nonWord, '');
+  if (nm.length < 3) return false;
+  return parts.last.replaceAll(_nonWord, '').contains(nm);
+}
+
+/// Папка для подсчёта размера программы без EstimatedSize: InstallLocation →
+/// папка программы удаления → папка DisplayIcon; первая существующая и допустимая
+/// ([isSizeableProgramFolder]). Нет подходящей — null (в списке «—»).
+String? sizeFolderOf(Program p,
+    {Map<String, String> env = const {},
+    bool Function(String dir)? dirExists,
+    bool Function(String file)? fileExists}) {
+  final exists = dirExists ?? _defaultDirExists;
+  String? parent(String file) {
+    final i = file.lastIndexOf(r'\');
+    return i <= 0 ? null : file.substring(0, i);
+  }
+
+  final candidates = <String?>[
+    _expandEnv(p.installLocation.trim().replaceAll('"', ''), env),
+    parseUninstallString(p.uninstallString, env: env, fileExists: fileExists)?.exe,
+    parseDisplayIcon(p.displayIcon, env: env)?.path,
+  ];
+  for (var i = 0; i < candidates.length; i++) {
+    var c = candidates[i];
+    if (c == null || c.isEmpty) continue;
+    if (i > 0) c = parent(c);
+    if (c == null) continue;
+    final n = normalizeWinPath(c);
+    if (n == null) continue;
+    if (!isSizeableProgramFolder(n, p.name, env)) continue;
+    if (exists(n)) return n;
+  }
+  return null;
 }
