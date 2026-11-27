@@ -10,6 +10,10 @@ import es.antonborri.home_widget.HomeWidgetProvider
 
 /** «+ Новая заметка»: открывает пустой редактор. Данных из приложения не нужно. */
 class NewNoteWidgetProvider : HomeWidgetProvider() {
+    private companion object {
+        const val LABEL_MIN_WIDTH_DP = 110
+    }
+
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
@@ -19,7 +23,7 @@ class NewNoteWidgetProvider : HomeWidgetProvider() {
         appWidgetIds.forEach { id ->
             val views = RemoteViews(context.packageName, R.layout.widget_new)
             // В 1×1 (уже ~110dp) остаётся только значок.
-            val showLabel = WidgetUtil.widthDp(appWidgetManager, id) >= 110
+            val showLabel = WidgetUtil.widthDp(appWidgetManager, id) >= LABEL_MIN_WIDTH_DP
             views.setViewVisibility(R.id.label, if (showLabel) View.VISIBLE else View.GONE)
             views.setInt(R.id.plus, "setColorFilter", context.getColor(R.color.widget_on_primary_container))
             views.setOnClickPendingIntent(R.id.root, WidgetUtil.launch(context, "zametki://new"))

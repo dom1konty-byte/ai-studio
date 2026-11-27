@@ -11,6 +11,11 @@ import org.json.JSONArray
 
 /** «Последние заметки»: до 5 строк (3 при низком виджете). */
 class RecentNotesWidgetProvider : HomeWidgetProvider() {
+    private companion object {
+        const val HEIGHT_3_ROWS_DP = 150
+        const val HEIGHT_4_ROWS_DP = 210
+    }
+
     private val rows = intArrayOf(R.id.r1, R.id.r2, R.id.r3, R.id.r4, R.id.r5)
     private val bars = intArrayOf(R.id.bar1, R.id.bar2, R.id.bar3, R.id.bar4, R.id.bar5)
     private val titles = intArrayOf(R.id.t1, R.id.t2, R.id.t3, R.id.t4, R.id.t5)
@@ -30,8 +35,8 @@ class RecentNotesWidgetProvider : HomeWidgetProvider() {
         appWidgetIds.forEach { id ->
             val h = WidgetUtil.heightDp(appWidgetManager, id)
             val maxRows = when {
-                h < 150 -> 3
-                h < 210 -> 4
+                h < HEIGHT_3_ROWS_DP -> 3
+                h < HEIGHT_4_ROWS_DP -> 4
                 else -> 5
             }
             val count = minOf(notes.length(), maxRows)
@@ -40,8 +45,9 @@ class RecentNotesWidgetProvider : HomeWidgetProvider() {
             views.setOnClickPendingIntent(R.id.add, WidgetUtil.launch(context, "zametki://new"))
             views.setViewVisibility(R.id.empty, if (count == 0) View.VISIBLE else View.GONE)
             for (i in rows.indices) {
-                if (i < count) {
-                    val n = notes.getJSONObject(i)
+                val n = if (i < count) notes.optJSONObject(i) else null
+                if (n != null) {
+                    val noteId = n.optInt("id", -1)
                     views.setViewVisibility(rows[i], View.VISIBLE)
                     views.setInt(bars[i], "setBackgroundColor", WidgetUtil.noteColor(context, n.optInt("color")))
                     views.setTextViewText(titles[i], n.optString("title"))
@@ -49,7 +55,7 @@ class RecentNotesWidgetProvider : HomeWidgetProvider() {
                     views.setViewVisibility(previews[i], if (n.optString("preview").isEmpty()) View.GONE else View.VISIBLE)
                     views.setOnClickPendingIntent(
                         rows[i],
-                        WidgetUtil.launch(context, "zametki://note/${n.getInt("id")}"),
+                        WidgetUtil.launch(context, if (noteId < 0) null else "zametki://note/$noteId"),
                     )
                 } else {
                     views.setViewVisibility(rows[i], View.GONE)

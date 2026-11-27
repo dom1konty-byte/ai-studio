@@ -3,6 +3,9 @@
         android:label="Заметки"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+            android:name="flutter_deeply_linking_enabled"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../models/note.dart';
@@ -5,8 +7,14 @@ import '../models/note_colors.dart';
 import '../services/notes_service.dart';
 import '../widgets/color_picker_sheet.dart';
 
+/// Пауза после последней правки, через которую заметка сохраняется сама.
+const _autosaveDelay = Duration(milliseconds: 1500);
+
 class _Item {
-  _Item(String text, this.checked) : controller = TextEditingController(text: text);
+  _Item(String text, this.checked, VoidCallback onChanged)
+      : controller = TextEditingController(text: text) {
+    controller.addListener(onChanged);
+  }
 
   final TextEditingController controller;
   final FocusNode focus = FocusNode();
@@ -40,6 +48,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
   late bool _pinned;
   int? _id;
   bool _deleted = false;
+  Timer? _timer;
+  Future<void> _saveQueue = Future.value();
 
   @override
   void initState() {
@@ -47,20 +57,25 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
     WidgetsBinding.instance.addObserver(this);
     _original = widget.initial ?? Note(updatedAt: DateTime.now());
     _id = _original.id;
-    _title = TextEditingController(text: _original.title);
-    _body = TextEditingController(text: _original.body);
+    _title = TextEditingController(text: _original.title)..addListener(_scheduleSave);
+    _body = TextEditingController(text: _original.body)..addListener(_scheduleSave);
     _isChecklist = _original.isChecklist;
     _color = _original.color;
     _pinned = _original.pinned;
     for (final i in _original.items) {
-      _items.add(_Item(i.text, i.checked));
+      _items.add(_Item(i.text, i.checked, _scheduleSave));
     }
-    if (_isChecklist && _items.isEmpty) _items.add(_Item('', false));
+    if (_isChecklist && _items.isEmpty) _items.add(_Item('', false, _scheduleSave));
+    widget.service.registerFlusher(_flush);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    widget.service.unregisterFlusher(_flush);
+    _title.removeListener(_scheduleSave);
+    _body.removeListener(_scheduleSave);
     _title.dispose();
     _body.dispose();
     for (final i in _items) {
@@ -71,7 +86,23 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) _save();
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      _flush();
+    }
+  }
+
+  void _scheduleSave() {
+    if (_deleted) return;
+    _timer?.cancel();
+    _timer = Timer(_autosaveDelay, _save);
+  }
+
+  /// Сохраняет сразу (отменяя ожидание автосохранения).
+  Future<void> _flush() {
+    _timer?.cancel();
+    return _save();
   }
 
   Note _current() => Note(
@@ -92,7 +123,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
       );
 
   /// Сохраняет, если есть что сохранять. Пустую заметку не создаём (а у старой — удаляем).
-  Future<void> _save() async {
+  /// Сохранения идут строго по очереди: иначе две вставки подряд создадут дубль.
+  Future<void> _save() {
+    final next = _saveQueue.then((_) => _doSave());
+    _saveQueue = next;
+    return next;
+  }
+
+  Future<void> _doSave() async {
     if (_deleted) return;
     final note = _current();
     try {
@@ -121,7 +159,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
   }
 
   Future<void> _saveAndClose() async {
-    await _save();
+    await _flush();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -135,8 +173,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
         }
         _items
           ..clear()
-          ..addAll(items.map((e) => _Item(e.text, false)));
-        if (_items.isEmpty) _items.add(_Item('', false));
+          ..addAll(items.map((e) => _Item(e.text, false, _scheduleSave)));
+        if (_items.isEmpty) _items.add(_Item('', false, _scheduleSave));
       } else {
         _body.text = Note.textFromItems([
           for (final i in _items) ChecklistItem(text: i.controller.text, checked: i.checked),
@@ -153,6 +191,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
   void _toggleItem(_Item item, bool checked) {
     setState(() {
       item.checked = checked;
+      _scheduleSave();
       // Отмеченные уходят вниз (порядок внутри групп сохраняется).
       final open = _items.where((e) => !e.checked).toList();
       final done = _items.where((e) => e.checked).toList();
@@ -164,7 +203,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
   }
 
   void _addItem() {
-    final item = _Item('', false);
+    final item = _Item('', false, _scheduleSave);
     setState(() {
       final firstDone = _items.indexWhere((e) => e.checked);
       _items.insert(firstDone == -1 ? _items.length : firstDone, item);
@@ -175,14 +214,18 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
   void _removeItem(_Item item) {
     setState(() {
       _items.remove(item);
-      if (_items.isEmpty) _items.add(_Item('', false));
+      if (_items.isEmpty) _items.add(_Item('', false, _scheduleSave));
     });
     item.dispose();
+    _scheduleSave();
   }
 
   Future<void> _pickColor() async {
     final picked = await showColorPicker(context, selected: _color);
-    if (picked != null) setState(() => _color = picked);
+    if (picked != null) {
+      setState(() => _color = picked);
+      _scheduleSave();
+    }
   }
 
   Future<void> _delete() async {
@@ -211,6 +254,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
       },
     );
     if (ok != true || !mounted) return;
+    _timer?.cancel();
+    await _saveQueue;
+    if (!mounted) return;
     _deleted = true;
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
@@ -218,8 +264,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
       if (_id != null) await widget.service.delete(_id!);
     } catch (_) {
       _deleted = false;
-      messenger.showSnackBar(
-          const SnackBar(content: Text('Не удалось сохранить. Попробуйте ещё раз')));
+      messenger.showSnackBar(const SnackBar(content: Text('Не удалось удалить')));
       return;
     }
     navigator.pop();
@@ -249,7 +294,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> with WidgetsBinding
               tooltip: _pinned ? 'Открепить' : 'Закрепить',
               icon: Icon(_pinned ? Icons.push_pin : Icons.push_pin_outlined),
               color: _pinned ? theme.colorScheme.primary : null,
-              onPressed: () => setState(() => _pinned = !_pinned),
+              onPressed: () {
+                setState(() => _pinned = !_pinned);
+                _scheduleSave();
+              },
             ),
             IconButton(
               tooltip: 'Цвет',

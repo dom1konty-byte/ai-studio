@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:quick_actions/quick_actions.dart';
@@ -52,6 +54,12 @@ class App extends StatefulWidget {
 
 class _AppState extends State<App> {
   final _navKey = GlobalKey<NavigatorState>();
+  StreamSubscription<Uri?>? _clicks;
+  bool _busy = false;
+  bool _initPhase = true;
+
+  /// Стартовая ссылка обрабатывается один раз за процесс (не при пересоздании экрана).
+  static bool _initialHandled = false;
 
   @override
   void initState() {
@@ -59,40 +67,76 @@ class _AppState extends State<App> {
     if (widget.listenLinks) _initLinks();
   }
 
+  @override
+  void dispose() {
+    _clicks?.cancel();
+    super.dispose();
+  }
+
+  void _handleInitial(AppLink? link) {
+    if (_initialHandled) return;
+    _initialHandled = true;
+    _handle(link);
+  }
+
   Future<void> _initLinks() async {
-    const QuickActions().initialize((type) {
-      if (type == 'new_note') _handle(const NewNoteLink());
-    });
-    await const QuickActions().setShortcutItems(const [
-      ShortcutItem(type: 'new_note', localizedTitle: 'Новая заметка', icon: 'ic_shortcut_add'),
-    ]);
     try {
-      HomeWidget.widgetClicked.listen((uri) => _handle(AppLink.parse(uri)));
+      const QuickActions().initialize((type) {
+        if (type != 'new_note') return;
+        // Пока идёт запуск — это ярлык, которым открыли приложение.
+        if (_initPhase) {
+          _handleInitial(const NewNoteLink());
+        } else {
+          _handle(const NewNoteLink());
+        }
+      });
+      await const QuickActions().setShortcutItems(const [
+        ShortcutItem(type: 'new_note', localizedTitle: 'Новая заметка', icon: 'ic_shortcut_add'),
+      ]);
+      _clicks = HomeWidget.widgetClicked.listen((uri) => _handle(AppLink.parse(uri)));
       final initial = await HomeWidget.initiallyLaunchedFromHomeWidget();
-      _handle(AppLink.parse(initial));
+      _handleInitial(AppLink.parse(initial));
     } catch (e) {
       debugPrint('Ссылки из виджетов недоступны: $e');
+    } finally {
+      _initPhase = false;
     }
   }
 
+  /// Навигатор появляется после первого кадра (холодный старт).
+  Future<NavigatorState?> _navigator() {
+    final nav = _navKey.currentState;
+    if (nav != null) return Future.value(nav);
+    final c = Completer<NavigatorState?>();
+    WidgetsBinding.instance.addPostFrameCallback((_) => c.complete(_navKey.currentState));
+    WidgetsBinding.instance.ensureVisualUpdate();
+    return c.future;
+  }
+
   Future<void> _handle(AppLink? link) async {
-    if (link == null) return;
+    if (link == null || _busy) return;
+    _busy = true;
+    NavigatorState? nav;
     Note? note;
-    if (link is OpenNoteLink) {
-      note = await widget.service.byId(link.id);
-      if (note == null) return;
+    try {
+      if (link is OpenNoteLink) {
+        note = await widget.service.byId(link.id);
+        if (note == null) return;
+      }
+      nav = await _navigator();
+      if (nav == null) return;
+      // Не терять правки открытого редактора.
+      await widget.service.flushEditors();
+      nav.popUntil((r) => r.isFirst);
+    } catch (e) {
+      debugPrint('Не удалось открыть по ссылке: $e');
+      return;
+    } finally {
+      _busy = false;
     }
-    // Ждём, пока навигатор появится (холодный старт).
-    var nav = _navKey.currentState;
-    for (var i = 0; nav == null && i < 20; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      nav = _navKey.currentState;
-    }
-    if (nav == null) return;
-    nav.popUntil((r) => r.isFirst);
-    await nav.push(MaterialPageRoute<void>(
+    unawaited(nav.push(MaterialPageRoute<void>(
       builder: (_) => NoteEditorScreen(service: widget.service, initial: note),
-    ));
+    )));
   }
 
   @override

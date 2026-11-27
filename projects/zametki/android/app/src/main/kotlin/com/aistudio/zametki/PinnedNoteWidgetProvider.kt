@@ -11,6 +11,12 @@ import org.json.JSONObject
 
 /** «Закреплённая заметка»: самая свежая из закреплённых (выбирает приложение). */
 class PinnedNoteWidgetProvider : HomeWidgetProvider() {
+    private companion object {
+        const val PADDING_DP = 24
+        const val HEAD_DP = 44
+        const val LINE_DP = 19
+    }
+
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
@@ -33,7 +39,7 @@ class PinnedNoteWidgetProvider : HomeWidgetProvider() {
                 views.setOnClickPendingIntent(R.id.root, WidgetUtil.launch(context, null))
             } else {
                 val h = WidgetUtil.heightDp(appWidgetManager, id)
-                val lines = ((h - 24 - 44) / 19).coerceAtLeast(1)
+                val lines = ((h - PADDING_DP - HEAD_DP) / LINE_DP).coerceAtLeast(1)
                 views.setInt(R.id.bg, "setColorFilter", WidgetUtil.noteColor(context, note.optInt("color")))
                 views.setInt(R.id.pin, "setColorFilter", context.getColor(R.color.widget_primary))
                 views.setViewVisibility(R.id.head, View.VISIBLE)
@@ -42,9 +48,10 @@ class PinnedNoteWidgetProvider : HomeWidgetProvider() {
                 views.setTextViewText(R.id.title, note.optString("title"))
                 views.setTextViewText(R.id.body, note.optString("text"))
                 views.setInt(R.id.body, "setMaxLines", lines)
+                val noteId = note.optInt("id", -1)
                 views.setOnClickPendingIntent(
                     R.id.root,
-                    WidgetUtil.launch(context, "zametki://note/${note.getInt("id")}"),
+                    WidgetUtil.launch(context, if (noteId < 0) null else "zametki://note/$noteId"),
                 )
             }
             appWidgetManager.updateAppWidget(id, views)

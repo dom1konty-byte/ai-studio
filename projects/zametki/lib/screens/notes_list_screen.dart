@@ -22,11 +22,13 @@ class NotesListScreenState extends State<NotesListScreen> {
   @override
   void initState() {
     super.initState();
+    widget.service.addListener(reload);
     reload();
   }
 
   @override
   void dispose() {
+    widget.service.removeListener(reload);
     _search.dispose();
     super.dispose();
   }
@@ -45,7 +47,7 @@ class NotesListScreenState extends State<NotesListScreen> {
       final cs = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         backgroundColor: cs.errorContainer,
-        content: Text('Не удалось сохранить. Попробуйте ещё раз',
+        content: Text('Не удалось загрузить заметки',
             style: TextStyle(color: cs.onErrorContainer)),
       ));
     }
@@ -55,7 +57,6 @@ class NotesListScreenState extends State<NotesListScreen> {
     await Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => NoteEditorScreen(service: widget.service, initial: note),
     ));
-    await reload();
   }
 
   int _columns(double width) => width >= 900 ? 4 : (width >= 600 ? 3 : 2);
