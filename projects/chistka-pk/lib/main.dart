@@ -1,32 +1,27 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
+import 'package:window_manager/window_manager.dart';
 
-void main() => runApp(const App());
+import 'platform/windows_platform.dart';
+import 'state/app_controller.dart';
+import 'ui/app.dart';
 
-class App extends StatelessWidget {
-  const App({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Чистка ПК',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isWindows) {
+    await windowManager.ensureInitialized();
+    const options = WindowOptions(
+      title: 'ЧистоДиск',
+      size: Size(1000, 680),
+      minimumSize: Size(900, 600),
+      center: true,
     );
+    await windowManager.waitUntilReadyToShow(options, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
   }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Чистка ПК')),
-      body: const Center(child: Text('Скоро здесь будет программа для Windows')),
-    );
-  }
+  final controller = AppController(platform: WindowsPlatform());
+  runApp(ChistoApp(controller: controller));
 }
