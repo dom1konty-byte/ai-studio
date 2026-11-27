@@ -197,7 +197,7 @@ class MainScreen extends StatelessWidget {
         Expanded(
           child: LayoutBuilder(
             builder: (context, box) {
-              final twoCols = box.maxWidth >= 640;
+              final twoCols = box.maxWidth >= 600;
               Widget grid(List<Widget> items) => Wrap(
                     spacing: 12,
                     runSpacing: 12,

@@ -46,7 +46,16 @@ class NavPanel extends StatefulWidget {
   State<NavPanel> createState() => _NavPanelState();
 }
 
-class _NavPanelState extends State<NavPanel> {
+class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin {
+  late final AnimationController _anim = AnimationController(vsync: this);
+  double _dragWidth = defaultNavWidth;
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
   bool _expanded = true;
   bool _edgeHover = false;
   bool _edgeDrag = false;
@@ -105,7 +114,40 @@ class _NavPanelState extends State<NavPanel> {
   Widget _group(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     if (_narrow) {
-      return Column(children: [for (final it in _groupItems) _navTile(it)]);
+      // Узкая панель: группа одной иконкой, подпункты — во всплывающем меню.
+      final selected = _groupItems.any((it) => it.section == _selected);
+      final bg = selected ? cs.secondaryContainer : Colors.transparent;
+      final fg = selected && Theme.of(context).brightness == Brightness.light
+          ? const Color(0xFF0B3F3E)
+          : (selected ? cs.onSecondaryContainer : cs.onSurface);
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        child: PopupMenuButton<Section>(
+          key: const Key('nav-group-popup'),
+          tooltip: 'Очистка',
+          enabled: !_busy,
+          position: PopupMenuPosition.over,
+          offset: const Offset(56, 0),
+          onSelected: c.go,
+          itemBuilder: (_) => [
+            for (final it in _groupItems)
+              PopupMenuItem<Section>(
+                value: it.section,
+                child: Row(children: [
+                  Icon(it.icon, size: 20),
+                  const SizedBox(width: 12),
+                  Text(it.label),
+                ]),
+              ),
+          ],
+          child: Container(
+            height: 44,
+            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(24)),
+            alignment: Alignment.center,
+            child: Icon(Icons.cleaning_services_outlined, size: 22, color: fg),
+          ),
+        ),
+      );
     }
     final d = animDuration(context, const Duration(milliseconds: 200));
     return Column(
@@ -218,6 +260,28 @@ class _NavPanelState extends State<NavPanel> {
     );
   }
 
+  /// Двойной клик по краю: 72 <-> 240 за 200 мс (easeInOut).
+  void _toggleWidth() {
+    final from = widget.width;
+    final to = from > 150 ? 72.0 : defaultNavWidth;
+    final d = animDuration(context, const Duration(milliseconds: 200));
+    _anim.stop();
+    if (d == Duration.zero) {
+      widget.onWidthChanged(to);
+      widget.onWidthCommitted(to);
+      return;
+    }
+    _anim.duration = d;
+    final curve = CurvedAnimation(parent: _anim, curve: Curves.easeInOut);
+    void tick() => widget.onWidthChanged(from + (to - from) * curve.value);
+    _anim.addListener(tick);
+    _anim.forward(from: 0).whenCompleteOrCancel(() {
+      _anim.removeListener(tick);
+      curve.dispose();
+      if (_anim.status == AnimationStatus.completed) widget.onWidthCommitted(to);
+    });
+  }
+
   Widget _edge(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return MouseRegion(
@@ -227,20 +291,24 @@ class _NavPanelState extends State<NavPanel> {
       child: GestureDetector(
         key: const Key('nav-edge'),
         behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: (_) => setState(() => _edgeDrag = true),
-        // Ширина берётся из контроллера, а не из widget.width: между событиями
-        // жеста кадр может не успеть перестроиться, и значение было бы устаревшим.
-        onHorizontalDragUpdate: (d) =>
-            widget.onWidthChanged(clampNavWidth(c.settings.navWidth + d.delta.dx)),
+        onHorizontalDragStart: (_) {
+          _anim.stop();
+          setState(() {
+            _edgeDrag = true;
+            _dragWidth = widget.width;
+          });
+        },
+        // Ширина копится здесь (кадр может не успеть перестроиться); в настройки
+        // она пишется только в конце жеста.
+        onHorizontalDragUpdate: (d) {
+          _dragWidth = clampNavWidth(_dragWidth + d.delta.dx);
+          widget.onWidthChanged(_dragWidth);
+        },
         onHorizontalDragEnd: (_) {
           setState(() => _edgeDrag = false);
-          widget.onWidthCommitted(c.settings.navWidth);
+          widget.onWidthCommitted(_dragWidth);
         },
-        onDoubleTap: () {
-          final w = widget.width > 150 ? 72.0 : defaultNavWidth;
-          widget.onWidthChanged(w);
-          widget.onWidthCommitted(w);
-        },
+        onDoubleTap: _toggleWidth,
         child: SizedBox(
           width: 6,
           child: Center(

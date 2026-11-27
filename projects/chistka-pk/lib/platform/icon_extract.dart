@@ -122,8 +122,8 @@ Uint8List? extractIconPngSync(String path, int index) {
   var hdc = 0;
   try {
     final n = extract(file, index, large, small, 1);
-    if (n == 0 || large.value == 0) return null;
     try {
+      if (n == 0 || large.value == 0) return null;
       if (getIconInfo(large.value, info) == 0) return null;
       final hColor = info.ref.hbmColor;
       final hMask = info.ref.hbmMask;
@@ -162,7 +162,8 @@ Uint8List? extractIconPngSync(String path, int index) {
         if (hMask != 0) deleteObject(hMask);
       }
     } finally {
-      destroyIcon(large.value);
+      // Оба HICON освобождаем при любом раннем return.
+      if (large.value != 0) destroyIcon(large.value);
       if (small.value != 0) destroyIcon(small.value);
     }
   } catch (_) {

@@ -23,6 +23,28 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   AppController get c => widget.controller;
 
+  // Ширина панели живёт здесь: при перетаскивании перестраивается только панель,
+  // в настройки она пишется в конце жеста.
+  late final ValueNotifier<double> _navWidth = ValueNotifier(c.settings.navWidth);
+  bool _resizing = false;
+
+  void _syncNav() {
+    if (!_resizing && _navWidth.value != c.settings.navWidth) _navWidth.value = c.settings.navWidth;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    c.addListener(_syncNav);
+  }
+
+  @override
+  void dispose() {
+    c.removeListener(_syncNav);
+    _navWidth.dispose();
+    super.dispose();
+  }
+
   Widget _content() {
     if (c.phase == Phase.done) return ResultScreen(key: const ValueKey('done'), controller: c);
     switch (c.section) {
@@ -54,11 +76,21 @@ class _ShellState extends State<Shell> {
           body: SafeArea(
             child: Row(
               children: [
-                NavPanel(
-                  controller: c,
-                  width: c.settings.navWidth,
-                  onWidthChanged: c.previewNavWidth,
-                  onWidthCommitted: c.setNavWidth,
+                ValueListenableBuilder<double>(
+                  valueListenable: _navWidth,
+                  builder: (_, w, __) => NavPanel(
+                    controller: c,
+                    width: w,
+                    onWidthChanged: (v) {
+                      _resizing = true;
+                      _navWidth.value = v;
+                    },
+                    onWidthCommitted: (v) {
+                      _resizing = false;
+                      _navWidth.value = v;
+                      c.setNavWidth(v);
+                    },
+                  ),
                 ),
                 Expanded(
                   child: Padding(

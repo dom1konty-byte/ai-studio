@@ -462,4 +462,13 @@ void main() {
       expect(texts.any((t) => t.contains('Удаляю остатки')), isTrue);
     });
   });
+
+  test('чёрный список: Khronos, JavaSoft, VMware и глубокие ключи не удаляются', () {
+    for (final n in ['Khronos', 'Partner', 'JavaSoft', 'Dolby', 'DefaultUserEnvironment', 'Setup', 'VMware']) {
+      expect(isBlacklistedName(n), isTrue, reason: n);
+      expect(isSafeRegDeleteKey('HKCU\\Software\\$n'), isFalse, reason: n);
+    }
+    expect(isSafeRegDeleteKey(r'HKCU\Software\MyApp\a\b\c'), isTrue);
+    expect(isSafeRegDeleteKey(r'HKCU\Software\MyApp\a\b\c\d'), isFalse);
+  });
 }

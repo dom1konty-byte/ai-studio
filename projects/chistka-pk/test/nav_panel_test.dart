@@ -55,7 +55,15 @@ void main() {
     expect(_inNav(find.text('Программы')), findsNothing);
     expect(_inNav(find.text('ЧистоДиск')), findsNothing);
     expect(_inNav(find.byIcon(Icons.apps_outlined)), findsOneWidget);
-    expect(_inNav(find.byIcon(Icons.download_outlined)), findsOneWidget); // иконка подпункта
+    // Группа «Очистка» — одна иконка; подпункты во всплывающем меню.
+    expect(_inNav(find.byIcon(Icons.cleaning_services_outlined)), findsOneWidget);
+    expect(_inNav(find.byIcon(Icons.download_outlined)), findsNothing);
+    await tester.tap(find.byKey(const Key('nav-group-popup')));
+    await tester.pumpAndSettle();
+    expect(find.text('Загрузки'), findsOneWidget);
+    await tester.tap(find.text('Загрузки'));
+    await tester.pumpAndSettle();
+    expect(c.section, Section.downloads);
     expect(find.byTooltip('Программы'), findsOneWidget);
     expect(find.byTooltip('Настройки'), findsOneWidget);
     expect(find.byTooltip('Журнал'), findsOneWidget);
@@ -90,6 +98,29 @@ void main() {
     expect(c.settings.navWidth, maxNavWidth);
     // Распознаватель двойного нажатия держит таймер — дать ему истечь.
     await tester.pump(const Duration(milliseconds: 500));
+  });
+
+  testWidgets('Двойной клик по краю: плавно 240 -> 72 и обратно, ширина сохраняется в конце', (tester) async {
+    final c = _controller();
+    await _pump(tester, c);
+    Future<void> dbl() async {
+      final p = tester.getCenter(find.byKey(const Key('nav-edge')));
+      await tester.tapAt(p);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tapAt(p);
+      await tester.pump();
+    }
+
+    await dbl();
+    await tester.pump(const Duration(milliseconds: 100));
+    final mid = tester.getSize(find.byType(NavPanel)).width - 6;
+    expect(mid, inExclusiveRange(72, 240)); // посередине анимации
+    expect(c.settings.navWidth, defaultNavWidth); // в настройках ещё старое
+    await tester.pumpAndSettle();
+    expect(c.settings.navWidth, 72);
+    await dbl();
+    await tester.pumpAndSettle();
+    expect(c.settings.navWidth, defaultNavWidth);
   });
 
   testWidgets('Пункт «Интернет» открывает тест скорости', (tester) async {

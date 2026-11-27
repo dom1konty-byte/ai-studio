@@ -64,19 +64,27 @@ class TrayService with TrayListener, WindowListener {
   }
 
   /// Окно, с которого начинается/которым заканчивается «джинн»: 10 % размера
-  /// у правого нижнего угла рабочей области.
+  /// у правого нижнего угла рабочей области. Рабочая область приходит в физических
+  /// пикселях, а bounds окна — в логических: делим на devicePixelRatio.
   Rect? _cornerRect(Rect normal) {
     final area = primaryWorkArea();
     if (area == null) return null;
+    final views = PlatformDispatcher.instance.views;
+    final dpr = views.isEmpty ? 1.0 : views.first.devicePixelRatio;
+    final right = area.right / dpr, bottom = area.bottom / dpr;
     final w = normal.width * 0.1, h = normal.height * 0.1;
-    return Rect.fromLTWH(area.right - w, area.bottom - h, w, h);
+    return Rect.fromLTWH(right - w, bottom - h, w, h);
   }
+
+  bool _hiding = false;
+  bool _pendingShow = false;
 
   /// Плавно спрятать окно (уменьшение к углу + затухание), затем hide.
   /// Не поддерживается что-то — только затухание. Исходные bounds/opacity возвращаются.
   Future<void> hideAnimated() async {
     if (_animating) return;
-    _animating = true;
+    _animating = true; // синхронно, до первого await
+    _hiding = true;
     Rect? normal;
     var resized = false;
     try {
@@ -87,8 +95,8 @@ class TrayService with TrayListener, WindowListener {
               !(await windowManager.isFullScreen());
           final corner = canResize ? _cornerRect(normal) : null;
           if (corner != null) {
-            await windowManager.setMinimumSize(const Size(1, 1));
             resized = true;
+            await windowManager.setMinimumSize(const Size(1, 1));
             await _play(
                 from: normal, to: corner, o0: 1, o1: 0, curve: Curves.easeInCubic, ms: _animMs);
           } else {
@@ -104,46 +112,57 @@ class TrayService with TrayListener, WindowListener {
         await windowManager.setOpacity(1);
       } catch (_) {}
       _animating = false;
+      _hiding = false;
+    }
+    if (_pendingShow) {
+      _pendingShow = false;
+      await showWindow();
     }
   }
 
   Future<void> showWindow() async {
-    if (_animating) return;
-    var animated = false;
-    if (!_noAnimations) {
-      try {
-        if (!await windowManager.isVisible()) {
-          animated = true;
-          _animating = true;
-          final normal = await windowManager.getBounds();
-          final corner = (await windowManager.isMaximized()) ? null : _cornerRect(normal);
-          await windowManager.setOpacity(0);
-          if (corner != null) {
-            await windowManager.setMinimumSize(const Size(1, 1));
-            await windowManager.setBounds(corner);
-          }
-          await windowManager.show();
-          await _play(
-              from: corner,
-              to: corner != null ? normal : null,
-              o0: 0,
-              o1: 1,
-              curve: Curves.easeOutCubic,
-              ms: corner != null ? _animMs : 200);
-          if (corner != null) {
-            await windowManager.setBounds(normal);
-            await windowManager.setMinimumSize(_minSize);
-          }
-          await windowManager.setOpacity(1);
-        }
-      } catch (_) {
+    if (_animating) {
+      // «Открыть» во время сворачивания — выполним после hideAnimated.
+      if (_hiding) _pendingShow = true;
+      return;
+    }
+    _animating = true; // синхронно, до первого await
+    Rect? normal;
+    try {
+      if (!_noAnimations) {
         try {
-          await windowManager.setMinimumSize(_minSize);
-          await windowManager.setOpacity(1);
-        } catch (_) {}
-      } finally {
-        if (animated) _animating = false;
+          if (!await windowManager.isVisible()) {
+            normal = await windowManager.getBounds();
+            final corner = (await windowManager.isMaximized()) ? null : _cornerRect(normal);
+            await windowManager.setOpacity(0);
+            if (corner != null) {
+              await windowManager.setMinimumSize(const Size(1, 1));
+              await windowManager.setBounds(corner);
+            }
+            await windowManager.show();
+            await _play(
+                from: corner,
+                to: corner != null ? normal : null,
+                o0: 0,
+                o1: 1,
+                curve: Curves.easeOutCubic,
+                ms: corner != null ? _animMs : 200);
+            if (corner != null) {
+              await windowManager.setBounds(normal);
+            }
+            await windowManager.setMinimumSize(_minSize);
+            await windowManager.setOpacity(1);
+          }
+        } catch (_) {
+          try {
+            if (normal != null) await windowManager.setBounds(normal);
+            await windowManager.setMinimumSize(_minSize);
+            await windowManager.setOpacity(1);
+          } catch (_) {}
+        }
       }
+    } finally {
+      _animating = false;
     }
     await windowManager.show();
     await windowManager.restore();

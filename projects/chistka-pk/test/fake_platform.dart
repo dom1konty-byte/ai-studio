@@ -171,6 +171,16 @@ class FakePlatform implements PlatformApi {
     return toolCode;
   }
 
+  /// Вывод `sc query` (по умолчанию служба работает).
+  String? toolOutput = 'SERVICE_NAME: wuauserv\n        STATE              : 4  RUNNING\n';
+  final queries = <String>[];
+
+  @override
+  Future<String?> runToolOutput(String exe, List<String> args) async {
+    queries.add('$exe ${args.join(' ')}');
+    return toolOutput;
+  }
+
   @override
   Future<Uint8List?> programIcon(String path, int index) async {
     iconCalls.add('$path,$index');

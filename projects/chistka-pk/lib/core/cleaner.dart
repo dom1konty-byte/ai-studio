@@ -165,25 +165,37 @@ class Cleaner {
     return s;
   }
 
-  /// Кэш обновлений: служба wuauserv держит файлы, поэтому перед очисткой её
-  /// останавливаем, а после (в том числе при ошибке) запускаем обратно.
+  /// Кэш обновлений: служба wuauserv держит файлы, поэтому, если она работает,
+  /// перед очисткой её останавливаем, а после (в том числе при ошибке) запускаем
+  /// обратно. Не работает — просто чистим, службу не трогаем.
   Future<void> _cleanWithUpdateService(Category c, CleanSummary s) async {
     final net = '$systemRoot\\System32\\net.exe';
+    final sc = '$systemRoot\\System32\\sc.exe';
+    var wasRunning = false;
     try {
-      int? code;
       try {
-        code = await platform.runTool(net, const ['stop', 'wuauserv']);
+        wasRunning = parseServiceRunning(await platform.runToolOutput(sc, const ['query', 'wuauserv'])) == true;
       } catch (_) {}
-      await log.note('Служба wuauserv: остановка, код ${code ?? 'нет'}');
+      if (wasRunning) {
+        int? code;
+        try {
+          code = await platform.runTool(net, const ['stop', 'wuauserv']);
+        } catch (_) {}
+        await log.note('Служба wuauserv: остановка, код ${code ?? 'нет'}');
+      } else {
+        await log.note('Служба wuauserv не запущена — останавливать не нужно');
+      }
       for (final t in c.targets) {
         await cleanTarget(c, t, s);
       }
     } finally {
-      int? code;
-      try {
-        code = await platform.runTool(net, const ['start', 'wuauserv']);
-      } catch (_) {}
-      await log.note('Служба wuauserv: запуск, код ${code ?? 'нет'}');
+      if (wasRunning) {
+        int? code;
+        try {
+          code = await platform.runTool(net, const ['start', 'wuauserv']);
+        } catch (_) {}
+        await log.note('Служба wuauserv: запуск, код ${code ?? 'нет'}');
+      }
     }
   }
 
@@ -232,4 +244,15 @@ class Cleaner {
       }
     }
   }
+}
+
+/// Разбор вывода `sc query <служба>`: true — STATE 4 (RUNNING), false — другое
+/// состояние, null — не удалось разобрать. Число состояния не зависит от языка Windows.
+bool? parseServiceRunning(String? output) {
+  if (output == null) return null;
+  final m = RegExp(r'^\s*[^\s:]+\s*:\s*(\d+)\s+[A-Z_]+', multiLine: true, caseSensitive: false)
+      .allMatches(output)
+      .where((m) => RegExp(r'^\s*(STATE|СОСТОЯНИЕ)', caseSensitive: false).hasMatch(m.group(0)!));
+  if (m.isEmpty) return null;
+  return m.first.group(1) == '4';
 }

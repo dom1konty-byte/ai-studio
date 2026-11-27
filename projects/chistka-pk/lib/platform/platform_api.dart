@@ -117,6 +117,9 @@ abstract class PlatformApi {
   /// Возвращает код выхода (null — не запустилась).
   Future<int?> runTool(String exe, List<String> args);
 
+  /// Как [runTool], но возвращает текст вывода (stdout); null — не запустилась.
+  Future<String?> runToolOutput(String exe, List<String> args);
+
   // --- значки программ ---
 
   /// PNG значка: [path] — exe/dll/ico, [index] — номер значка (как в DisplayIcon).

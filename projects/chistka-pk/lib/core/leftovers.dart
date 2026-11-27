@@ -89,6 +89,8 @@ const _blacklistRaw = <String>[
   'Program Files (x86)', 'ProgramData', 'AppData', 'CrashDumps', 'D3DSCache',
   'Comms', 'ConnectedDevicesPlatform', 'PeerDistRepub', 'VirtualStore', 'Diagnostics',
   'SystemApps', 'System32', 'SysWOW64', 'Fonts', 'Drivers', 'Cryptography', 'Sun',
+  'Khronos', 'Partner', 'JavaSoft', 'Dolby', 'DefaultUserEnvironment', 'Setup', 'VMware',
+  'VMware, Inc.', 'Realtek Semiconductor', 'Classes', 'Ports', 'Hardware', 'Services',
 ];
 
 final Set<String> _blacklist = {for (final n in _blacklistRaw) _stripSeparators(n.toLowerCase())};
@@ -545,7 +547,7 @@ bool isSafeRegDeleteKey(String key, {bool uninstallEntry = false, bool admin = f
     return admin &&
         (_hasPrefix(segs, _uninstallPrefixHklm) || _hasPrefix(segs, _uninstallPrefixHklm32));
   }
-  if (segs.length < 3) return false;
+  if (segs.length < 3 || segs.length > 6) return false;
   if (segs[1].toLowerCase() != 'software') return false;
   final hive = segs[0].toUpperCase();
   if (hive == 'HKCU') {

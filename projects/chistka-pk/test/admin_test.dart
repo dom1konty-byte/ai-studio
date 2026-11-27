@@ -101,6 +101,22 @@ void main() {
       ]);
     });
 
+    test('служба не запущена: ни stop, ни start', () async {
+      platform.toolOutput = 'SERVICE_NAME: wuauserv\n        STATE              : 1  STOPPED\n';
+      await run(Cleaner(platform, log, admin: true), wu());
+      expect(platform.tools, isEmpty);
+      expect(platform.queries.single, endsWith('sc.exe query wuauserv'));
+    });
+
+    test('parseServiceRunning', () {
+      expect(parseServiceRunning('        STATE              : 4  RUNNING\n'), isTrue);
+      expect(parseServiceRunning('        СОСТОЯНИЕ          : 4  RUNNING\n'), isTrue);
+      expect(parseServiceRunning('        STATE              : 1  STOPPED\n'), isFalse);
+      expect(parseServiceRunning('        STATE              : 3  STOP_PENDING\n'), isFalse);
+      expect(parseServiceRunning('ошибка'), isNull);
+      expect(parseServiceRunning(null), isNull);
+    });
+
     test('служба запускается обратно, даже если остановка упала', () async {
       platform.onTool = (c) {
         if (c.contains('stop')) throw StateError('boom');

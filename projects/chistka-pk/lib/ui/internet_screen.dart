@@ -48,6 +48,7 @@ class _InternetScreenState extends State<InternetScreen> {
 
   void _start() {
     _cancel?.cancel();
+    _sub?.cancel();
     final cancel = _cancel = SpeedCancel();
     setState(() {
       _status = _Status.running;

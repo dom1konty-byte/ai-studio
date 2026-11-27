@@ -100,6 +100,31 @@ void main() {
     expect(ev.any((e) => e.phase == SpeedPhase.done), isFalse);
   });
 
+  test('Стоп во время пинга -> повторный старт работает', () async {
+    HttpOverrides.global = null; // настоящая сеть вместо заглушки flutter_test
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    var n = 0;
+    server.listen((r) async {
+      n++;
+      if (n == 1) await Future<void>.delayed(const Duration(seconds: 5)); // зависший пинг
+      try {
+        r.response.statusCode = 200;
+        await r.response.close();
+      } catch (_) {}
+    });
+    final net = CloudflareSpeedNetwork(host: 'http://127.0.0.1:${server.port}');
+    final c1 = SpeedCancel();
+    final first = net.pingOnce(c1);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    c1.cancel();
+    await first; // при отмене возвращает 0, без исключения
+    final c2 = SpeedCancel();
+    final ms = await net.pingOnce(c2);
+    expect(ms, greaterThan(0));
+    c2.cancel();
+  });
+
   testWidgets('«Начать» запускает тест и показывает итог', (tester) async {
     tester.view.physicalSize = const Size(1000, 900);
     tester.view.devicePixelRatio = 1;

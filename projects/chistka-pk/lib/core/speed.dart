@@ -247,8 +247,11 @@ class SpeedTester {
 
 /// Настоящая сеть: speed.cloudflare.com через dart:io HttpClient, без ключей.
 class CloudflareSpeedNetwork implements SpeedNetwork {
-  static const _host = 'https://speed.cloudflare.com';
-  static const _timeout = Duration(seconds: 8);
+  CloudflareSpeedNetwork({this.host = 'https://speed.cloudflare.com', this.timeout = const Duration(seconds: 8)});
+
+  /// Адрес сервера (в тестах — локальный).
+  final String host;
+  final Duration timeout;
 
   HttpClient _client(SpeedCancel cancel) {
     final c = HttpClient()
@@ -263,13 +266,23 @@ class CloudflareSpeedNetwork implements SpeedNetwork {
 
   @override
   Future<double> pingOnce(SpeedCancel cancel) async {
-    _pingClient ??= _client(cancel);
+    // Клиент пинга — на каждый запуск (свой SpeedCancel); после «Стоп» не переиспользуется.
+    if (_pingClient == null || !identical(_pingOwner, cancel)) {
+      _pingClient?.close(force: true);
+      final created = _client(cancel);
+      _pingClient = created;
+      _pingOwner = cancel;
+      cancel.onCancel(() {
+        if (identical(_pingClient, created)) _pingClient = null;
+      });
+    }
     final c = _pingClient!;
     final sw = Stopwatch()..start();
     try {
-      final req = await c.getUrl(Uri.parse('$_host/__down?bytes=0')).timeout(_timeout);
-      final resp = await req.close().timeout(_timeout);
-      await resp.drain<void>().timeout(_timeout);
+      final req = await c.getUrl(Uri.parse('$host/__down?bytes=0')).timeout(timeout);
+      req.followRedirects = false;
+      final resp = await req.close().timeout(timeout);
+      await resp.drain<void>().timeout(timeout);
       if (resp.statusCode != 200) throw const SpeedException(offline: false);
       return sw.elapsedMicroseconds / 1000;
     } catch (e) {
@@ -280,14 +293,16 @@ class CloudflareSpeedNetwork implements SpeedNetwork {
   }
 
   HttpClient? _pingClient;
+  SpeedCancel? _pingOwner;
 
   @override
   Stream<int> download(Duration limit, SpeedCancel cancel) {
     _pingClient?.close(force: true);
     _pingClient = null;
     return _parallel(limit, cancel, (c, add, active) async {
-      final req = await c.getUrl(Uri.parse('$_host/__down?bytes=25000000')).timeout(_timeout);
-      final resp = await req.close().timeout(_timeout);
+      final req = await c.getUrl(Uri.parse('$host/__down?bytes=25000000')).timeout(timeout);
+      req.followRedirects = false;
+      final resp = await req.close().timeout(timeout);
       if (resp.statusCode != 200) throw const SpeedException(offline: false);
       await for (final chunk in resp) {
         if (!active()) break;
@@ -302,14 +317,15 @@ class CloudflareSpeedNetwork implements SpeedNetwork {
     final chunk = List<int>.generate(256 * 1024, (_) => rnd.nextInt(256));
     const total = 10 * 1024 * 1024;
     return _parallel(limit, cancel, (c, add, active) async {
-      final req = await c.postUrl(Uri.parse('$_host/__up')).timeout(_timeout);
+      final req = await c.postUrl(Uri.parse('$host/__up')).timeout(timeout);
+      req.followRedirects = false;
       req.headers.contentType = ContentType.binary;
       req.contentLength = total;
       var sent = 0;
       while (sent < total && active()) {
         final n = math.min(chunk.length, total - sent);
         req.add(n == chunk.length ? chunk : chunk.sublist(0, n));
-        await req.flush().timeout(_timeout);
+        await req.flush().timeout(timeout);
         sent += n;
         add(n);
       }
@@ -317,8 +333,8 @@ class CloudflareSpeedNetwork implements SpeedNetwork {
         req.abort();
         return;
       }
-      final resp = await req.close().timeout(_timeout);
-      await resp.drain<void>().timeout(_timeout);
+      final resp = await req.close().timeout(timeout);
+      await resp.drain<void>().timeout(timeout);
     });
   }
 
@@ -332,6 +348,8 @@ class CloudflareSpeedNetwork implements SpeedNetwork {
     final client = _client(cancel);
     final sw = Stopwatch()..start();
     bool active() => !cancel.isCancelled && sw.elapsed < limit;
+    // Страховка: по таймеру лимита принудительно закрываем клиент, чтобы зависшие запросы не жили.
+    final guard = Timer(limit + const Duration(seconds: 2), () => client.close(force: true));
     var running = workers;
     Object? failure;
     var got = false;
@@ -350,6 +368,7 @@ class CloudflareSpeedNetwork implements SpeedNetwork {
         } finally {
           if (--running == 0) {
             if (failure != null && !out.isClosed) out.addError(_wrap(failure!));
+            guard.cancel();
             client.close(force: true);
             await out.close();
           }

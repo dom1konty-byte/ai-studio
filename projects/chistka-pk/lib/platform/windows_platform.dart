@@ -9,6 +9,7 @@ import '../core/browsers.dart';
 import '../core/programs.dart';
 import '../core/whitelist.dart';
 import 'elevation.dart';
+import '../core/async_pool.dart';
 import 'icon_extract.dart';
 import 'platform_api.dart';
 import 'single_instance.dart';
@@ -504,7 +505,8 @@ $n.Dispose()
     var result = RelaunchResult.failed;
     try {
       if (elevated) {
-        result = _runElevated(exe);
+        // ShellExecuteExW ждёт ответа UAC — в отдельном Isolate, чтобы окно не «не отвечало».
+        result = RelaunchResult.values[await Isolate.run(() => _runElevatedSync(exe))];
       } else {
         // Из повышенного процесса обычный запуск — через Проводник (стандартный приём).
         await Process.start('$_sysRoot\\explorer.exe', [exe], mode: ProcessStartMode.detached);
@@ -522,31 +524,6 @@ $n.Dispose()
     return result;
   }
 
-  RelaunchResult _runElevated(String exe) {
-    final file = exe.toNativeUtf16();
-    final verb = 'runas'.toNativeUtf16();
-    final params = '--admin-restart'.toNativeUtf16();
-    final info = calloc<_ShellExecInfo>();
-    try {
-      info.ref
-        ..cbSize = sizeOf<_ShellExecInfo>()
-        ..fMask = _seeMaskNoAsync
-        ..hwnd = 0
-        ..lpVerb = verb
-        ..lpFile = file
-        ..lpParameters = params
-        ..lpDirectory = nullptr
-        ..nShow = 1;
-      if (_shellExec(info) != 0) return RelaunchResult.started;
-      return _lastError() == _errorCancelled ? RelaunchResult.cancelled : RelaunchResult.failed;
-    } finally {
-      calloc.free(file);
-      calloc.free(verb);
-      calloc.free(params);
-      calloc.free(info);
-    }
-  }
-
   @override
   Future<int?> runTool(String exe, List<String> args) async {
     try {
@@ -557,14 +534,58 @@ $n.Dispose()
     }
   }
 
+  @override
+  Future<String?> runToolOutput(String exe, List<String> args) async {
+    try {
+      final r = await Process.run(exe, args, stdoutEncoding: const SystemEncoding());
+      return r.stdout as String;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // --- значки программ ---
+
+  /// Не более 3 одновременных извлечений значков (каждое — свой Isolate).
+  final _iconPool = AsyncPool(3);
 
   @override
   Future<Uint8List?> programIcon(String path, int index) async {
     try {
-      return await Isolate.run(() => extractIconPngSync(path, index));
+      return await _iconPool.run(() => Isolate.run(() => extractIconPngSync(path, index)));
     } catch (_) {
       return null;
     }
+  }
+}
+
+/// Запуск exe от администратора (UAC). Вызывается в отдельном Isolate;
+/// возвращает индекс [RelaunchResult].
+int _runElevatedSync(String exe) {
+  final shell = DynamicLibrary.open('shell32.dll');
+  final kernel = DynamicLibrary.open('kernel32.dll');
+  final shellExec = shell.lookupFunction<_ShellExecNative, _ShellExecDart>('ShellExecuteExW');
+  final lastError = kernel.lookupFunction<_LastErrNative, _LastErrDart>('GetLastError');
+  final file = exe.toNativeUtf16();
+  final verb = 'runas'.toNativeUtf16();
+  final params = '--admin-restart'.toNativeUtf16();
+  final info = calloc<_ShellExecInfo>();
+  try {
+    info.ref
+      ..cbSize = sizeOf<_ShellExecInfo>()
+      ..fMask = _seeMaskNoAsync
+      ..hwnd = 0
+      ..lpVerb = verb
+      ..lpFile = file
+      ..lpParameters = params
+      ..lpDirectory = nullptr
+      ..nShow = 1;
+    if (shellExec(info) != 0) return RelaunchResult.started.index;
+    return (lastError() == _errorCancelled ? RelaunchResult.cancelled : RelaunchResult.failed).index;
+  } finally {
+    calloc.free(file);
+    calloc.free(verb);
+    calloc.free(params);
+    calloc.free(info);
   }
 }
