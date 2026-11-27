@@ -66,8 +66,8 @@ class TrayService with TrayListener, WindowListener {
   void onTrayIconRightMouseDown() => trayManager.popUpContextMenu();
 
   @override
-  void onTrayMenuItemClick(MenuItem item) {
-    switch (item.key) {
+  void onTrayMenuItemClick(MenuItem menuItem) {
+    switch (menuItem.key) {
       case _open:
         showWindow();
       case _quick:
