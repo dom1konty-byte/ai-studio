@@ -19,6 +19,10 @@ IconData categoryIcon(CategoryId id) {
       return Icons.description_outlined;
     case CategoryId.gpu:
       return Icons.memory;
+    case CategoryId.winUpdate:
+      return Icons.system_update_alt;
+    case CategoryId.prefetch:
+      return Icons.speed;
     case CategoryId.telegram:
     case CategoryId.discord:
     case CategoryId.steam:
@@ -355,6 +359,8 @@ Color categoryColor(CategoryId id) {
     case CategoryId.thumbs:
       return const Color(0xFF7B5EA7);
     case CategoryId.logs:
+    case CategoryId.winUpdate:
+    case CategoryId.prefetch:
       return const Color(0xFF566B6B);
     case CategoryId.telegram:
     case CategoryId.discord:

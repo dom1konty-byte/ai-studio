@@ -12,10 +12,17 @@ import 'ui/app.dart';
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   final trayOnly = args.contains('--tray');
+  // Перезапуск с другими правами: старый процесс ещё закрывается, мьютекс он уже отпустил.
+  final adminRestart = args.contains('--admin-restart');
   final controller = AppController(platform: WindowsPlatform());
   if (Platform.isWindows) {
     // Второй запуск: показать уже открытое окно и выйти (при --tray — просто выйти).
-    if (!SingleInstance.acquire()) {
+    var first = SingleInstance.acquire();
+    for (var i = 0; !first && adminRestart && i < 20; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      first = SingleInstance.acquire();
+    }
+    if (!first) {
       if (!trayOnly) SingleInstance.showExisting();
       exit(0);
     }
@@ -36,7 +43,12 @@ Future<void> main(List<String> args) async {
     });
     await controller.init();
     try {
-      await TrayService(controller).init();
+      final tray = TrayService(controller);
+      controller.exitApp = () async {
+        await tray.quit();
+        exit(0);
+      };
+      await tray.init();
     } catch (_) {
       // Нет значка в трее — окно остаётся обычным.
       if (trayOnly) await windowManager.show();

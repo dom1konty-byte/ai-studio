@@ -51,8 +51,9 @@ class FakePlatform implements PlatformApi {
   @override
   Future<void> openFile(String path) async {}
 
+  final openedFolders = <String>[];
   @override
-  Future<void> openFolder(String path) async {}
+  Future<void> openFolder(String path) async => openedFolders.add(path);
 
   // --- программы и реестр ---
   List<RawUninstall> uninstallEntries = [];
@@ -142,6 +143,39 @@ class FakePlatform implements PlatformApi {
 
   @override
   Future<void> notify(String title, String text) async => notifications.add('$title|$text');
+
+  // --- режим администратора, инструменты, значки ---
+  bool elevated = false;
+  RelaunchResult relaunchResult = RelaunchResult.started;
+  final relaunches = <bool>[];
+  final tools = <String>[];
+  int? toolCode = 0;
+  void Function(String call)? onTool;
+  final iconCalls = <String>[];
+  Uint8List? iconBytes;
+
+  @override
+  Future<bool> isElevated() async => elevated;
+
+  @override
+  Future<RelaunchResult> relaunch({required bool elevated}) async {
+    relaunches.add(elevated);
+    return relaunchResult;
+  }
+
+  @override
+  Future<int?> runTool(String exe, List<String> args) async {
+    final call = '$exe ${args.join(' ')}';
+    tools.add(call);
+    onTool?.call(call);
+    return toolCode;
+  }
+
+  @override
+  Future<Uint8List?> programIcon(String path, int index) async {
+    iconCalls.add('$path,$index');
+    return iconBytes;
+  }
 
   /// Свободное место для виджет-тестов (по умолчанию 45 ГБ).
   int freeBytes = 45 * 1024 * 1024 * 1024;

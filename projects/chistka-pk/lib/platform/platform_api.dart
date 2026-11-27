@@ -24,6 +24,16 @@ class UninstallRun {
   final bool timedOut;
 }
 
+/// Итог перезапуска программы с другим уровнем прав.
+enum RelaunchResult {
+  /// Новый процесс запущен — текущий должен выйти.
+  started,
+
+  /// Пользователь отказал в окне UAC (код 1223).
+  cancelled,
+  failed,
+}
+
 /// Всё, что зависит от Windows, спрятано за этим интерфейсом (в тестах — фейк).
 abstract class PlatformApi {
   /// Отправляет файлы в Корзину ОДНИМ пакетным вызовом. Файл, который нельзя
@@ -92,4 +102,24 @@ abstract class PlatformApi {
 
   /// Всплывающее уведомление Windows.
   Future<void> notify(String title, String text);
+
+  // --- режим администратора ---
+
+  /// Запущена ли программа с повышенными правами (токен процесса, TokenElevation).
+  Future<bool> isElevated();
+
+  /// Перезапускает программу: [elevated] true — с правами администратора (UAC),
+  /// false — обычным пользователем. Перед запуском освобождает мьютекс единственного
+  /// экземпляра; при неудаче берёт его обратно. Вызывающий выходит при `started`.
+  Future<RelaunchResult> relaunch({required bool elevated});
+
+  /// Запускает системную программу напрямую (без оболочки), аргументы списком.
+  /// Возвращает код выхода (null — не запустилась).
+  Future<int?> runTool(String exe, List<String> args);
+
+  // --- значки программ ---
+
+  /// PNG значка: [path] — exe/dll/ico, [index] — номер значка (как в DisplayIcon).
+  /// null — значка нет или не удалось извлечь.
+  Future<Uint8List?> programIcon(String path, int index);
 }

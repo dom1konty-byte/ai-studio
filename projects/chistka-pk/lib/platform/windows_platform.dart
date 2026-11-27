@@ -8,7 +8,10 @@ import 'package:ffi/ffi.dart';
 import '../core/browsers.dart';
 import '../core/programs.dart';
 import '../core/whitelist.dart';
+import 'elevation.dart';
+import 'icon_extract.dart';
 import 'platform_api.dart';
+import 'single_instance.dart';
 import 'win_registry.dart';
 
 // Win32 через dart:ffi напрямую (shell32 / kernel32): без зависимости от версии пакета win32.
@@ -83,6 +86,12 @@ const _driveFixed = 3;
 const _sherbNoConfirmation = 0x1;
 const _sherbNoProgressUi = 0x2;
 const _sherbNoSound = 0x4;
+
+/// reg.exe export/delete: только HKCU\… и HKLM\SOFTWARE\… (без прав HKLM не удалится).
+bool _regKeyAllowed(String key) {
+  final u = key.toUpperCase();
+  return u.startsWith(r'HKCU\') || u.startsWith(r'HKLM\SOFTWARE\');
+}
 
 class WindowsPlatform implements PlatformApi {
   late final DynamicLibrary _shell32 = DynamicLibrary.open('shell32.dll');
@@ -291,6 +300,8 @@ class WindowsPlatform implements PlatformApi {
   @override
   Future<void> openFolder(String path) async {
     try {
+      // Только существующая папка: иначе Проводник мог бы запустить файл.
+      if (!Directory(path).existsSync()) return;
       await Process.start('$_sysRoot\\explorer.exe', [path], mode: ProcessStartMode.detached);
     } catch (_) {}
   }
@@ -378,7 +389,7 @@ class WindowsPlatform implements PlatformApi {
 
   @override
   Future<bool> exportRegKey(String key, String file) async {
-    if (!key.toUpperCase().startsWith(r'HKCU\')) return false;
+    if (!_regKeyAllowed(key)) return false;
     try {
       final r = await Process.run('$_sysRoot\\System32\\reg.exe', ['export', key, file, '/y']);
       if (r.exitCode != 0) return false;
@@ -391,7 +402,7 @@ class WindowsPlatform implements PlatformApi {
 
   @override
   Future<bool> deleteRegKey(String key) async {
-    if (!key.toUpperCase().startsWith(r'HKCU\')) return false;
+    if (!_regKeyAllowed(key)) return false;
     try {
       final r = await Process.run('$_sysRoot\\System32\\reg.exe', ['delete', key, '/f']);
       return r.exitCode == 0;
@@ -478,5 +489,82 @@ $n.Dispose()
         },
       );
     } catch (_) {}
+  }
+
+  // --- режим администратора ---
+
+  @override
+  Future<bool> isElevated() async => isProcessElevated();
+
+  @override
+  Future<RelaunchResult> relaunch({required bool elevated}) async {
+    final exe = Platform.resolvedExecutable;
+    final held = SingleInstance.handle != 0;
+    SingleInstance.release(); // иначе новый процесс увидит «уже запущено» и выйдет
+    var result = RelaunchResult.failed;
+    try {
+      if (elevated) {
+        result = _runElevated(exe);
+      } else {
+        // Из повышенного процесса обычный запуск — через Проводник (стандартный приём).
+        await Process.start('$_sysRoot\\explorer.exe', [exe], mode: ProcessStartMode.detached);
+        result = RelaunchResult.started;
+      }
+    } catch (_) {
+      result = RelaunchResult.failed;
+    } finally {
+      if (result != RelaunchResult.started && held) {
+        try {
+          SingleInstance.acquire();
+        } catch (_) {}
+      }
+    }
+    return result;
+  }
+
+  RelaunchResult _runElevated(String exe) {
+    final file = exe.toNativeUtf16();
+    final verb = 'runas'.toNativeUtf16();
+    final params = '--admin-restart'.toNativeUtf16();
+    final info = calloc<_ShellExecInfo>();
+    try {
+      info.ref
+        ..cbSize = sizeOf<_ShellExecInfo>()
+        ..fMask = _seeMaskNoAsync
+        ..hwnd = 0
+        ..lpVerb = verb
+        ..lpFile = file
+        ..lpParameters = params
+        ..lpDirectory = nullptr
+        ..nShow = 1;
+      if (_shellExec(info) != 0) return RelaunchResult.started;
+      return _lastError() == _errorCancelled ? RelaunchResult.cancelled : RelaunchResult.failed;
+    } finally {
+      calloc.free(file);
+      calloc.free(verb);
+      calloc.free(params);
+      calloc.free(info);
+    }
+  }
+
+  @override
+  Future<int?> runTool(String exe, List<String> args) async {
+    try {
+      final r = await Process.run(exe, args, stdoutEncoding: null, stderrEncoding: null);
+      return r.exitCode;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // --- значки программ ---
+
+  @override
+  Future<Uint8List?> programIcon(String path, int index) async {
+    try {
+      return await Isolate.run(() => extractIconPngSync(path, index));
+    } catch (_) {
+      return null;
+    }
   }
 }

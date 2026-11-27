@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:path/path.dart' as p;
@@ -84,6 +85,8 @@ class AppController extends ChangeNotifier {
     FolderLister? startupLister,
     String? exePath,
     this.fileExists,
+    this.dirExists,
+    this.exitApp,
     this.uninstallPollInterval = const Duration(seconds: 3),
     this.uninstallTimeout = const Duration(minutes: 10),
   })  : env = env ?? Env.system(),
@@ -140,6 +143,13 @@ class AppController extends ChangeNotifier {
   /// Проверка существования файла программы удаления (в тестах подменяется).
   final bool Function(String path)? fileExists;
 
+  /// Проверка существования папки установки (в тестах подменяется).
+  final bool Function(String path)? dirExists;
+
+  /// Выход из программы после перезапуска с другими правами (main подставляет
+  /// закрытие трея и окна; в тестах — заглушка). По умолчанию `exit(0)`.
+  Future<void> Function()? exitApp;
+
   /// Как часто и как долго смотреть, исчезла ли запись удаляемой программы.
   final Duration uninstallPollInterval;
   final Duration uninstallTimeout;
@@ -189,6 +199,11 @@ class AppController extends ChangeNotifier {
     totalFreedEver = await _stats?.load() ?? 0;
     final store = _settingsStore;
     if (store != null) settings = await store.load();
+    try {
+      adminMode = await platform.isElevated();
+    } catch (_) {
+      adminMode = false;
+    }
     await _syncAutostart();
     disk = await platform.diskSpace(systemDrive);
     await _showCatalog();
@@ -198,7 +213,7 @@ class AppController extends ChangeNotifier {
   /// Список категорий без размеров (до анализа).
   Future<void> _showCatalog() async {
     final steam = await platform.steamPath();
-    rows = buildCatalog(env, steamPath: steam).map(CategoryRow.new).toList();
+    rows = buildCatalog(env, steamPath: steam, admin: adminMode).map(CategoryRow.new).toList();
   }
 
   // ---------- вычисляемое ----------
@@ -255,7 +270,7 @@ class AppController extends ChangeNotifier {
     phase = Phase.analyzing;
     progressText = 'Считаю…';
     final steam = await platform.steamPath();
-    rows = buildCatalog(env, steamPath: steam).map(CategoryRow.new).toList();
+    rows = buildCatalog(env, steamPath: steam, admin: adminMode).map(CategoryRow.new).toList();
     disk = await platform.diskSpace(systemDrive);
     notifyListeners();
     for (final r in rows) {
@@ -398,7 +413,8 @@ class AppController extends ChangeNotifier {
     try {
       final log = CleanLog(logFile!);
       await log.note('Очистка начата');
-      final cleaner = Cleaner(platform, log, systemDrive: systemDrive);
+      final cleaner = Cleaner(platform, log,
+          systemDrive: systemDrive, systemRoot: _systemRoot, admin: adminMode);
       await cleaner.run(
         categories: categories,
         filesToRecycle: files,
@@ -520,9 +536,32 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  final _iconCache = <IconSource, Future<Uint8List?>>{};
+
+  /// PNG значка программы (кэш в памяти; значок извлекается в отдельном Isolate).
+  /// null — значка нет: интерфейс показывает общую иконку.
+  Future<Uint8List?> programIcon(Program p) {
+    final src = iconSourceOf(p, env: env.vars, fileExists: fileExists);
+    if (src == null) return Future.value(null);
+    return _iconCache.putIfAbsent(src, () async {
+      try {
+        return await platform.programIcon(src.path, src.index);
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  /// Папка установки для ссылки в списке (null — не известна).
+  String? installFolder(Program p) => _folderCache.putIfAbsent(
+      p.keyPath,
+      () => installFolderOf(p, env: env.vars, dirExists: dirExists, fileExists: fileExists));
+  final _folderCache = <String, String?>{};
+
   Future<void> loadPrograms() async {
     if (programsState == LoadState.loading) return;
     programsState = LoadState.loading;
+    _folderCache.clear();
     notifyListeners();
     try {
       programs = buildPrograms(await platform.readUninstallEntries());
@@ -711,6 +750,7 @@ class AppController extends ChangeNotifier {
         listDir: _listDir,
         regSubKeys: platform.regSubKeys,
         sizeOf: _sizeOf,
+        admin: adminMode,
         otherPrograms: [
           for (final o in programs)
             if (o.keyPath.toLowerCase() != prog.keyPath.toLowerCase())
@@ -724,9 +764,9 @@ class AppController extends ChangeNotifier {
             kind: LeftoverKind.registry,
             path: prog.keyPath,
             exact: true,
-            deletable: prog.isUserHive,
+            deletable: prog.isUserHive || adminMode,
             isUninstallEntry: true,
-            note: prog.isUserHive
+            note: prog.isUserHive || adminMode
                 ? 'Запись в списке программ'
                 : 'Запись в списке программ. Нужны права администратора',
           ),
@@ -773,6 +813,7 @@ class AppController extends ChangeNotifier {
       log: log,
       env: env,
       backupDir: bd,
+      admin: adminMode,
       guard: leftoverGuard,
     );
     final todo = leftovers.where(leftoverSelected.contains).toList();
@@ -855,8 +896,45 @@ class AppController extends ChangeNotifier {
     return ok;
   }
 
-  /// Режим администратора (плашка в левой панели; включается в следующей части).
+  /// Режим администратора: определяется по токену процесса (не по настройке).
   bool adminMode = false;
+
+  /// true, пока идёт перезапуск с другими правами.
+  bool adminBusy = false;
+
+  /// Переключатель можно трогать, когда ничего не очищается и не удаляется.
+  bool get canToggleAdmin =>
+      !adminBusy &&
+      !cleanBusy &&
+      !uninstallBusy &&
+      !leftoverBusy &&
+      phase != Phase.analyzing &&
+      phase != Phase.cleaning;
+
+  String get _systemRoot => env['SystemRoot'] ?? env['WINDIR'] ?? r'C:\Windows';
+
+  /// Перезапускает программу с правами администратора ([on] true) или обычным.
+  /// `started` — новый процесс запущен, текущий выходит; `cancelled` — отказ в UAC.
+  Future<RelaunchResult> setAdminMode(bool on) async {
+    if (!canToggleAdmin || on == adminMode) return RelaunchResult.failed;
+    adminBusy = true;
+    notifyListeners();
+    RelaunchResult r;
+    try {
+      r = await platform.relaunch(elevated: on);
+    } catch (_) {
+      r = RelaunchResult.failed;
+    }
+    if (r == RelaunchResult.started) {
+      // adminBusy остаётся true: интерфейс закрывается.
+      final exitFn = exitApp ?? (() async => exit(0));
+      await exitFn();
+      return r;
+    }
+    adminBusy = false;
+    notifyListeners();
+    return r;
+  }
 
   /// Ширина левой панели: сразу в памяти, на диск — по окончании перетаскивания.
   void previewNavWidth(double w) {
@@ -892,14 +970,20 @@ class AppController extends ChangeNotifier {
         final pick = pickQuickCategories(settings.quickCategories,
             browserRunning: running.isNotEmpty);
         final steam = await platform.steamPath();
-        final cats = buildCatalog(env, steamPath: steam)
+        final cats = buildCatalog(env, steamPath: steam, admin: adminMode)
             .where((c) => pick.ids.contains(c.id))
             .toList();
         final sum = CleanSummary();
         try {
           final log = CleanLog(logFile!);
           await log.note('Быстрая очистка начата');
-          await Cleaner(platform, log, systemDrive: systemDrive).run(
+          await Cleaner(
+            platform,
+            log,
+            systemDrive: systemDrive,
+            systemRoot: _systemRoot,
+            admin: adminMode,
+          ).run(
             categories: cats,
             filesToRecycle: const [],
             userRoots: userRoots,

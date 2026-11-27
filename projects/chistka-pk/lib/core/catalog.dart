@@ -132,7 +132,10 @@ List<CleanTarget> _chromium(String userData, CleanTarget Function(String dir) mk
 
 /// Собирает список категорий по существующим папкам.
 /// Основные 5 категорий есть всегда; «Программы» — только если папка найдена.
-List<Category> buildCatalog(Env env, {String? steamPath}) {
+///
+/// [admin] — программа запущена с правами администратора: добавляются
+/// «Кэш обновлений Windows» и «Prefetch» (ровно две папки в SystemRoot).
+List<Category> buildCatalog(Env env, {String? steamPath, bool admin = false}) {
   final prot = protectedPathsOf(env);
   String? safeBase(String? b) =>
       b != null && isSafeCleanTarget(b, protectedPaths: prot, minSegments: 3) ? b : null;
@@ -306,5 +309,33 @@ List<Category> buildCatalog(Env env, {String? steamPath}) {
     ),
   ];
 
-  return [...cats, ...programs.where((c) => c.targets.isNotEmpty)];
+  final system = <Category>[
+    if (admin && sysRoot != null) ...[
+      Category(
+        id: CategoryId.winUpdate,
+        title: 'Кэш обновлений Windows',
+        hint: 'Скачанные файлы Центра обновления (служба на время очистки остановится)',
+        adminOnly: true,
+        targets: only([
+          mk(adminCleanPath(CategoryId.winUpdate, sysRoot)!, sysRoot),
+        ]),
+      ),
+      Category(
+        id: CategoryId.prefetch,
+        title: 'Prefetch',
+        hint: 'Файлы *.pf ускорения запуска программ (Windows создаст заново)',
+        adminOnly: true,
+        targets: only([
+          mk(
+            adminCleanPath(CategoryId.prefetch, sysRoot)!,
+            sysRoot,
+            min: 3,
+            pattern: RegExp(r'\.pf$', caseSensitive: false),
+          ),
+        ]),
+      ),
+    ],
+  ];
+
+  return [...cats, ...programs.where((c) => c.targets.isNotEmpty), ...system];
 }

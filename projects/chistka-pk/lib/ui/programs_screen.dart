@@ -162,7 +162,7 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text('Всего программ: ${c.programs.length}',
+              child: Text(programsSummary(list),
                   style: TextStyle(color: cs.onSurfaceVariant)),
             ),
           ],
@@ -197,14 +197,23 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
   }
 
   Widget _row(Program p, bool busy, ColorScheme cs) {
+    final folder = c.installFolder(p);
     return ListTile(
-      leading: const Icon(Icons.apps),
+      key: ValueKey(p.keyPath),
+      leading: _ProgramIcon(controller: c, program: p),
       title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        p.publisher.isEmpty ? ' ' : p.publisher,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: cs.onSurfaceVariant),
+      isThreeLine: folder != null,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            p.publisher.isEmpty ? ' ' : p.publisher,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: cs.onSurfaceVariant),
+          ),
+          if (folder != null) _PathLink(path: folder, onTap: () => c.openInExplorer(folder)),
+        ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -240,6 +249,93 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Значок программы 32 px: из DisplayIcon/exe, пока грузится или значка нет — `Icons.apps`.
+class _ProgramIcon extends StatefulWidget {
+  const _ProgramIcon({required this.controller, required this.program});
+  final AppController controller;
+  final Program program;
+
+  @override
+  State<_ProgramIcon> createState() => _ProgramIconState();
+}
+
+class _ProgramIconState extends State<_ProgramIcon> {
+  late Future<Uint8List?> _future = widget.controller.programIcon(widget.program);
+
+  @override
+  void didUpdateWidget(_ProgramIcon old) {
+    super.didUpdateWidget(old);
+    if (old.program.keyPath != widget.program.keyPath) {
+      _future = widget.controller.programIcon(widget.program);
+    }
+  }
+
+  Widget _fallback(ColorScheme cs) => Container(
+        key: const Key('program-icon-fallback'),
+        decoration: BoxDecoration(color: cs.surfaceContainerHighest, shape: BoxShape.circle),
+        child: Icon(Icons.apps, size: 20, color: cs.onSurfaceVariant),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: FutureBuilder<Uint8List?>(
+        future: _future,
+        builder: (context, snap) {
+          final bytes = snap.data;
+          if (bytes == null) return _fallback(cs);
+          return Image.memory(
+            bytes,
+            width: 32,
+            height: 32,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.medium,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => _fallback(cs),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Путь установки — ссылка: подчёркнутый текст, курсор-рука, клик открывает Проводник.
+class _PathLink extends StatelessWidget {
+  const _PathLink({required this.path, required this.onTap});
+  final String path;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const color = Color(0xFF0B7C7A);
+    return Tooltip(
+      message: 'Открыть в Проводнике',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: const Key('install-path-link'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Text(
+            path,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              color: color,
+              decoration: TextDecoration.underline,
+              decorationColor: color,
+            ),
+          ),
+        ),
       ),
     );
   }

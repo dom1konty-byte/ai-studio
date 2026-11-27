@@ -4,6 +4,9 @@ library;
 
 import 'dart:io';
 
+import 'format.dart';
+import 'whitelist.dart';
+
 /// Запись раздела Uninstall «как есть»: [hive] — `HKCU`, `HKLM` или `HKLM32`
 /// (HKLM\WOW6432Node), [keyPath] — полный путь ключа для reg.exe,
 /// [values] — значения (DWORD уже переведены в десятичную строку).
@@ -241,4 +244,104 @@ UninstallCommand? parseUninstallString(String raw,
     );
   }
   return UninstallCommand(exe, args);
+}
+
+// ---------- значок, папка установки, итог ----------
+
+/// Источник значка: файл (exe/dll/ico) и номер значка в нём.
+class IconSource {
+  const IconSource(this.path, this.index);
+  final String path;
+  final int index;
+
+  @override
+  bool operator ==(Object other) =>
+      other is IconSource && other.path.toLowerCase() == path.toLowerCase() && other.index == index;
+
+  @override
+  int get hashCode => Object.hash(path.toLowerCase(), index);
+}
+
+/// Разбирает DisplayIcon: `"C:\a b\x.exe",0`, `C:\x.dll,-101`, `C:\x.ico`.
+/// %VAR% раскрываются. Годится только абсолютный путь `X:\…` к .exe/.dll/.ico.
+IconSource? parseDisplayIcon(String raw, {Map<String, String> env = const {}}) {
+  final s = _expandEnv(raw.trim(), env);
+  if (s.isEmpty || RegExp(r'[\x00-\x1f]').hasMatch(s)) return null;
+  String path;
+  var index = 0;
+  if (s.startsWith('"')) {
+    final end = s.indexOf('"', 1);
+    if (end < 0) return null;
+    path = s.substring(1, end).trim();
+    final rest = s.substring(end + 1).trim();
+    if (rest.isNotEmpty) {
+      final m = RegExp(r'^,\s*(-?\d+)$').firstMatch(rest);
+      if (m == null) return null;
+      index = int.parse(m.group(1)!);
+    }
+  } else {
+    final m = RegExp(r'^(.*?)(?:\s*,\s*(-?\d+))?$').firstMatch(s)!;
+    path = m.group(1)!.trim();
+    if (m.group(2) != null) index = int.parse(m.group(2)!);
+  }
+  if (!_absPath.hasMatch(path)) return null;
+  final ext = path.toLowerCase();
+  if (!(ext.endsWith('.exe') || ext.endsWith('.dll') || ext.endsWith('.ico'))) return null;
+  return IconSource(path, index);
+}
+
+/// Откуда брать значок: DisplayIcon, иначе exe программы удаления (не msiexec и
+/// не rundll32). Файл должен существовать. Нет источника — null (общая иконка).
+IconSource? iconSourceOf(Program p,
+    {Map<String, String> env = const {}, bool Function(String path)? fileExists}) {
+  final exists = fileExists ?? _defaultFileExists;
+  final di = parseDisplayIcon(p.displayIcon, env: env);
+  if (di != null && exists(di.path)) return di;
+  final cmd = parseUninstallString(p.uninstallString, env: env, fileExists: exists);
+  if (cmd != null) {
+    final base = cmd.exe.split(RegExp(r'[\\/]')).last.toLowerCase();
+    if (base != 'msiexec.exe' && base != 'rundll32.exe' && exists(cmd.exe)) {
+      return IconSource(cmd.exe, 0);
+    }
+  }
+  return null;
+}
+
+/// Папка установки для ссылки: InstallLocation; иначе папка программы удаления,
+/// если она строго внутри Program Files или AppData. Папка должна существовать.
+String? installFolderOf(Program p,
+    {Map<String, String> env = const {}, bool Function(String dir)? dirExists, bool Function(String file)? fileExists}) {
+  final exists = dirExists ?? _defaultDirExists;
+  final il = _expandEnv(p.installLocation.trim().replaceAll('"', ''), env);
+  if (il.isNotEmpty) {
+    final n = normalizeWinPath(il);
+    if (n != null && exists(n)) return n;
+  }
+  final cmd = parseUninstallString(p.uninstallString, env: env, fileExists: fileExists);
+  if (cmd == null) return null;
+  final dir = normalizeWinPath(cmd.exe.substring(0, cmd.exe.lastIndexOf(r'\')));
+  if (dir == null) return null;
+  final lower = {for (final e in env.entries) e.key.toLowerCase(): e.value};
+  final roots = [
+    for (final k in ['programfiles', 'programfiles(x86)', 'programw6432', 'localappdata', 'appdata'])
+      if (lower[k] != null) lower[k]!,
+  ];
+  if (!isInsideAllowedRoot(dir, roots)) return null;
+  return exists(dir) ? dir : null;
+}
+
+bool _defaultDirExists(String path) {
+  try {
+    return Directory(path).existsSync();
+  } catch (_) {
+    return false;
+  }
+}
+
+/// «Всего программ: 142 · 38,6 ГБ»: число и сумма EstimatedSize показанных программ
+/// (размер не пишем, если ни у одной он не указан).
+String programsSummary(List<Program> shown) {
+  final total = shown.fold<int>(0, (a, p) => a + p.sizeBytes);
+  final base = 'Всего программ: ${shown.length}';
+  return total > 0 ? '$base · ${formatSize(total)}' : base;
 }

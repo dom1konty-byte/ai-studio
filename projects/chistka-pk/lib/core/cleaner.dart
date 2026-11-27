@@ -11,15 +11,32 @@ import 'whitelist.dart';
 typedef ProgressCallback = void Function(String text, double fraction);
 
 class Cleaner {
-  Cleaner(this.platform, this.log, {this.systemDrive = r'C:\'});
+  Cleaner(
+    this.platform,
+    this.log, {
+    this.systemDrive = r'C:\',
+    this.systemRoot = r'C:\Windows',
+    this.admin = false,
+  });
   final PlatformApi platform;
   final CleanLog log;
+
+  /// Папка Windows (SystemRoot): для проверки админ-категорий и пути к net.exe.
+  final String systemRoot;
+
+  /// Программа запущена с правами администратора: только тогда чистятся
+  /// админ-категории (Кэш обновлений Windows, Prefetch).
+  final bool admin;
 
   /// Диск системы (из SystemRoot) — для подсчёта свободного места.
   final String systemDrive;
 
   /// Очищает одну цель. Удаляет только внутри белого списка (папка цели).
   Future<void> cleanTarget(Category cat, CleanTarget t, CleanSummary s) async {
+    if (cat.adminOnly && !isAdminCleanTarget(cat.id, t, systemRoot)) {
+      await log.note('Цель пропущена: ${t.dir} (не входит в список системных папок)');
+      return;
+    }
     final dir = Directory(t.dir);
     try {
       if (!dir.existsSync()) return;
@@ -119,6 +136,10 @@ class Cleaner {
               await log.add(c.title, 'Корзина (все диски)', info.bytes, 'пропущено');
             }
           }
+        } else if (c.adminOnly && !admin) {
+          await log.note('Категория пропущена (нужны права администратора): ${c.title}');
+        } else if (c.id == CategoryId.winUpdate) {
+          await _cleanWithUpdateService(c, s);
         } else {
           for (final t in c.targets) {
             await cleanTarget(c, t, s);
@@ -142,6 +163,28 @@ class Cleaner {
       s.logFailed = log.failed;
     }
     return s;
+  }
+
+  /// Кэш обновлений: служба wuauserv держит файлы, поэтому перед очисткой её
+  /// останавливаем, а после (в том числе при ошибке) запускаем обратно.
+  Future<void> _cleanWithUpdateService(Category c, CleanSummary s) async {
+    final net = '$systemRoot\\System32\\net.exe';
+    try {
+      int? code;
+      try {
+        code = await platform.runTool(net, const ['stop', 'wuauserv']);
+      } catch (_) {}
+      await log.note('Служба wuauserv: остановка, код ${code ?? 'нет'}');
+      for (final t in c.targets) {
+        await cleanTarget(c, t, s);
+      }
+    } finally {
+      int? code;
+      try {
+        code = await platform.runTool(net, const ['start', 'wuauserv']);
+      } catch (_) {}
+      await log.note('Служба wuauserv: запуск, код ${code ?? 'нет'}');
+    }
   }
 
   Future<void> _recycleFiles(

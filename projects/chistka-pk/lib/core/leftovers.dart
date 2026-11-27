@@ -278,6 +278,7 @@ Future<List<Leftover>> findLeftovers({
   required RegSubKeys regSubKeys,
   required SizeOf sizeOf,
   List<OtherProgram> otherPrograms = const [],
+  bool admin = false,
 }) async {
   final k = NameKey(name, publisher);
   final roots = LeftoverRoots(env);
@@ -419,8 +420,8 @@ Future<List<Leftover>> findLeftovers({
 
   if (k.nameSearchable || k.publisherSearchable) {
     await regScan(r'HKCU\Software', true);
-    await regScan(r'HKLM\SOFTWARE', false);
-    await regScan(r'HKLM\SOFTWARE\WOW6432Node', false);
+    await regScan(r'HKLM\SOFTWARE', admin);
+    await regScan(r'HKLM\SOFTWARE\WOW6432Node', admin);
   }
 
   final res = found.values.toList();
@@ -515,25 +516,50 @@ bool isSafeRegistryPath(String key) {
 }
 
 const _uninstallPrefix = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall';
+const _uninstallPrefixHklm = r'HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall';
+const _uninstallPrefixHklm32 =
+    r'HKLM\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall';
 
-/// Можно ли удалять ключ. Только HKCU\Software\… (глубина ≥ 3, имя не из чёрного
-/// списка); запись Uninstall — только `HKCU\…\Uninstall\<имя>` ровно на один уровень.
-bool isSafeRegDeleteKey(String key, {bool uninstallEntry = false}) {
+bool _hasPrefix(List<String> segs, String prefix) {
+  final pre = prefix.split(r'\');
+  if (segs.length != pre.length + 1) return false;
+  for (var i = 0; i < pre.length; i++) {
+    if (segs[i].toLowerCase() != pre[i].toLowerCase()) return false;
+  }
+  return true;
+}
+
+/// Можно ли удалять ключ.
+/// HKCU: только `HKCU\Software\…` (глубина ≥ 3, имя не из чёрного списка).
+/// HKLM: только в режиме [admin] и только `HKLM\SOFTWARE\<имя не из чёрного списка>`
+/// (или `HKLM\SOFTWARE\WOW6432Node\<имя не из чёрного списка>`); Microsoft, Classes,
+/// Policies, WOW6432Node\Microsoft и подобное — никогда.
+/// Запись Uninstall ([uninstallEntry]) — только `…\Uninstall\<имя>` ровно на один
+/// уровень (HKLM-ветки — только в режиме [admin]).
+bool isSafeRegDeleteKey(String key, {bool uninstallEntry = false, bool admin = false}) {
   if (RegExp(r'[*?"<>|\x00-\x1f]').hasMatch(key)) return false;
   final segs = key.split(r'\');
   if (segs.any((s) => s.isEmpty || s == '.' || s == '..')) return false;
   if (uninstallEntry) {
-    final pre = _uninstallPrefix.split(r'\');
-    if (segs.length != pre.length + 1) return false;
-    for (var i = 0; i < pre.length; i++) {
-      if (segs[i].toLowerCase() != pre[i].toLowerCase()) return false;
-    }
-    return true;
+    if (_hasPrefix(segs, _uninstallPrefix)) return true;
+    return admin &&
+        (_hasPrefix(segs, _uninstallPrefixHklm) || _hasPrefix(segs, _uninstallPrefixHklm32));
   }
   if (segs.length < 3) return false;
-  if (segs[0].toUpperCase() != 'HKCU' || segs[1].toLowerCase() != 'software') return false;
-  if (isBlacklistedName(segs[2]) || isBlacklistedName(segs.last)) return false;
-  return true;
+  if (segs[1].toLowerCase() != 'software') return false;
+  final hive = segs[0].toUpperCase();
+  if (hive == 'HKCU') {
+    return !isBlacklistedName(segs[2]) && !isBlacklistedName(segs.last);
+  }
+  if (hive == 'HKLM' && admin) {
+    var first = 2;
+    if (segs[2].toLowerCase() == 'wow6432node') {
+      if (segs.length < 4) return false;
+      first = 3;
+    }
+    return !isBlacklistedName(segs[first]) && !isBlacklistedName(segs.last);
+  }
+  return false;
 }
 
 // ---------- удаление ----------
@@ -590,6 +616,7 @@ class LeftoverCleaner {
     required this.log,
     required this.env,
     required this.backupDir,
+    this.admin = false,
     PathGuard? guard,
     DateTime Function()? now,
   })  : guard = guard ?? realPathGuardAsync,
@@ -599,6 +626,9 @@ class LeftoverCleaner {
   final CleanLog log;
   final Env env;
   final String backupDir;
+
+  /// Режим администратора: разрешает удаление ключей HKLM\SOFTWARE\<не из чёрного списка>.
+  final bool admin;
   final PathGuard guard;
   final DateTime Function() now;
 
@@ -617,7 +647,7 @@ class LeftoverCleaner {
   Future<List<LeftoverOutcome>> run(List<Leftover> items,
       {void Function(String text)? onProgress}) async {
     final roots = LeftoverRoots(env);
-    final admin = roots.adminRoots(env);
+    final adminDirs = roots.adminRoots(env);
     final out = <LeftoverOutcome>[];
     final fsOk = <Leftover>[];
 
@@ -681,7 +711,7 @@ class LeftoverCleaner {
         out.add(LeftoverOutcome(l, true, 'в Корзину'));
         await log.add(category, l.path, l.bytes, 'в Корзину');
       } else {
-        final needAdmin = admin.any((a) => isInsideAllowedRoot(l.path, [a]));
+        final needAdmin = adminDirs.any((a) => isInsideAllowedRoot(l.path, [a]));
         final msg = needAdmin
             ? 'пропущено (нужны права администратора)'
             : 'пропущено: ${res[l.path] ?? 'нет ответа'}';
@@ -702,7 +732,7 @@ class LeftoverCleaner {
         await fail(l, 'пропущено (нужны права администратора)');
         continue;
       }
-      if (!isSafeRegDeleteKey(l.path, uninstallEntry: l.isUninstallEntry)) {
+      if (!isSafeRegDeleteKey(l.path, uninstallEntry: l.isUninstallEntry, admin: admin)) {
         await fail(l, 'пропущено (ключ не разрешён)');
         continue;
       }

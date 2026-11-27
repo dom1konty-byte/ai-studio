@@ -52,6 +52,16 @@ class SingleInstance {
     }
   }
 
+  /// Отпускает мьютекс (перед запуском нового экземпляра при перезапуске с другими
+  /// правами: иначе новый процесс решит, что программа уже открыта, и выйдет).
+  static void release() {
+    if (handle == 0) return;
+    final k = DynamicLibrary.open('kernel32.dll');
+    final close = k.lookupFunction<_CloseN, _CloseD>('CloseHandle');
+    close(handle);
+    handle = 0;
+  }
+
   /// Показывает окно уже запущенной программы (в т.ч. спрятанное в трей).
   static void showExisting() {
     final u = DynamicLibrary.open('user32.dll');
