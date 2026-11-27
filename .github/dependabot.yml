@@ -1,0 +1,26 @@
+# Автообновления: раз в неделю GitHub проверяет новые версии и сам открывает PR в main.
+# Сливается только после «да» Дамира (офис: python3 scripts/merge_pr.py в ветке PR не нужен — см. навык dependency-updates).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:17", timezone: Europe/Moscow }
+    groups:
+      actions: { patterns: ["*"] }
+    commit-message: { prefix: "обновления: шаги сборок" }
+
+  - package-ecosystem: pub
+    directories: ["/templates/flutter-app", "/templates/windows-app", "/projects/*"]
+    schedule: { interval: weekly, day: monday, time: "06:23", timezone: Europe/Moscow }
+    groups:
+      flutter: { patterns: ["*"], update-types: ["minor", "patch"] }
+    open-pull-requests-limit: 5
+    commit-message: { prefix: "обновления: Flutter-пакеты" }
+
+  - package-ecosystem: npm
+    directories: ["/templates/telegram-bot", "/projects/*"]
+    schedule: { interval: weekly, day: monday, time: "06:29", timezone: Europe/Moscow }
+    groups:
+      npm: { patterns: ["*"], update-types: ["minor", "patch"] }
+    open-pull-requests-limit: 5
+    commit-message: { prefix: "обновления: пакеты ботов" }

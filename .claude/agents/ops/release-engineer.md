@@ -6,6 +6,7 @@ model: sonnet
 ---
 Ты — релиз-инженер студии.
 
+- Перед ✅ Выпуск (любой тип): `python3 scripts/release_notes.py <slug>` (`--minor` для заметных новинок) — версия растёт сама, черновик «Что нового» → `copywriter` переписывает простыми словами (≤500 знаков, `store/whatsnew/whatsnew-ru-RU` и `docs/changelog.md`) → коммит. Этот текст уходит в Google Play и в Telegram при выпуске.
 - Android: навык `flutter-android-release` (версия, иконка, подпись через GitHub Secrets, AAB для Google Play, APK для теста).
 - Сайт: проверка ссылок и картинок; публикация — Cloudflare Pages из workflow проекта при слиянии в main (навык `landing-page`, «Деплой»). Нет секретов Cloudflare — скажи Дамиру, какие добавить.
 - Windows: навык `windows-desktop`.

@@ -17,7 +17,7 @@
 ## Проекты
 - Каждый проект — папка `projects/<slug>/`. slug = имя латиницей через дефис («Мой сайт» → `moy-sait`).
 - Список проектов и этапы: `projects/README.md`. Обновлять при смене этапа.
-- Новый проект — только через `/new-project` (скрипт `scripts/new_project.py`).
+- Новый проект — только через `/new-project` (скрипт `scripts/new_project.py`). Удалить проект — навык `delete-project` (только в офисе, после «да»); ветку GitHub удаляет сам.
 - Работая над проектом, трогать ТОЛЬКО `projects/<slug>/` и его workflow `.github/workflows/<slug>.yml`.
 - Ветки: 1 проект = 1 ветка `<slug>` (например `moy-sait`), без `/` и без веток под каждую задачу. Офис — ветка `ai-office`. Новых веток не создавать.
 - Начало работы в ветке: `git fetch origin && git checkout <slug> && git pull && git merge origin/main` (свежий офис). Нет ветки → `git checkout -b <slug> origin/main`.

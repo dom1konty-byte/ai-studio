@@ -87,7 +87,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
         run: |
-          python3 ../../scripts/telegram_notify.py --text "🚀 <b>{{NAME}}</b>: выпуск слит в main. На компьютере: git pull в папке ai-studio, затем двойной клик projects\\{{SLUG}}\\windows\\update.cmd (первый раз — setup.cmd)."
+          python3 ../../scripts/telegram_notify.py --text "🚀 <b>{{NAME}}</b>: выпуск слит в main\n$(cat store/whatsnew/whatsnew-ru-RU 2>/dev/null). На компьютере: git pull в папке ai-studio, затем двойной клик projects\\{{SLUG}}\\windows\\update.cmd (первый раз — setup.cmd)."
       - name: Telegram — сборка упала
         if: ${{ failure() && github.event_name != 'pull_request' }}
         env:

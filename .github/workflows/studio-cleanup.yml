@@ -1,0 +1,47 @@
+# Уборка после удаления проекта (scripts/delete_project.py): GitHub сам удаляет ветку проекта.
+name: studio-cleanup
+
+on:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.event.head_commit.message, '[delete-project]') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'Merge pull request')) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Удалить ветки удалённых проектов
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
+          BEFORE: ${{ github.event.before }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+          slugs=""
+          if [ "$BRANCH" = "main" ]; then
+            # проекты, папки которых исчезли из main этим слиянием
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+              slugs=$(git diff --name-only --diff-filter=D "$BEFORE" HEAD -- projects/ | awk -F/ 'NF>2{print $2}' | sort -u)
+              for s in $slugs; do [ -d "projects/$s" ] && slugs=$(echo "$slugs" | grep -vx "$s"); done
+            fi
+          elif [ ! -d "projects/$BRANCH" ] && ! git cat-file -e "origin/main:projects/$BRANCH" 2>/dev/null; then
+            # ветка проекта, которого нет ни в ветке, ни в main
+            slugs="$BRANCH"
+          fi
+          for s in $slugs; do
+            case "$s" in main|ai-office|*/*) continue ;; esac
+            if gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/$s" 2>/dev/null; then
+              echo "Ветка $s удалена"
+              python3 scripts/telegram_notify.py --silent --text "🗑 Проект <b>$s</b> удалён, его ветка тоже."
+            else
+              echo "Ветки $s нет (уже удалена)"
+            fi
+          done

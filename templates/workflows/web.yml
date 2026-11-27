@@ -75,7 +75,7 @@ jobs:
           TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ../../scripts/telegram_notify.py --text "🚀 <b>{{NAME}}</b>: выпуск слит в main (публикация не настроена — нет секретов Cloudflare).\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка</a>"
+          python3 ../../scripts/telegram_notify.py --text "🚀 <b>{{NAME}}</b>: выпуск слит в main\n$(cat store/whatsnew/whatsnew-ru-RU 2>/dev/null) (публикация не настроена — нет секретов Cloudflare).\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка</a>"
       - name: Telegram — сборка упала
         if: ${{ failure() && github.event_name != 'pull_request' }}
         env:

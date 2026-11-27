@@ -110,6 +110,7 @@ jobs:
           track: internal
           status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
           releaseName: "${{ github.run_number }}"
+          whatsNewDirectory: ${{ hashFiles('projects/{{SLUG}}/store/whatsnew/*') != '' && 'projects/{{SLUG}}/store/whatsnew' || '' }}
       - name: Скриншот главного экрана (для Telegram)
         if: ${{ success() && github.event_name != 'pull_request' && vars.TELEGRAM_BUILDS != 'off' }}
         continue-on-error: true
@@ -131,7 +132,7 @@ jobs:
           TELEGRAM_TZ: ${{ vars.TELEGRAM_TZ }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 ../../scripts/telegram_notify.py --photo build/telegram/screenshot.png --file build/app/outputs/flutter-apk/app-release.apk --text "🚀 <b>{{NAME}}</b>: выпуск слит в main, сборка №$BUILD_NUMBER\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a>"
+          python3 ../../scripts/telegram_notify.py --photo build/telegram/screenshot.png --file build/app/outputs/flutter-apk/app-release.apk --text "🚀 <b>{{NAME}}</b>: выпуск слит в main, сборка №$BUILD_NUMBER\n$(cat store/whatsnew/whatsnew-ru-RU 2>/dev/null)\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">сборка на GitHub</a>"
       - name: Telegram — ушло в Google Play
         if: ${{ success() && steps.play.outputs.ok == 'true' }}
         env:
