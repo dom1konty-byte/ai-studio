@@ -12,3 +12,4 @@
 - Тесты и ревью: ревью кода + 2 круга аудита безопасности, всё исправлено, CI зелёный (коммит 9cfa049).
 - Выпуск v1.0.0: setup.exe (ChistoDisk-setup, 9,7 МБ) — https://github.com/dom1konty-byte/ai-studio/actions/runs/46039728923#artifacts. Ждёт «да».
 - Выпуск отложен: Дамир попросил добавить пп. 13–14 (мало места, карта диска).
+- пп. 13–14 готовы, 78 тестов, CI зелёный (27a6b20). Выпуск 1.0.0: https://github.com/dom1konty-byte/ai-studio/actions/runs/46044350284#artifacts. Ждёт «да».
