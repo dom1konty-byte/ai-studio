@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -6,11 +8,13 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../core/browsers.dart';
+import '../core/procs.dart';
 import '../core/programs.dart';
 import '../core/whitelist.dart';
 import 'elevation.dart';
 import '../core/async_pool.dart';
 import 'icon_extract.dart';
+import 'proc_ffi.dart';
 import 'platform_api.dart';
 import 'single_instance.dart';
 import 'win_registry.dart';
@@ -543,6 +547,35 @@ $n.Dispose()
       return null;
     }
   }
+
+  @override
+  Future<String?> runToolUtf8(String exe, List<String> args, {required Duration timeout}) async {
+    Process? p;
+    try {
+      p = await Process.start(exe, args);
+      final out = p.stdout.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+      unawaited(p.stderr.drain<void>());
+      final code = await p.exitCode.timeout(timeout);
+      final bytes = await out;
+      if (code != 0 && bytes.isEmpty) return null;
+      return utf8.decode(bytes, allowMalformed: true);
+    } catch (_) {
+      p?.kill();
+      return null;
+    }
+  }
+
+  @override
+  Future<SysSample?> systemSample() async {
+    try {
+      return takeSystemSample();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<KillResult> killProcess(int pid) async => terminateProcessByPid(pid);
 
   // --- значки программ ---
 

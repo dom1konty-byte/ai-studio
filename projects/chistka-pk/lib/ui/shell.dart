@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
 import 'anim.dart';
+import 'computer_details.dart';
 import 'computer_screen.dart';
 import 'empty_dirs_screen.dart';
 import 'dupes_screen.dart';
@@ -86,6 +89,12 @@ class _ShellState extends State<Shell> {
         screen = EmptyDirsScreen(key: const ValueKey('empty-dirs'), controller: c);
       case Layer.map:
         screen = MapScreen(key: const ValueKey('map'), controller: c);
+      case Layer.health:
+        screen = HealthDetails(key: const ValueKey('health'), controller: c);
+      case Layer.procs:
+        screen = ProcsDetails(key: const ValueKey('procs'), controller: c);
+      case Layer.battery:
+        screen = BatteryDetails(key: const ValueKey('battery'), controller: c);
       case Layer.none:
         return const SizedBox.shrink();
     }
@@ -107,7 +116,11 @@ class _ShellState extends State<Shell> {
             Align(
               alignment: Alignment.centerRight,
               child: SizedBox(
-                width: full ? box.maxWidth : box.maxWidth * 0.6,
+                width: full
+                    ? box.maxWidth
+                    // Таблице процессов нужно не меньше ~680 px.
+                    : math.min(box.maxWidth,
+                        math.max(box.maxWidth * 0.6, l == Layer.procs ? 680.0 : 0.0)),
                 height: box.maxHeight,
                 child: Material(
                   elevation: 8,

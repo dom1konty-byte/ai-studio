@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:chistka_pk/core/procs.dart';
 import 'package:chistka_pk/core/programs.dart';
 import 'package:chistka_pk/platform/platform_api.dart';
 
@@ -189,4 +190,37 @@ class FakePlatform implements PlatformApi {
 
   /// Свободное место для виджет-тестов (по умолчанию 45 ГБ).
   int freeBytes = 45 * 1024 * 1024 * 1024;
+
+  // --- компьютер ---
+  String? utf8Output;
+  final utf8Calls = <String>[];
+  Duration? utf8Timeout;
+
+  @override
+  Future<String?> runToolUtf8(String exe, List<String> args, {required Duration timeout}) async {
+    utf8Calls.add('$exe ${args.join(' ')}');
+    utf8Timeout = timeout;
+    return utf8Output;
+  }
+
+  /// Снимки подряд (последний повторяется); пусто — null.
+  List<SysSample> samples = [];
+  int sampleCalls = 0;
+
+  @override
+  Future<SysSample?> systemSample() async {
+    if (samples.isEmpty) return null;
+    final i = sampleCalls < samples.length ? sampleCalls : samples.length - 1;
+    sampleCalls++;
+    return samples[i];
+  }
+
+  final killed = <int>[];
+  KillResult killResult = KillResult.ok;
+
+  @override
+  Future<KillResult> killProcess(int pid) async {
+    killed.add(pid);
+    return killResult;
+  }
 }

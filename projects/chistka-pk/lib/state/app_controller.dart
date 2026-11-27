@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:path/path.dart' as p;
 
+import 'computer_service.dart';
 import '../core/catalog.dart';
 import '../core/cleaner.dart';
 import '../core/disk_map.dart';
@@ -31,7 +32,7 @@ enum Phase { idle, analyzing, ready, cleaning, done }
 enum Section { main, computer, programs, startup, internet, settings }
 
 /// Экран поверх «Очистки» (кнопка «Назад» возвращает к плиткам).
-enum Layer { none, downloads, big, dupes, emptyDirs, map }
+enum Layer { none, downloads, big, dupes, emptyDirs, map, health, procs, battery }
 
 /// Порог «Мало места»: свободно меньше 10 ГБ на системном диске.
 const lowSpaceBytes = 10 * 1024 * 1024 * 1024;
@@ -293,6 +294,16 @@ class AppController extends ChangeNotifier {
     layer = l;
     notifyListeners();
   }
+
+  /// Подробности экрана «Компьютер» поверх плиток (раздел не меняется).
+  void openComputerLayer(Layer l) {
+    layer = l;
+    notifyListeners();
+  }
+
+  /// Данные экрана «Компьютер» (создаются при первом обращении).
+  ComputerService get computer => _computer ??= ComputerService(platform, env);
+  ComputerService? _computer;
 
   void closeLayer() {
     if (layer == Layer.none) return;

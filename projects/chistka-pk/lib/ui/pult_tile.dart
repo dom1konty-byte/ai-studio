@@ -4,7 +4,7 @@ import 'anim.dart';
 import 'app.dart';
 
 /// Состояние плитки пульта.
-enum TileKind { normal, busy, result, error, soon }
+enum TileKind { normal, busy, result, error, soon, summary }
 
 /// Плитка пульта («Очистка», «Компьютер»): иконка в кружке, название, одна строка
 /// и одно действие. Состояния: обычная / процесс / результат / ошибка / «Скоро».
@@ -23,6 +23,10 @@ class PultTile extends StatelessWidget {
     this.onStop,
     this.onRetry,
     this.onAgain,
+    this.summary = '',
+    this.summaryIcon = Icons.check_circle,
+    this.summaryColor = successColor,
+    this.onTap,
   });
 
   final IconData icon;
@@ -38,6 +42,14 @@ class PultTile extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onAgain;
 
+  /// Итог крупной строкой с иконкой состояния ([TileKind.summary]).
+  final String summary;
+  final IconData summaryIcon;
+  final Color summaryColor;
+
+  /// Нажатие на всю плитку.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -51,6 +63,20 @@ class PultTile extends StatelessWidget {
       case TileKind.soon:
         middle = Text(caption, style: grey, maxLines: 1, overflow: TextOverflow.ellipsis);
         bottom = const FilledButton.tonal(onPressed: null, child: Text('Скоро'));
+      case TileKind.summary:
+        middle = Row(
+          children: [
+            Icon(summaryIcon, size: 20, color: summaryColor),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(summary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        );
+        bottom = FilledButton.tonal(onPressed: onAction, child: Text(actionLabel));
       case TileKind.busy:
         middle = Text(caption, style: grey, maxLines: 1, overflow: TextOverflow.ellipsis);
         bottom = Row(
@@ -102,8 +128,7 @@ class PultTile extends StatelessWidget {
           child: TextButton(onPressed: onRetry, child: const Text('Повторить')),
         );
     }
-    return HoverCard(
-      child: Padding(
+    final body = Padding(
         padding: const EdgeInsets.all(16),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 136),
@@ -130,7 +155,11 @@ class PultTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      );
+    return HoverCard(
+      child: onTap == null
+          ? body
+          : InkWell(borderRadius: BorderRadius.circular(16), onTap: onTap, child: body),
     );
   }
 }

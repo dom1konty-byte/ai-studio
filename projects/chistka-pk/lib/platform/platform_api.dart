@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../core/procs.dart';
 import '../core/programs.dart';
 
 /// Результат запуска программы удаления.
@@ -125,4 +126,15 @@ abstract class PlatformApi {
   /// PNG значка: [path] — exe/dll/ico, [index] — номер значка (как в DisplayIcon).
   /// null — значка нет или не удалось извлечь.
   Future<Uint8List?> programIcon(String path, int index);
+
+  // --- компьютер: диски, процессы ---
+
+  /// Как [runTool], но stdout читается как UTF-8; [timeout] — убить и вернуть null.
+  Future<String?> runToolUtf8(String exe, List<String> args, {required Duration timeout});
+
+  /// Снимок процессов и загрузки системы (null — не удалось).
+  Future<SysSample?> systemSample();
+
+  /// Завершает процесс (TerminateProcess).
+  Future<KillResult> killProcess(int pid);
 }

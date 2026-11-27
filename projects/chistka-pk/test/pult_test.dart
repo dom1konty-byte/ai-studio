@@ -311,15 +311,16 @@ void main() {
     expect(find.text('a.mkv'), findsOneWidget);
   });
 
-  testWidgets('Компьютер: пульт из трёх плиток-заглушек', (tester) async {
+  testWidgets('Компьютер: плитки «Здоровье диска» и «Что тормозит» вместо заглушек', (tester) async {
     final c = _make(tmp: tmp);
     await _pump(tester, c);
     c.go(Section.computer);
     await tester.pumpAndSettle();
-    for (final t in ['Здоровье диска', 'Что тормозит', 'Батарея']) {
+    for (final t in ['Здоровье диска', 'Что тормозит']) {
       expect(find.text(t), findsOneWidget);
     }
-    expect(find.text('Скоро'), findsNWidgets(3));
+    expect(find.text('Скоро'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
   });
 
   group('заставка', () {

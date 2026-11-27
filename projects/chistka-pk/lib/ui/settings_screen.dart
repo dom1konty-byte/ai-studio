@@ -27,7 +27,7 @@ class SettingsScreen extends StatelessWidget {
                   'Нужен, чтобы чистить системные папки и менять автозагрузку для всех. '
                   'Программа перезапустится и попросит разрешение Windows (UAC).'),
               value: c.adminMode,
-              onChanged: c.canToggleAdmin ? (v) => _toggleAdmin(context, v) : null,
+              onChanged: c.canToggleAdmin ? (v) => toggleAdminWithDialog(context, controller, v) : null,
             ),
             SwitchListTile(
               title: const Text('Запускать вместе с Windows (в трее)'),
@@ -51,34 +51,35 @@ class SettingsScreen extends StatelessWidget {
       },
     );
   }
+}
 
-  Future<void> _toggleAdmin(BuildContext context, bool on) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(on
-            ? 'Перезапустить с правами администратора?'
-            : 'Перезапустить без прав администратора?'),
-        content: Text(on
-            ? 'Windows спросит разрешение (UAC). Окно программы закроется и откроется снова.'
-            : 'Окно программы закроется и откроется снова.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Перезапустить')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final r = await controller.setAdminMode(on);
-    if (!context.mounted) return;
-    final msg = switch (r) {
-      RelaunchResult.started => null,
-      RelaunchResult.cancelled => 'Разрешение не получено',
-      RelaunchResult.failed => 'Не удалось перезапустить программу.',
-    };
-    if (msg != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-    }
+/// Спрашивает подтверждение и перезапускает программу с другими правами.
+Future<void> toggleAdminWithDialog(BuildContext context, AppController controller, bool on) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(on
+          ? 'Перезапустить с правами администратора?'
+          : 'Перезапустить без прав администратора?'),
+      content: Text(on
+          ? 'Windows спросит разрешение (UAC). Окно программы закроется и откроется снова.'
+          : 'Окно программы закроется и откроется снова.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Отмена')),
+        FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Перезапустить')),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  final r = await controller.setAdminMode(on);
+  if (!context.mounted) return;
+  final msg = switch (r) {
+    RelaunchResult.started => null,
+    RelaunchResult.cancelled => 'Разрешение не получено',
+    RelaunchResult.failed => 'Не удалось перезапустить программу.',
+  };
+  if (msg != null) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }
