@@ -52,11 +52,21 @@ class AppController extends ChangeNotifier {
   })  : env = env ?? Env.system(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _largeScan = largeScan ?? _defaultLargeScan {
+    systemDrive = systemDriveRoot(this.env);
+    // Журнал и статистика: %LOCALAPPDATA%\ChistoDisk, иначе %APPDATA%\ChistoDisk.
+    // Во временную папку не пишем; если негде — очистка не запускается.
     final local = this.env['LOCALAPPDATA'];
+    final roaming = this.env['APPDATA'];
     final base = dataDir ??
-        (local != null ? '$local\\ChistoDisk' : '${Directory.systemTemp.path}${Platform.pathSeparator}ChistoDisk');
-    logFile = File('$base${Platform.pathSeparator}log.txt');
-    _stats = StatsStore(File('$base${Platform.pathSeparator}stats.json'));
+        (local != null
+            ? '$local\\ChistoDisk'
+            : roaming != null
+                ? '$roaming\\ChistoDisk'
+                : null);
+    if (base != null) {
+      logFile = File('$base${Platform.pathSeparator}log.txt');
+      _stats = StatsStore(File('$base${Platform.pathSeparator}stats.json'));
+    }
     final profile = this.env['USERPROFILE'];
     if (profile != null) {
       downloadsDir = '$profile\\Downloads';
@@ -76,8 +86,16 @@ class AppController extends ChangeNotifier {
   final Env env;
   final DownloadsScan _downloadsScan;
   final LargeScan _largeScan;
-  late final File logFile;
-  late final StatsStore _stats;
+  File? logFile;
+  StatsStore? _stats;
+
+  /// Корень диска системы (из SystemRoot), например `C:\`.
+  late final String systemDrive;
+  String get systemDriveLabel => systemDrive.substring(0, 2);
+
+  /// true, пока на главном экране идёт подтверждение/запуск очистки (защита от двойного нажатия).
+  bool cleanBusy = false;
+  String? errorMessage;
   String? downloadsDir;
   List<String> userRoots = const [];
 
@@ -101,8 +119,8 @@ class AppController extends ChangeNotifier {
   bool failedAll = false;
 
   Future<void> init() async {
-    totalFreedEver = await _stats.load();
-    disk = await platform.diskSpace(r'C:\');
+    totalFreedEver = await _stats?.load() ?? 0;
+    disk = await platform.diskSpace(systemDrive);
     await _showCatalog();
     notifyListeners();
   }
@@ -165,7 +183,7 @@ class AppController extends ChangeNotifier {
     progressText = 'Считаю…';
     final steam = await platform.steamPath();
     rows = buildCatalog(env, steamPath: steam).map(CategoryRow.new).toList();
-    disk = await platform.diskSpace(r'C:\');
+    disk = await platform.diskSpace(systemDrive);
     notifyListeners();
     for (final r in rows) {
       r.status = RowStatus.scanning;
@@ -283,41 +301,59 @@ class AppController extends ChangeNotifier {
     required List<FileInfo> files,
     required bool skipBrowsers,
   }) async {
+    if (logFile == null) {
+      failedAll = true;
+      errorMessage =
+          'Некуда писать журнал: не найдены папки LOCALAPPDATA и APPDATA. Очистка не запущена.';
+      phase = Phase.done;
+      notifyListeners();
+      return;
+    }
     phase = Phase.cleaning;
     failedAll = false;
+    errorMessage = null;
     progressText = 'Очищаю…';
     progressFraction = 1;
     notifyListeners();
+    final sum = CleanSummary();
+    summary = sum;
     try {
-      final log = CleanLog(logFile);
+      final log = CleanLog(logFile!);
       await log.note('Очистка начата');
-      final cleaner = Cleaner(platform, log);
-      summary = await cleaner.run(
+      final cleaner = Cleaner(platform, log, systemDrive: systemDrive);
+      await cleaner.run(
         categories: categories,
         filesToRecycle: files,
         userRoots: userRoots,
         skipBrowsers: skipBrowsers,
+        into: sum,
         onProgress: (t, f) {
           progressText = t;
           progressFraction = f;
           notifyListeners();
         },
       );
-      totalFreedEver = await _stats.add(summary!.freedBytes);
     } catch (_) {
       failedAll = true;
+      errorMessage = 'Очистка прервана из-за ошибки. Уже сделанное сохранено в журнале.';
+    } finally {
+      try {
+        totalFreedEver = await _stats?.add(sum.freedBytes) ?? totalFreedEver;
+      } catch (_) {}
     }
     phase = Phase.done;
     notifyListeners();
   }
 
   Future<void> openLog() async {
+    final lf = logFile;
+    if (lf == null) return;
     try {
-      if (!logFile.existsSync()) {
-        await logFile.parent.create(recursive: true);
-        await logFile.writeAsString('Журнал ЧистоДиск пока пуст.\n');
+      if (!lf.existsSync()) {
+        await lf.parent.create(recursive: true);
+        await lf.writeAsString('Журнал ЧистоДиск пока пуст.\n');
       }
     } catch (_) {}
-    await platform.openFile(logFile.path);
+    await platform.openFile(lf.path);
   }
 }

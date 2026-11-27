@@ -5,21 +5,30 @@ import 'fs_walk.dart';
 import 'journal.dart';
 import 'models.dart';
 import 'scanner.dart';
+import 'target_guard.dart';
 import 'whitelist.dart';
 
 typedef ProgressCallback = void Function(String text, double fraction);
 
 class Cleaner {
-  Cleaner(this.platform, this.log);
+  Cleaner(this.platform, this.log, {this.systemDrive = r'C:\'});
   final PlatformApi platform;
   final CleanLog log;
+
+  /// Диск системы (из SystemRoot) — для подсчёта свободного места.
+  final String systemDrive;
 
   /// Очищает одну цель. Удаляет только внутри белого списка (папка цели).
   Future<void> cleanTarget(Category cat, CleanTarget t, CleanSummary s) async {
     final dir = Directory(t.dir);
     try {
-      if (!dir.existsSync() || FileSystemEntity.isLinkSync(t.dir)) return;
+      if (!dir.existsSync()) return;
     } catch (_) {
+      return;
+    }
+    final reason = targetRejectReason(t);
+    if (reason != null) {
+      await log.note('Цель пропущена: ${t.dir} ($reason)');
       return;
     }
     final roots = [t.dir];
@@ -56,6 +65,8 @@ class Cleaner {
 
     final dirs = <Directory>[];
     await walkTree(dir, onFile: delFile, onDir: dirs.add);
+    // в Temp подпапки не удаляем — только файлы (папки могут быть заняты программами)
+    if (cat.id == CategoryId.temp) return;
     // пустые подпапки — от самых глубоких; саму корневую папку не трогаем
     for (final d in dirs.reversed) {
       if (!isInsideAllowedRoot(d.path, roots)) continue;
@@ -67,14 +78,16 @@ class Cleaner {
 
   /// Полная очистка. Порядок важен: сначала опустошаем Корзину, и только потом
   /// отправляем в неё файлы — иначе они удалились бы насовсем.
+  /// [into] — итог, который наполняется по ходу (при исключении сохраняется).
   Future<CleanSummary> run({
     required List<Category> categories,
     required List<FileInfo> filesToRecycle,
     required List<String> userRoots,
     required bool skipBrowsers,
     ProgressCallback? onProgress,
+    CleanSummary? into,
   }) async {
-    final s = CleanSummary();
+    final s = into ?? CleanSummary();
     final cats = categories
         .where((c) => !(skipBrowsers && c.id == CategoryId.browsers))
         .toList()
@@ -87,56 +100,93 @@ class Cleaner {
     final total = cats.length + (filesToRecycle.isEmpty ? 0 : 1);
     var step = 0;
 
-    final disk = await platform.diskSpace(r'C:\');
-    s.freeBefore = disk?.free;
+    try {
+      final disk = await platform.diskSpace(systemDrive);
+      s.freeBefore = disk?.free;
 
-    for (final c in cats) {
-      step++;
-      onProgress?.call('Очищаю: ${c.title}… ($step из $total)', 1 - (step - 1) / total);
-      if (c.id == CategoryId.recycle) {
-        final info = await platform.recycleBinInfo();
-        if (info != null && info.items > 0) {
-          if (await platform.emptyRecycleBin()) {
-            s.freedBytes += info.bytes;
-            s.deletedFiles += info.items;
-            await log.add(c.title, 'Корзина', info.bytes, 'удалено');
-          } else {
-            s.skippedFiles += info.items;
-            await log.add(c.title, 'Корзина', info.bytes, 'пропущено');
+      for (final c in cats) {
+        step++;
+        onProgress?.call('Очищаю: ${c.title}… ($step из $total)', 1 - (step - 1) / total);
+        if (c.id == CategoryId.recycle) {
+          final info = await platform.recycleBinInfo();
+          if (info != null && info.items > 0) {
+            if (await platform.emptyRecycleBin()) {
+              s.freedBytes += info.bytes;
+              s.deletedFiles += info.items;
+              await log.add(c.title, 'Корзина (все диски)', info.bytes, 'удалено');
+            } else {
+              s.skippedFiles += info.items;
+              await log.add(c.title, 'Корзина (все диски)', info.bytes, 'пропущено');
+            }
+          }
+        } else {
+          for (final t in c.targets) {
+            await cleanTarget(c, t, s);
           }
         }
-      } else {
-        for (final t in c.targets) {
-          await cleanTarget(c, t, s);
-        }
+        await log.flush();
       }
-    }
 
-    if (filesToRecycle.isNotEmpty) {
-      step++;
-      onProgress?.call('Очищаю: файлы в Корзину… ($step из $total)', 1 - (step - 1) / total);
-      for (final f in filesToRecycle) {
-        var ok = false;
-        if (isInsideAllowedRoot(f.path, userRoots) &&
-            FileSystemEntity.typeSync(f.path, followLinks: false) == FileSystemEntityType.file) {
-          ok = await platform.moveToRecycleBin(f.path);
-        }
-        if (ok) {
-          s.recycledBytes += f.size;
-          s.deletedFiles++;
-          await log.add('Файлы', f.path, f.size, 'в Корзину');
-        } else {
-          s.skippedFiles++;
-          await log.add('Файлы', f.path, f.size, 'пропущено');
-        }
+      if (filesToRecycle.isNotEmpty) {
+        step++;
+        onProgress?.call('Очищаю: файлы в Корзину… ($step из $total)', 1 - (step - 1) / total);
+        await _recycleFiles(filesToRecycle, userRoots, s);
+        await log.flush();
       }
-    }
 
-    onProgress?.call('Готово', 0);
-    final after = await platform.diskSpace(r'C:\');
-    s.freeAfter = after?.free;
-    await log.flush();
-    s.logFailed = log.failed;
+      onProgress?.call('Готово', 0);
+      final after = await platform.diskSpace(systemDrive);
+      s.freeAfter = after?.free;
+    } finally {
+      await log.flush();
+      s.logFailed = log.failed;
+    }
     return s;
+  }
+
+  Future<void> _recycleFiles(
+      List<FileInfo> files, List<String> userRoots, CleanSummary s) async {
+    final ok = <FileInfo>[];
+    for (final f in files) {
+      String? reason;
+      if (!isInsideAllowedRoot(f.path, userRoots)) {
+        reason = 'вне папок пользователя';
+      } else {
+        reason = recycleSkipReason(f.path);
+      }
+      if (reason == null) {
+        try {
+          if (FileSystemEntity.typeSync(f.path, followLinks: false) !=
+              FileSystemEntityType.file) {
+            reason = 'не обычный файл';
+          }
+        } catch (_) {
+          reason = 'не удалось проверить файл';
+        }
+      }
+      if (reason == null) {
+        ok.add(f);
+      } else {
+        s.skippedFiles++;
+        await log.add('Файлы', f.path, f.size, 'пропущено: $reason');
+      }
+    }
+    if (ok.isEmpty) return;
+    Map<String, String?> res;
+    try {
+      res = await platform.moveToRecycleBin(ok.map((f) => f.path).toList());
+    } catch (_) {
+      res = {for (final f in ok) f.path: 'ошибка вызова Windows'};
+    }
+    for (final f in ok) {
+      if (res.containsKey(f.path) && res[f.path] == null) {
+        s.recycledBytes += f.size;
+        s.deletedFiles++;
+        await log.add('Файлы', f.path, f.size, 'в Корзину');
+      } else {
+        s.skippedFiles++;
+        await log.add('Файлы', f.path, f.size, 'пропущено: ${res[f.path] ?? 'нет ответа'}');
+      }
+    }
   }
 }

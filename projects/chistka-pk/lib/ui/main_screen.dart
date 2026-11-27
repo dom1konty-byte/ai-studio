@@ -36,6 +36,16 @@ class MainScreen extends StatelessWidget {
 
   Future<void> _onClean(BuildContext context) async {
     final c = controller;
+    if (c.cleanBusy) return; // защита от двойного нажатия
+    c.cleanBusy = true;
+    try {
+      await _confirmAndClean(context, c);
+    } finally {
+      c.cleanBusy = false;
+    }
+  }
+
+  Future<void> _confirmAndClean(BuildContext context, AppController c) async {
     var skip = false;
     while (true) {
       final running = await c.browsersToClose();
@@ -46,7 +56,8 @@ class MainScreen extends StatelessWidget {
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
           title: const Text('Закройте браузер'),
-          content: Text('Запущены: ${running.join(', ')}. Закройте их, чтобы очистить кэш.'),
+          content: Text('Запущены: ${running.join(', ')}. Закройте их, чтобы очистить кэш.\n'
+              'Проверьте, что браузер закрыт полностью (и значок у часов тоже).'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -152,7 +163,7 @@ class MainScreen extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Диск C: свободно ${formatSize(disk.free)} из ${formatSize(disk.total)}',
+            'Диск ${c.systemDriveLabel} свободно ${formatSize(disk.free)} из ${formatSize(disk.total)}',
             style: const TextStyle(fontSize: 12),
           ),
         ],
@@ -225,6 +236,9 @@ class _CategoryTile extends StatelessWidget {
           row.isEmpty ? 'Пусто' : formatSize(row.bytes ?? 0),
           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         );
+    }
+    if (cat.id == CategoryId.recycle && row.selected && row.active) {
+      subtitle = 'Очищает Корзину на всех дисках';
     }
     return Card(
       elevation: 0,

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../core/browsers.dart';
+import '../core/whitelist.dart';
 import 'platform_api.dart';
 
 // Win32 через dart:ffi напрямую (shell32 / kernel32): без зависимости от версии пакета win32.
@@ -30,16 +31,18 @@ typedef _QueryBinNative = Int32 Function(Pointer<Utf16>, Pointer<Uint8>);
 typedef _QueryBinDart = int Function(Pointer<Utf16>, Pointer<Uint8>);
 typedef _EmptyBinNative = Int32 Function(IntPtr, Pointer<Utf16>, Uint32);
 typedef _EmptyBinDart = int Function(int, Pointer<Utf16>, int);
+typedef _DriveTypeNative = Uint32 Function(Pointer<Utf16>);
+typedef _DriveTypeDart = int Function(Pointer<Utf16>);
 typedef _DiskNative = Int32 Function(
     Pointer<Utf16>, Pointer<Uint64>, Pointer<Uint64>, Pointer<Uint64>);
 typedef _DiskDart = int Function(
     Pointer<Utf16>, Pointer<Uint64>, Pointer<Uint64>, Pointer<Uint64>);
 
 const _foDelete = 3;
-const _fofSilent = 0x0004;
-const _fofNoConfirmation = 0x0010;
 const _fofAllowUndo = 0x0040;
-const _fofNoErrorUi = 0x0400;
+const _fofNoConfirmMkdir = 0x0200;
+const _fofWantNukeWarnings = 0x4000;
+const _driveFixed = 3;
 const _sherbNoConfirmation = 0x1;
 const _sherbNoProgressUi = 0x2;
 const _sherbNoSound = 0x4;
@@ -54,61 +57,116 @@ class WindowsPlatform implements PlatformApi {
       _shell32.lookupFunction<_QueryBinNative, _QueryBinDart>('SHQueryRecycleBinW');
   late final _EmptyBinDart _emptyBin =
       _shell32.lookupFunction<_EmptyBinNative, _EmptyBinDart>('SHEmptyRecycleBinW');
+  late final _DriveTypeDart _driveType =
+      _kernel32.lookupFunction<_DriveTypeNative, _DriveTypeDart>('GetDriveTypeW');
   late final _DiskDart _disk =
       _kernel32.lookupFunction<_DiskNative, _DiskDart>('GetDiskFreeSpaceExW');
 
+  /// Папка Windows из окружения (для полных путей к системным программам).
+  static String get _sysRoot {
+    final v = Platform.environment['SystemRoot'] ?? Platform.environment['WINDIR'];
+    return (v == null || v.isEmpty) ? r'C:\Windows' : v;
+  }
+
+  /// Причина пропуска по диску файла (не локальный фиксированный / нет Корзины) или null.
+  String? _driveSkipReason(String path, Map<String, String?> cache) {
+    final root = '${path.substring(0, 1).toUpperCase()}:\\';
+    if (cache.containsKey(root)) return cache[root];
+    String? reason;
+    final r = root.toNativeUtf16();
+    try {
+      if (_driveType(r) != _driveFixed) {
+        reason = 'диск не локальный фиксированный';
+      } else if (_queryBinRoot(r) == null) {
+        reason = 'для диска нет Корзины (файл удалился бы насовсем)';
+      }
+    } catch (_) {
+      reason = 'не удалось проверить диск';
+    } finally {
+      calloc.free(r);
+    }
+    cache[root] = reason;
+    return reason;
+  }
+
   @override
-  Future<bool> moveToRecycleBin(String path) async {
-    // pFrom — строка с двумя нулями в конце
-    final units = path.codeUnits;
-    final buf = calloc<Uint16>(units.length + 2);
+  Future<Map<String, String?>> moveToRecycleBin(List<String> paths) async {
+    final result = <String, String?>{};
+    final toMove = <String>[];
+    final cache = <String, String?>{};
+    for (final p in paths) {
+      final reason = recycleSkipReason(p) ?? _driveSkipReason(p, cache);
+      if (reason != null) {
+        result[p] = reason;
+      } else {
+        toMove.add(p);
+      }
+    }
+    if (toMove.isEmpty) return result;
+
+    final units = buildDoubleNullList(toMove);
+    final buf = calloc<Uint16>(units.length);
     final op = calloc<_ShFileOpStruct>();
     try {
-      buf.asTypedList(units.length + 2).setAll(0, units);
+      buf.asTypedList(units.length).setAll(0, units);
       op.ref
         ..hwnd = 0
         ..wFunc = _foDelete
         ..pFrom = buf.cast<Utf16>()
         ..pTo = nullptr
-        ..fFlags = _fofAllowUndo | _fofNoConfirmation | _fofSilent | _fofNoErrorUi
+        // без FOF_NOCONFIRMATION и FOF_SILENT: если файл не влезает в Корзину,
+        // Windows сама спросит «удалить насовсем?»
+        ..fFlags = _fofAllowUndo | _fofWantNukeWarnings | _fofNoConfirmMkdir
         ..fAnyOperationsAborted = 0
         ..hNameMappings = nullptr
         ..lpszProgressTitle = nullptr;
-      final r = _shFileOp(op);
-      return r == 0 && op.ref.fAnyOperationsAborted == 0;
+      _shFileOp(op);
     } catch (_) {
-      return false;
+      // итог определяем проверкой наличия файла ниже
     } finally {
       calloc.free(buf);
       calloc.free(op);
     }
+    for (final p in toMove) {
+      var exists = true;
+      try {
+        exists = FileSystemEntity.typeSync(p, followLinks: false) !=
+            FileSystemEntityType.notFound;
+      } catch (_) {}
+      result[p] = exists ? 'Windows не удалила файл (отмена или ошибка)' : null;
+    }
+    return result;
   }
 
-  @override
-  Future<({int bytes, int items})?> recycleBinInfo() async {
+  /// SHQueryRecycleBinW для [root] (nullptr — все диски). null — ошибка.
+  ({int bytes, int items})? _queryBinRoot(Pointer<Utf16> root) {
     final buf = calloc<Uint8>(32);
     try {
-      // SHQUERYRBINFO в SDK упакована по 1 байту (20 байт); на всякий случай пробуем и 24.
-      for (final layout in const [(20, 4, 12), (24, 8, 16)]) {
-        final list = buf.asTypedList(32);
-        list.fillRange(0, 32, 0);
-        final bd = ByteData.sublistView(list);
-        bd.setUint32(0, layout.$1, Endian.little);
-        final hr = _queryBin(nullptr, buf);
-        if (hr == 0) {
-          return (
-            bytes: bd.getInt64(layout.$2, Endian.little),
-            items: bd.getInt64(layout.$3, Endian.little),
-          );
-        }
-      }
-      return null;
+      // x64: SHQUERYRBINFO = 24 байта (cbSize@0, i64Size@8, i64NumItems@16).
+      // 20 байт (4/12) — только для 32-битного процесса.
+      final is32 = sizeOf<IntPtr>() == 4;
+      final cb = is32 ? 20 : 24;
+      final sizeOff = is32 ? 4 : 8;
+      final itemsOff = is32 ? 12 : 16;
+      final list = buf.asTypedList(32);
+      list.fillRange(0, 32, 0);
+      final bd = ByteData.sublistView(list);
+      bd.setUint32(0, cb, Endian.little);
+      final hr = _queryBin(root, buf);
+      if (hr != 0) return null;
+      return (
+        bytes: bd.getInt64(sizeOff, Endian.little),
+        items: bd.getInt64(itemsOff, Endian.little),
+      );
     } catch (_) {
       return null;
     } finally {
       calloc.free(buf);
     }
   }
+
+  @override
+  Future<({int bytes, int items})?> recycleBinInfo() async => _queryBinRoot(nullptr);
 
   @override
   Future<bool> emptyRecycleBin() async {
@@ -148,7 +206,7 @@ class WindowsPlatform implements PlatformApi {
   Future<List<String>> runningBrowsers() async {
     try {
       final r = await Process.run(
-        'tasklist',
+        '$_sysRoot\\System32\\tasklist.exe',
         ['/fo', 'csv', '/nh'],
         stdoutEncoding: systemEncoding,
       );
@@ -161,7 +219,7 @@ class WindowsPlatform implements PlatformApi {
   @override
   Future<String?> steamPath() async {
     try {
-      final r = await Process.run('reg', [
+      final r = await Process.run('$_sysRoot\\System32\\reg.exe', [
         'query',
         r'HKCU\Software\Valve\Steam',
         '/v',
@@ -170,7 +228,9 @@ class WindowsPlatform implements PlatformApi {
       final m = RegExp(r'SteamPath\s+REG_SZ\s+(.+)').firstMatch(r.stdout.toString());
       final v = m?.group(1)?.trim();
       if (v == null || v.isEmpty) return null;
-      return v.replaceAll('/', r'\');
+      final p = v.replaceAll('/', r'\');
+      // только абсолютный X:\… (UNC и прочее отбрасываем); полная проверка — в каталоге
+      return RegExp(r'^[A-Za-z]:\\').hasMatch(p) ? p : null;
     } catch (_) {
       return null;
     }
@@ -179,10 +239,10 @@ class WindowsPlatform implements PlatformApi {
   @override
   Future<void> openFile(String path) async {
     try {
-      await Process.start('notepad.exe', [path], mode: ProcessStartMode.detached);
+      await Process.start('$_sysRoot\\System32\\notepad.exe', [path], mode: ProcessStartMode.detached);
     } catch (_) {
       try {
-        await Process.start('explorer.exe', [path], mode: ProcessStartMode.detached);
+        await Process.start('$_sysRoot\\explorer.exe', [path], mode: ProcessStartMode.detached);
       } catch (_) {}
     }
   }

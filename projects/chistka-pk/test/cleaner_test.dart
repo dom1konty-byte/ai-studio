@@ -4,6 +4,7 @@ import 'package:chistka_pk/core/cleaner.dart';
 import 'package:chistka_pk/core/journal.dart';
 import 'package:chistka_pk/core/models.dart';
 import 'package:chistka_pk/core/scanner.dart';
+import 'package:chistka_pk/core/target_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fake_platform.dart';
@@ -43,8 +44,8 @@ class Env {
       File('${d.path}$sep$name')..writeAsBytesSync(List.filled(size, 7));
 
   Category get cat => Category(
-        id: CategoryId.temp,
-        title: 'Временные',
+        id: CategoryId.gpu,
+        title: 'Кэш',
         hint: '',
         targets: [CleanTarget(cache.path)],
       );
@@ -235,4 +236,102 @@ void main() {
     expect(s.freedBytes, 1000);
     expect(s.deletedFiles, 2);
   }, skip: notWin);
+
+  test('Temp: файлы удаляются, подпапки остаются', () async {
+    final e = setup();
+    final sub = Directory('${e.cache.path}${sep}sub')..createSync();
+    e.file(sub, 'in.tmp', 10);
+    e.file(e.cache, 'top.tmp', 10);
+    final emptySub = Directory('${e.cache.path}${sep}empty')..createSync();
+    final cat = Category(
+      id: CategoryId.temp,
+      title: 'Temp',
+      hint: '',
+      targets: [CleanTarget(e.cache.path)],
+    );
+    final s = CleanSummary();
+    await e.cleaner.cleanTarget(cat, cat.targets.first, s);
+    expect(s.deletedFiles, 2);
+    expect(sub.existsSync(), isTrue);
+    expect(emptySub.existsSync(), isTrue);
+    expect(File('${sub.path}${sep}in.tmp').existsSync(), isFalse);
+  }, skip: notWin);
+
+  test('защита цели: корень профиля/диска не чистится', () async {
+    final e = setup();
+    final f = e.file(e.cache, 'a.tmp', 10);
+    final t = CleanTarget(e.cache.path, protectedPaths: [e.base.path]);
+    // цель — предок защищённой папки: отклоняется
+    final tp = CleanTarget(e.base.path, protectedPaths: [e.cache.path]);
+    expect(targetRejectReason(tp), isNotNull);
+    await e.cleaner.cleanTarget(e.cat, tp, CleanSummary());
+    expect(f.existsSync(), isTrue);
+    expect(targetRejectReason(t), isNull);
+  }, skip: notWin);
+
+  test('Корзина: UNC, длинный путь и причина платформы — пропуск, один пакетный вызов', () async {
+    final e = setup();
+    final a = e.file(e.cache, 'a.bin', 5);
+    final b = e.file(e.cache, 'b.bin', 5);
+    final longPath = '${e.cache.path}$sep${'x' * 300}.bin';
+    e.platform.skipReasons[b.path] = 'диск не локальный фиксированный';
+    final s = await e.cleaner.run(
+      categories: [],
+      filesToRecycle: [
+        FileInfo(a.path, 5, DateTime(2020)),
+        FileInfo(b.path, 5, DateTime(2020)),
+        FileInfo(longPath, 5, DateTime(2020)),
+        FileInfo(r'\\server\share\f.bin', 5, DateTime(2020)),
+      ],
+      userRoots: [e.cache.path, r'\\server\share'],
+      skipBrowsers: false,
+    );
+    expect(e.platform.moveCalls, 1);
+    expect(e.platform.moved, [a.path]);
+    expect(s.deletedFiles, 1);
+    expect(s.skippedFiles, 3);
+    final log = e.logFile.readAsStringSync();
+    expect(log, contains('диск не локальный'));
+    expect(log, contains('259'));
+  }, skip: notWin);
+
+  test('исключение посреди очистки: накопленный итог сохраняется', () async {
+    final e = setup();
+    e.platform.throwOnSecondDisk = true;
+    final s = CleanSummary();
+    Object? err;
+    try {
+      await e.cleaner.run(
+        categories: [
+          const Category(id: CategoryId.recycle, title: 'Корзина', hint: '', targets: []),
+        ],
+        filesToRecycle: [],
+        userRoots: [],
+        skipBrowsers: false,
+        into: s,
+      );
+    } catch (x) {
+      err = x;
+    }
+    expect(err, isNotNull);
+    expect(s.freedBytes, 1000);
+    expect(e.logFile.existsSync(), isTrue); // журнал сброшен в finally
+  }, skip: notWin);
+
+  test('ссылка в родителе цели: цель отклоняется, внешнее цело', () async {
+    final e = setup();
+    final secret = e.file(e.outside, 'secret.bin', 50);
+    final real = Directory('${e.base.path}${sep}appdata')..createSync();
+    Link('${real.path}${sep}Spotify').createSync(e.outside.path);
+    final t = CleanTarget('${real.path}${sep}Spotify${sep}Data',
+        base: real.path, minSegments: 3);
+    Directory('${e.outside.path}${sep}Data').createSync();
+    e.file(Directory('${e.outside.path}${sep}Data'), 'x.bin', 5);
+    expect(targetRejectReason(t), isNotNull);
+    await e.cleaner.cleanTarget(e.cat, t, CleanSummary());
+    expect(secret.existsSync(), isTrue);
+    expect(File('${e.outside.path}${sep}Data${sep}x.bin').existsSync(), isTrue);
+    final r = await scanTarget(t);
+    expect(r.files, 0);
+  }, skip: linkSkip);
 }

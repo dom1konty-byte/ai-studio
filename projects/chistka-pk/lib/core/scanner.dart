@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'fs_walk.dart';
 import 'models.dart';
+import 'target_guard.dart';
 
 class ScanResult {
   const ScanResult(this.bytes, this.files);
@@ -22,7 +23,7 @@ Future<ScanResult> scanTarget(CleanTarget t) async {
   var files = 0;
   final dir = Directory(t.dir);
   if (!dir.existsSync()) return const ScanResult(0, 0);
-  if (FileSystemEntity.isLinkSync(t.dir)) return const ScanResult(0, 0);
+  if (targetRejectReason(t) != null) return const ScanResult(0, 0);
 
   Future<void> count(File f) async {
     try {

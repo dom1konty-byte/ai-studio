@@ -30,9 +30,25 @@ FileKind fileKind(String path) {
 /// Цель очистки: содержимое папки [dir] (саму папку не трогаем)
 /// или файлы верхнего уровня, подходящие под [filePattern].
 class CleanTarget {
-  const CleanTarget(this.dir, {this.filePattern});
+  const CleanTarget(
+    this.dir, {
+    this.filePattern,
+    this.base,
+    this.minSegments = 4,
+    this.protectedPaths = const [],
+  });
   final String dir;
   final RegExp? filePattern;
+
+  /// Базовая папка (%LOCALAPPDATA%, %APPDATA%, SystemRoot, Steam): все компоненты
+  /// пути от неё до [dir] не должны быть ссылками.
+  final String? base;
+
+  /// Минимум сегментов пути (диск считается сегментом).
+  final int minSegments;
+
+  /// Папки, которые цель не может ни совпадать, ни быть их предком.
+  final List<String> protectedPaths;
 }
 
 enum CategoryId {
@@ -72,7 +88,6 @@ class CleanSummary {
   int skippedFiles = 0;
   bool browsersSkipped = false;
   bool logFailed = false;
-  bool aborted = false;
   int? freeBefore;
   int? freeAfter;
 }

@@ -23,6 +23,14 @@ class ResultScreen extends StatelessWidget {
             Icon(Icons.error_outline, size: 72, color: cs.error),
             const SizedBox(height: 16),
             const Text('Очистка прервана', style: TextStyle(fontSize: 28)),
+            if (c.errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(c.errorMessage!, textAlign: TextAlign.center),
+            ],
+            if (s != null && (s.freedBytes > 0 || s.recycledBytes > 0)) ...[
+              const SizedBox(height: 8),
+              Text('Успело освободиться: ${formatSize(s.freedBytes)}'),
+            ],
             const SizedBox(height: 24),
             FilledButton(onPressed: c.reset, child: const Text('Назад')),
           ],

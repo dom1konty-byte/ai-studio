@@ -1,6 +1,10 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import 'models.dart';
+import 'target_guard.dart';
+import 'whitelist.dart';
 
 /// Переменные окружения (подменяются в тестах).
 class Env {
@@ -41,7 +45,102 @@ bool _exists(String dir) {
   }
 }
 
-List<CleanTarget> _chromium(String userData) {
+
+/// Папки, которые нельзя чистить целиком и предком которых цель быть не может.
+List<String> protectedPathsOf(Env env) {
+  final res = <String>[];
+  final profile = env['USERPROFILE'];
+  if (profile != null) {
+    res.add(profile);
+    for (final d in const ['Documents', 'Desktop', 'Downloads', 'Pictures']) {
+      res.add(_join(profile, d));
+    }
+  }
+  for (final k in const ['OneDrive', 'OneDriveConsumer', 'OneDriveCommercial']) {
+    final od = env[k];
+    if (od != null) {
+      res.add(od);
+      for (final d in const ['Documents', 'Desktop', 'Downloads', 'Pictures']) {
+        res.add(_join(od, d));
+      }
+    }
+  }
+  for (final k in const ['SystemRoot', 'WINDIR', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432']) {
+    final v = env[k];
+    if (v != null) res.add(v);
+  }
+  return res;
+}
+
+/// Корень диска системы (из SystemRoot), например `C:\`.
+String systemDriveRoot(Env env) {
+  final sr = env['SystemRoot'] ?? env['WINDIR'];
+  final m = sr == null ? null : RegExp(r'^([A-Za-z]):').firstMatch(sr);
+  if (m != null) return '${m.group(1)!.toUpperCase()}:\\';
+  final sd = env['SystemDrive'];
+  final m2 = sd == null ? null : RegExp(r'^([A-Za-z]):').firstMatch(sd);
+  if (m2 != null) return '${m2.group(1)!.toUpperCase()}:\\';
+  return r'C:\';
+}
+
+/// Папка Temp пользователя: TEMP принимается, только если это %LOCALAPPDATA%\Temp
+/// (или подпапка) либо папка с именем Temp внутри %USERPROFILE%\AppData\Local.
+/// Иначе — %LOCALAPPDATA%\Temp. Нет подходящего — null.
+({String dir, String base})? resolveUserTemp(Env env) {
+  final local = env['LOCALAPPDATA'];
+  final profile = env['USERPROFILE'];
+  final temp = env['TEMP'];
+  final localTemp = local == null ? null : _join(local, 'Temp');
+  final profLocal = profile == null ? null : _join(profile, r'AppData\Local');
+  if (temp != null) {
+    final n = normalizeWinPath(temp);
+    if (n != null) {
+      final w = p.windows;
+      if (local != null && localTemp != null) {
+        final nl = normalizeWinPath(localTemp);
+        if (nl != null && (w.equals(nl, n) || w.isWithin(nl, n))) {
+          return (dir: temp, base: local);
+        }
+      }
+      if (profLocal != null) {
+        final npl = normalizeWinPath(profLocal);
+        if (npl != null &&
+            w.basename(n).toLowerCase() == 'temp' &&
+            w.isWithin(npl, n)) {
+          return (dir: temp, base: profLocal);
+        }
+      }
+    }
+  }
+  if (local != null && localTemp != null) return (dir: localTemp, base: local);
+  return null;
+}
+
+/// SteamPath из реестра: только абсолютный `X:\…`, не UNC, существующая папка
+/// с steam.exe, проходит защиту целей. Иначе null.
+String? validSteamPath(
+  String? raw,
+  List<String> protectedPaths, {
+  bool Function(String dir)? dirExists,
+  bool Function(String file)? fileExists,
+}) {
+  if (raw == null) return null;
+  final v = raw.trim().replaceAll('/', r'\');
+  if (!RegExp(r'^[A-Za-z]:\\').hasMatch(v)) return null;
+  if (!isSafeCleanTarget(v, protectedPaths: protectedPaths, minSegments: 2)) return null;
+  final n = normalizeWinPath(v);
+  if (n == null) return null;
+  final dExists = dirExists ?? _exists;
+  final fExists = fileExists ?? (f) => File(f).existsSync();
+  try {
+    if (!dExists(n) || !fExists(_join(n, 'steam.exe'))) return null;
+  } catch (_) {
+    return null;
+  }
+  return n;
+}
+
+List<CleanTarget> _chromium(String userData, CleanTarget Function(String dir) mk) {
   final res = <CleanTarget>[];
   final profiles = _subdirs(
     userData,
@@ -49,7 +148,7 @@ List<CleanTarget> _chromium(String userData) {
   );
   for (final prof in profiles) {
     for (final c in const ['Cache', 'Code Cache', 'GPUCache']) {
-      res.add(CleanTarget(_join(prof, c)));
+      res.add(mk(_join(prof, c)));
     }
   }
   return res;
@@ -58,52 +157,72 @@ List<CleanTarget> _chromium(String userData) {
 /// Собирает список категорий по существующим папкам.
 /// Основные 5 категорий есть всегда; «Программы» — только если папка найдена.
 List<Category> buildCatalog(Env env, {String? steamPath}) {
-  final local = env['LOCALAPPDATA'];
-  final roaming = env['APPDATA'];
-  final temp = env['TEMP'];
-  final sysRoot = env['SystemRoot'] ?? env['WINDIR'];
+  final prot = protectedPathsOf(env);
+  String? safeBase(String? b) =>
+      b != null && isSafeCleanTarget(b, protectedPaths: prot, minSegments: 3) ? b : null;
+  final local = safeBase(env['LOCALAPPDATA']);
+  final roaming = safeBase(env['APPDATA']);
+  final sysRootRaw = env['SystemRoot'] ?? env['WINDIR'];
+  final sysRoot = sysRootRaw != null &&
+          isSafeCleanTarget(sysRootRaw, protectedPaths: const [], minSegments: 2) &&
+          _exists(_join(sysRootRaw, 'System32'))
+      ? sysRootRaw
+      : null;
+  final steam = validSteamPath(steamPath, prot);
 
+  CleanTarget mk(String dir, String? base, {int min = 4, RegExp? pattern}) => CleanTarget(
+        dir,
+        filePattern: pattern,
+        base: base,
+        minSegments: min,
+        protectedPaths: prot,
+      );
+
+  /// Оставляет существующие цели, прошедшие защиту.
   List<CleanTarget> only(Iterable<CleanTarget> all) =>
-      all.where((t) => _exists(t.dir)).toList();
+      all.where((t) => _exists(t.dir) && targetRejectReason(t) == null).toList();
 
+  final userTemp = resolveUserTemp(env);
   final tempT = <CleanTarget>[
-    if (temp != null) CleanTarget(temp),
-    if (sysRoot != null) CleanTarget(_join(sysRoot, 'Temp')),
+    if (userTemp != null) mk(userTemp.dir, userTemp.base),
+    // системный Temp — ровно эта папка (в ней 3 сегмента: диск, Windows, Temp)
+    if (sysRoot != null) mk(_join(sysRoot, 'Temp'), sysRoot, min: 3),
   ];
 
   final browsers = <CleanTarget>[];
   if (local != null) {
+    CleanTarget lm(String d) => mk(d, local);
     browsers
-      ..addAll(_chromium(_join(local, r'Google\Chrome\User Data')))
-      ..addAll(_chromium(_join(local, r'Microsoft\Edge\User Data')))
-      ..addAll(_chromium(_join(local, r'Yandex\YandexBrowser\User Data')));
+      ..addAll(_chromium(_join(local, r'Google\Chrome\User Data'), lm))
+      ..addAll(_chromium(_join(local, r'Microsoft\Edge\User Data'), lm))
+      ..addAll(_chromium(_join(local, r'Yandex\YandexBrowser\User Data'), lm));
     for (final prof in _subdirs(_join(local, r'Mozilla\Firefox\Profiles'), (_) => true)) {
-      browsers.add(CleanTarget(_join(prof, 'cache2')));
+      browsers.add(mk(_join(prof, 'cache2'), local));
     }
   }
 
   final thumbs = <CleanTarget>[
     if (local != null)
-      CleanTarget(
+      mk(
         _join(local, r'Microsoft\Windows\Explorer'),
-        filePattern: RegExp(r'^(thumbcache|iconcache)_.*\.db$', caseSensitive: false),
+        local,
+        pattern: RegExp(r'^(thumbcache|iconcache)_.*\.db$', caseSensitive: false),
       ),
   ];
 
   final logs = <CleanTarget>[
     if (local != null) ...[
-      CleanTarget(_join(local, 'CrashDumps')),
-      CleanTarget(_join(local, r'Microsoft\Windows\WER\ReportArchive')),
-      CleanTarget(_join(local, r'Microsoft\Windows\WER\ReportQueue')),
+      mk(_join(local, 'CrashDumps'), local),
+      mk(_join(local, r'Microsoft\Windows\WER\ReportArchive'), local),
+      mk(_join(local, r'Microsoft\Windows\WER\ReportQueue'), local),
     ],
     if (sysRoot != null)
-      CleanTarget(
+      mk(
         _join(sysRoot, r'Logs\CBS'),
-        filePattern: RegExp(r'\.log$', caseSensitive: false),
+        sysRoot,
+        pattern: RegExp(r'\.log$', caseSensitive: false),
       ),
   ];
-
-  final steam = steamPath ?? r'C:\Program Files (x86)\Steam';
 
   final cats = <Category>[
     Category(
@@ -146,8 +265,8 @@ List<Category> buildCatalog(Env env, {String? steamPath}) {
       isProgram: true,
       targets: only([
         if (roaming != null) ...[
-          CleanTarget(_join(roaming, r'Telegram Desktop\tdata\user_data\cache')),
-          CleanTarget(_join(roaming, r'Telegram Desktop\tdata\user_data\media_cache')),
+          mk(_join(roaming, r'Telegram Desktop\tdata\user_data\cache'), roaming),
+          mk(_join(roaming, r'Telegram Desktop\tdata\user_data\media_cache'), roaming),
         ],
       ]),
     ),
@@ -159,7 +278,7 @@ List<Category> buildCatalog(Env env, {String? steamPath}) {
       targets: only([
         if (roaming != null)
           for (final c in const ['Cache', 'Code Cache', 'GPUCache'])
-            CleanTarget(_join(roaming, 'discord\\$c')),
+            mk(_join(roaming, 'discord\\$c'), roaming),
       ]),
     ),
     Category(
@@ -168,8 +287,10 @@ List<Category> buildCatalog(Env env, {String? steamPath}) {
       hint: 'Кэш шейдеров и логи (нужны права на папку Steam)',
       isProgram: true,
       targets: only([
-        CleanTarget(_join(steam, r'steamapps\shadercache')),
-        CleanTarget(_join(steam, 'logs')),
+        if (steam != null) ...[
+          mk(_join(steam, r'steamapps\shadercache'), steam, min: 3),
+          mk(_join(steam, 'logs'), steam, min: 3),
+        ],
       ]),
     ),
     Category(
@@ -178,7 +299,7 @@ List<Category> buildCatalog(Env env, {String? steamPath}) {
       hint: 'Кэш Spotify',
       isProgram: true,
       targets: only([
-        if (local != null) CleanTarget(_join(local, r'Spotify\Data')),
+        if (local != null) mk(_join(local, r'Spotify\Data'), local),
       ]),
     ),
     Category(
@@ -189,7 +310,7 @@ List<Category> buildCatalog(Env env, {String? steamPath}) {
       targets: only([
         if (roaming != null)
           for (final c in const ['Cache', 'CachedData', 'Code Cache', 'GPUCache'])
-            CleanTarget(_join(roaming, 'Code\\$c')),
+            mk(_join(roaming, 'Code\\$c'), roaming),
       ]),
     ),
     Category(
@@ -199,11 +320,11 @@ List<Category> buildCatalog(Env env, {String? steamPath}) {
       isProgram: true,
       targets: only([
         if (local != null) ...[
-          CleanTarget(_join(local, r'NVIDIA\DXCache')),
-          CleanTarget(_join(local, r'NVIDIA\GLCache')),
-          CleanTarget(_join(local, r'AMD\DxCache')),
-          CleanTarget(_join(local, r'AMD\DxcCache')),
-          CleanTarget(_join(local, r'AMD\GLCache')),
+          mk(_join(local, r'NVIDIA\DXCache'), local),
+          mk(_join(local, r'NVIDIA\GLCache'), local),
+          mk(_join(local, r'AMD\DxCache'), local),
+          mk(_join(local, r'AMD\DxcCache'), local),
+          mk(_join(local, r'AMD\GLCache'), local),
         ],
       ]),
     ),

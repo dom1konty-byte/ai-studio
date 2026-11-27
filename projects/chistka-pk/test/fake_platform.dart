@@ -2,13 +2,25 @@ import 'package:chistka_pk/platform/platform_api.dart';
 
 class FakePlatform implements PlatformApi {
   final moved = <String>[];
+  int moveCalls = 0;
+  int diskCalls = 0;
   bool binEmptied = false;
+  bool throwOnSecondDisk = false;
   List<String> browsers = [];
 
+  /// Причины пропуска по путям (как у настоящей платформы).
+  final skipReasons = <String, String>{};
+
   @override
-  Future<bool> moveToRecycleBin(String path) async {
-    moved.add(path);
-    return true;
+  Future<Map<String, String?>> moveToRecycleBin(List<String> paths) async {
+    moveCalls++;
+    final res = <String, String?>{};
+    for (final p in paths) {
+      final r = skipReasons[p];
+      res[p] = r;
+      if (r == null) moved.add(p);
+    }
+    return res;
   }
 
   @override
@@ -21,8 +33,11 @@ class FakePlatform implements PlatformApi {
   }
 
   @override
-  Future<({int free, int total})?> diskSpace(String root) async =>
-      (free: 45 * 1024 * 1024 * 1024, total: 237 * 1024 * 1024 * 1024);
+  Future<({int free, int total})?> diskSpace(String root) async {
+    diskCalls++;
+    if (throwOnSecondDisk && diskCalls >= 2) throw StateError('disk');
+    return (free: 45 * 1024 * 1024 * 1024, total: 237 * 1024 * 1024 * 1024);
+  }
 
   @override
   Future<List<String>> runningBrowsers() async => browsers;

@@ -9,6 +9,9 @@ on:
     paths: ["projects/chistka-pk/**", ".github/workflows/chistka-pk.yml"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -39,7 +42,7 @@ jobs:
         shell: bash
         run: |
           if ! command -v iscc >/dev/null 2>&1 && [ ! -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ]; then
-            choco install innosetup -y --no-progress
+            choco install innosetup --version=6.4.3 -y --no-progress
           fi
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [ ! -f "$ISCC" ]; then ISCC="iscc"; fi
