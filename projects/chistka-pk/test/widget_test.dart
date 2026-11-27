@@ -1,6 +1,7 @@
 import 'package:chistka_pk/core/catalog.dart';
 import 'package:chistka_pk/state/app_controller.dart';
 import 'package:chistka_pk/ui/app.dart';
+import 'package:chistka_pk/ui/main_screen.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,7 +34,9 @@ void main() {
     expect(analyze.onPressed, isNotNull);
 
     final tile = find.widgetWithText(CheckboxListTile, 'Загрузки');
-    await tester.scrollUntilVisible(tile, 200);
+    // В окне две прокручиваемые области (панель и список): берём список.
+    await tester.scrollUntilVisible(tile, 200,
+        scrollable: find.descendant(of: find.byType(MainScreen), matching: find.byType(Scrollable)).first);
     final downloads = tester.widget<CheckboxListTile>(tile);
     expect(downloads.value, isFalse);
   });

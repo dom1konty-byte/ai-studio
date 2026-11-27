@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/format.dart';
@@ -229,10 +228,13 @@ class _NavPanelState extends State<NavPanel> {
         key: const Key('nav-edge'),
         behavior: HitTestBehavior.opaque,
         onHorizontalDragStart: (_) => setState(() => _edgeDrag = true),
-        onHorizontalDragUpdate: (d) => widget.onWidthChanged(clampNavWidth(widget.width + d.delta.dx)),
+        // Ширина берётся из контроллера, а не из widget.width: между событиями
+        // жеста кадр может не успеть перестроиться, и значение было бы устаревшим.
+        onHorizontalDragUpdate: (d) =>
+            widget.onWidthChanged(clampNavWidth(c.settings.navWidth + d.delta.dx)),
         onHorizontalDragEnd: (_) {
           setState(() => _edgeDrag = false);
-          widget.onWidthCommitted(widget.width);
+          widget.onWidthCommitted(c.settings.navWidth);
         },
         onDoubleTap: () {
           final w = widget.width > 150 ? 72.0 : defaultNavWidth;

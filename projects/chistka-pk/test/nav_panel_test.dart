@@ -88,6 +88,8 @@ void main() {
     await tester.drag(find.byKey(const Key('nav-edge')), const Offset(1000, 0));
     await tester.pump();
     expect(c.settings.navWidth, maxNavWidth);
+    // Распознаватель двойного нажатия держит таймер — дать ему истечь.
+    await tester.pump(const Duration(milliseconds: 500));
   });
 
   testWidgets('Пункт «Интернет» — заглушка «Скоро»', (tester) async {

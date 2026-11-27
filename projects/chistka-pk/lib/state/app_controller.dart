@@ -187,7 +187,8 @@ class AppController extends ChangeNotifier {
 
   Future<void> _init() async {
     totalFreedEver = await _stats?.load() ?? 0;
-    settings = await _settingsStore?.load() ?? const AppSettings();
+    final store = _settingsStore;
+    if (store != null) settings = await store.load();
     await _syncAutostart();
     disk = await platform.diskSpace(systemDrive);
     await _showCatalog();
