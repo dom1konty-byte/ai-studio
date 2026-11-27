@@ -41,7 +41,7 @@ class _ShellState extends State<Shell> {
       case Section.settings:
         return SettingsScreen(key: const ValueKey('settings'), controller: c);
       case Section.internet:
-        return const InternetScreen(key: ValueKey('internet'));
+        return InternetScreen(key: const ValueKey('internet'), controller: c);
     }
   }
 

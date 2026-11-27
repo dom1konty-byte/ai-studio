@@ -92,11 +92,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
   });
 
-  testWidgets('Пункт «Интернет» — заглушка «Скоро»', (tester) async {
+  testWidgets('Пункт «Интернет» открывает тест скорости', (tester) async {
     await _pump(tester, _controller());
     await tester.tap(_inNav(find.text('Интернет')));
     await tester.pumpAndSettle();
-    expect(find.text('Скоро'), findsOneWidget);
+    expect(find.text('Нажмите «Начать»'), findsOneWidget);
   });
 
   testWidgets('Плашка администратора скрыта по умолчанию', (tester) async {

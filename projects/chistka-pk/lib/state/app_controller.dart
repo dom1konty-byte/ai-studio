@@ -16,6 +16,7 @@ import '../core/format.dart';
 import '../core/programs.dart';
 import '../core/scanner.dart';
 import '../core/settings.dart';
+import '../core/speed.dart';
 import '../core/startup.dart';
 import '../core/stats.dart';
 import '../core/whitelist.dart';
@@ -79,6 +80,7 @@ class AppController extends ChangeNotifier {
     LargeScan? largeScan,
     FolderSizer? folderSizer,
     String? dataDir,
+    SpeedNetwork? speedNetwork,
     DirLister? listDir,
     SizeOf? sizeOf,
     this.leftoverGuard,
@@ -90,6 +92,7 @@ class AppController extends ChangeNotifier {
     this.uninstallPollInterval = const Duration(seconds: 3),
     this.uninstallTimeout = const Duration(minutes: 10),
   })  : env = env ?? Env.system(),
+        speedNetwork = speedNetwork ?? CloudflareSpeedNetwork(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _folderSizer = folderSizer ?? _defaultFolderSizer,
         _largeScan = largeScan ?? _defaultLargeScan,
@@ -110,6 +113,7 @@ class AppController extends ChangeNotifier {
     if (base != null) {
       logFile = File('$base${Platform.pathSeparator}log.txt');
       _stats = StatsStore(File('$base${Platform.pathSeparator}stats.json'));
+      speedStore = SpeedHistoryStore(File('$base${Platform.pathSeparator}speed.json'));
       _settingsStore = SettingsStore(File('$base${Platform.pathSeparator}settings.json'));
     }
     startupService = StartupService(platform, this.env, lister: startupLister);
@@ -156,6 +160,10 @@ class AppController extends ChangeNotifier {
   final String exePath;
   late final StartupService startupService;
   SettingsStore? _settingsStore;
+
+  /// Тест скорости: сеть и история (speed.json рядом с настройками).
+  final SpeedNetwork speedNetwork;
+  SpeedHistoryStore? speedStore;
   File? logFile;
   StatsStore? _stats;
 
