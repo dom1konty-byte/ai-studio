@@ -83,11 +83,10 @@ class AppController extends ChangeNotifier {
     this.leftoverGuard,
     FolderLister? startupLister,
     String? exePath,
-    bool Function(String path)? fileExists,
+    this.fileExists,
     this.uninstallPollInterval = const Duration(seconds: 3),
     this.uninstallTimeout = const Duration(minutes: 10),
-  })  : _fileExists = fileExists,
-        env = env ?? Env.system(),
+  })  : env = env ?? Env.system(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _folderSizer = folderSizer ?? _defaultFolderSizer,
         _largeScan = largeScan ?? _defaultLargeScan,
@@ -138,7 +137,8 @@ class AppController extends ChangeNotifier {
   final DirLister _listDir;
   final SizeOf _sizeOf;
   final PathGuard? leftoverGuard;
-  final bool Function(String path)? _fileExists;
+  /// Проверка существования файла программы удаления (в тестах подменяется).
+  final bool Function(String path)? fileExists;
 
   /// Как часто и как долго смотреть, исчезла ли запись удаляемой программы.
   final Duration uninstallPollInterval;
@@ -558,7 +558,7 @@ class AppController extends ChangeNotifier {
     recheckProgram = null;
     forceOffer = null;
     final cmd = parseUninstallString(prog.uninstallString,
-        env: env.vars, fileExists: _fileExists);
+        env: env.vars, fileExists: fileExists);
     if (cmd == null) {
       programMessage = 'Программа удаления не найдена. Можно выбрать «Принудительно удалить…».';
       forceOffer = prog;

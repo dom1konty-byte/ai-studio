@@ -389,7 +389,7 @@ void main() {
       expect(py.note, isNull);
     });
 
-    test('удаление Python 3.11 при установленном Python 3.12: Programs\Python не отмечена', () async {
+    test(r'удаление Python 3.11 при установленном Python 3.12: Programs\Python не отмечена', () async {
       final res = await findPy(others: [
         const OtherProgram('Python 3.12.1 (64-bit)', r'C:\Users\X\AppData\Local\Programs\Python\Python312'),
       ]);
