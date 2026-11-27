@@ -13,3 +13,4 @@
 - Выпуск v1.0.0: setup.exe (ChistoDisk-setup, 9,7 МБ) — https://github.com/dom1konty-byte/ai-studio/actions/runs/46039728923#artifacts. Ждёт «да».
 - Выпуск отложен: Дамир попросил добавить пп. 13–14 (мало места, карта диска).
 - пп. 13–14 готовы, 78 тестов, CI зелёный (27a6b20). Выпуск 1.0.0: https://github.com/dom1konty-byte/ai-studio/actions/runs/46044350284#artifacts. Ждёт «да».
+- 2026-11-27: Дамир одобрил выпуск 1.0.0, слияние в main.
