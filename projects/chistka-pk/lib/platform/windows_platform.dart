@@ -387,4 +387,84 @@ class WindowsPlatform implements PlatformApi {
       return false;
     }
   }
+
+  @override
+  Future<Map<String, String>> regStringValues(String key) async {
+    try {
+      return WinRegistry.instance.stringValues(key);
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  @override
+  Future<Uint8List?> regReadBinary(String key, String name) async {
+    try {
+      return WinRegistry.instance.readBinary(key, name);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> regWriteBinary(String key, String name, Uint8List data) async {
+    try {
+      return WinRegistry.instance.writeBinary(key, name, data);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> regWriteString(String key, String name, String value) async {
+    try {
+      return WinRegistry.instance.writeString(key, name, value);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> regDeleteValue(String key, String name) async {
+    try {
+      return WinRegistry.instance.deleteValue(key, name);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> regCanWrite(String key) async {
+    try {
+      return WinRegistry.instance.canWrite(key);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<void> notify(String title, String text) async {
+    // Всплывающая подсказка трея через PowerShell (без сторонних пакетов);
+    // тексты передаются через переменные окружения, не через командную строку.
+    const script = r'''
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+$n = New-Object System.Windows.Forms.NotifyIcon
+try { $n.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($env:CD_EXE) } catch { $n.Icon = [System.Drawing.SystemIcons]::Information }
+$n.Visible = $true
+$n.ShowBalloonTip(6000, $env:CD_TITLE, $env:CD_TEXT, [System.Windows.Forms.ToolTipIcon]::None)
+Start-Sleep -Seconds 7
+$n.Dispose()
+''';
+    try {
+      await Process.start(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
+        environment: {
+          'CD_TITLE': title,
+          'CD_TEXT': text,
+          'CD_EXE': Platform.resolvedExecutable,
+        },
+      );
+    } catch (_) {}
+  }
 }

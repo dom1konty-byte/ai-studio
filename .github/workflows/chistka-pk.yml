@@ -31,6 +31,11 @@ jobs:
           if [ ! -d windows ]; then
             flutter create --platforms=windows --org com.aistudio --project-name chistka_pk .
           fi
+      - name: Окно не показывать само (для запуска в трее)
+        shell: bash
+        run: |
+          # Показ окна делает window_manager (show/hide), а не шаблон runner.
+          sed -i -E 's#^([[:space:]]*)this->Show\(\);#\1// this->Show();#' windows/runner/flutter_window.cpp || true
       - name: Иконка программы
         shell: bash
         run: cp assets/icon/app_icon.ico windows/runner/resources/app_icon.ico

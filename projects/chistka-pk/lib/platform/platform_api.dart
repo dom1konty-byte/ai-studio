@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../core/programs.dart';
 
 /// Результат запуска программы удаления.
@@ -56,4 +58,29 @@ abstract class PlatformApi {
 
   /// `reg.exe delete <ключ> /f`. true — ключ удалён.
   Future<bool> deleteRegKey(String key);
+
+  // --- значения реестра (автозагрузка, автозапуск программы) ---
+
+  /// Все строковые значения ключа `HKCU\…`/`HKLM\…`: имя → данные.
+  Future<Map<String, String>> regStringValues(String key);
+
+  /// Двоичное значение (null — нет).
+  Future<Uint8List?> regReadBinary(String key, String name);
+
+  /// Записывает двоичное значение (ключ создаётся). false — не удалось (например, нет прав).
+  Future<bool> regWriteBinary(String key, String name, Uint8List data);
+
+  /// Записывает строковое значение REG_SZ. false — не удалось.
+  Future<bool> regWriteString(String key, String name, String value);
+
+  /// Удаляет ТОЛЬКО одно значение (ключ остаётся). true — значения больше нет.
+  Future<bool> regDeleteValue(String key, String name);
+
+  /// Можно ли писать в ключ (открытие с KEY_SET_VALUE).
+  Future<bool> regCanWrite(String key);
+
+  // --- трей / уведомления ---
+
+  /// Всплывающее уведомление Windows.
+  Future<void> notify(String title, String text);
 }

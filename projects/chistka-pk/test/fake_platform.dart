@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:chistka_pk/core/programs.dart';
 import 'package:chistka_pk/platform/platform_api.dart';
 
@@ -90,6 +92,52 @@ class FakePlatform implements PlatformApi {
     if (deleteOk) deleted.add(key);
     return deleteOk;
   }
+
+  // --- значения реестра: фейк по ключу (без учёта регистра) ---
+  final regStrings = <String, Map<String, String>>{};
+  final regBinaries = <String, Map<String, Uint8List>>{};
+  final writableKeys = <String>{};
+  bool allWritable = true;
+  final notifications = <String>[];
+
+  String _k(String key) => key.toLowerCase();
+
+  @override
+  Future<Map<String, String>> regStringValues(String key) async =>
+      Map.of(regStrings[_k(key)] ?? const {});
+
+  @override
+  Future<Uint8List?> regReadBinary(String key, String name) async =>
+      regBinaries[_k(key)]?[name];
+
+  @override
+  Future<bool> regWriteBinary(String key, String name, Uint8List data) async {
+    if (!await regCanWrite(key)) return false;
+    (regBinaries[_k(key)] ??= {})[name] = data;
+    return true;
+  }
+
+  @override
+  Future<bool> regWriteString(String key, String name, String value) async {
+    if (!await regCanWrite(key)) return false;
+    (regStrings[_k(key)] ??= {})[name] = value;
+    return true;
+  }
+
+  @override
+  Future<bool> regDeleteValue(String key, String name) async {
+    if (!await regCanWrite(key)) return false;
+    regStrings[_k(key)]?.remove(name);
+    regBinaries[_k(key)]?.remove(name);
+    return true;
+  }
+
+  @override
+  Future<bool> regCanWrite(String key) async =>
+      allWritable ? !key.toUpperCase().startsWith('HKLM') || writableKeys.contains(_k(key)) : false;
+
+  @override
+  Future<void> notify(String title, String text) async => notifications.add('$title|$text');
 
   /// Свободное место для виджет-тестов (по умолчанию 45 ГБ).
   int freeBytes = 45 * 1024 * 1024 * 1024;

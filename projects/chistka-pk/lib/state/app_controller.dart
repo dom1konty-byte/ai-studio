@@ -10,15 +10,19 @@ import '../core/disk_map.dart';
 import '../core/journal.dart';
 import '../core/leftovers.dart';
 import '../core/models.dart';
+import '../core/format.dart';
 import '../core/programs.dart';
 import '../core/scanner.dart';
+import '../core/settings.dart';
+import '../core/startup.dart';
 import '../core/stats.dart';
 import '../core/whitelist.dart';
 import '../platform/platform_api.dart';
+import 'startup_service.dart';
 
 enum Phase { idle, analyzing, ready, cleaning, done }
 
-enum Section { main, downloads, big, map, programs }
+enum Section { main, downloads, big, map, programs, startup, settings }
 
 /// Порог «Мало места»: свободно меньше 10 ГБ на системном диске.
 const lowSpaceBytes = 10 * 1024 * 1024 * 1024;
@@ -76,11 +80,14 @@ class AppController extends ChangeNotifier {
     DirLister? listDir,
     SizeOf? sizeOf,
     this.leftoverGuard,
+    FolderLister? startupLister,
+    String? exePath,
   })  : env = env ?? Env.system(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _folderSizer = folderSizer ?? _defaultFolderSizer,
         _largeScan = largeScan ?? _defaultLargeScan,
         _listDir = listDir ?? listDirReal,
+        exePath = exePath ?? Platform.resolvedExecutable,
         _sizeOf = sizeOf ?? _defaultSizeOf {
     systemDrive = systemDriveRoot(this.env);
     // Журнал и статистика: %LOCALAPPDATA%\ChistoDisk, иначе %APPDATA%\ChistoDisk.
@@ -96,7 +103,9 @@ class AppController extends ChangeNotifier {
     if (base != null) {
       logFile = File('$base${Platform.pathSeparator}log.txt');
       _stats = StatsStore(File('$base${Platform.pathSeparator}stats.json'));
+      _settingsStore = SettingsStore(File('$base${Platform.pathSeparator}settings.json'));
     }
+    startupService = StartupService(platform, this.env, lister: startupLister);
     final profile = this.env['USERPROFILE'];
     if (profile != null) {
       downloadsDir = '$profile\\Downloads';
@@ -124,6 +133,9 @@ class AppController extends ChangeNotifier {
   final DirLister _listDir;
   final SizeOf _sizeOf;
   final PathGuard? leftoverGuard;
+  final String exePath;
+  late final StartupService startupService;
+  SettingsStore? _settingsStore;
   File? logFile;
   StatsStore? _stats;
 
@@ -158,8 +170,15 @@ class AppController extends ChangeNotifier {
 
   bool get lowSpace => disk != null && disk!.free < lowSpaceBytes;
 
-  Future<void> init() async {
+  Future<void>? _initFuture;
+
+  /// Повторный вызов ничего не делает (init зовут и main, и экран).
+  Future<void> init() => _initFuture ??= _init();
+
+  Future<void> _init() async {
     totalFreedEver = await _stats?.load() ?? 0;
+    settings = await _settingsStore?.load() ?? const AppSettings();
+    await _syncAutostart();
     disk = await platform.diskSpace(systemDrive);
     await _showCatalog();
     notifyListeners();
@@ -333,6 +352,10 @@ class AppController extends ChangeNotifier {
     if (!canClean) return;
     final cats = rows.where((r) => r.selected && r.active).map((r) => r.category).toList();
     final files = downloads.where((f) => downloadsSelected.contains(f.path)).toList();
+    if (cats.isNotEmpty) {
+      // Запоминаем выбор для «Быстрой очистки» из трея.
+      await _saveSettings(settings.copyWith(quickCategories: [for (final c in cats) c.id.name]));
+    }
     await _runClean(categories: cats, files: files, skipBrowsers: skipBrowsers);
   }
 
@@ -678,5 +701,127 @@ class AppController extends ChangeNotifier {
       await Directory(bd).create(recursive: true);
     } catch (_) {}
     await platform.openFolder(bd);
+  }
+
+  // ---------- Настройки, автозапуск, быстрая очистка ----------
+
+  AppSettings settings = const AppSettings();
+
+  /// Значение «ChistoDisk» есть в HKCU\…\Run (истина — реестр, не файл настроек).
+  bool autostartOn = false;
+
+  Future<void> _saveSettings(AppSettings s) async {
+    settings = s;
+    await _settingsStore?.save(s);
+    notifyListeners();
+  }
+
+  Future<void> _syncAutostart() async {
+    final v = await platform.regStringValues(autostartRunKey);
+    autostartOn = v.containsKey(autostartValueName);
+    if (settings.autostart != autostartOn) {
+      settings = settings.copyWith(autostart: autostartOn);
+    }
+  }
+
+  /// Включает/выключает запуск с Windows: пишет или удаляет только своё значение Run.
+  Future<bool> setAutostart(bool on) async {
+    final ok = on
+        ? await platform.regWriteString(
+            autostartRunKey, autostartValueName, autostartCommand(exePath))
+        : await platform.regDeleteValue(autostartRunKey, autostartValueName);
+    if (ok) {
+      autostartOn = on;
+      await _saveSettings(settings.copyWith(autostart: on));
+    } else {
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  Future<void> setMinimizeToTray(bool on) => _saveSettings(settings.copyWith(minimizeToTray: on));
+
+  Future<void> markTrayHintShown() => _saveSettings(settings.copyWith(trayHintShown: true));
+
+  bool _quickBusy = false;
+
+  /// Быстрая очистка из трея: категории прошлого выбора, без Загрузок, Больших
+  /// файлов и кэша запущенных браузеров; тот же Cleaner. Итог — уведомление.
+  /// Возвращает текст итога (null — уже что-то делается).
+  Future<String?> quickClean() async {
+    if (_quickBusy || phase == Phase.analyzing || phase == Phase.cleaning) return null;
+    _quickBusy = true;
+    String msg;
+    try {
+      if (settings.quickCategories.isEmpty) {
+        msg = 'Сначала выполните обычную очистку: быстрая очистка повторяет ваш прошлый выбор.';
+      } else if (logFile == null) {
+        msg = 'Очистка не запущена: некуда писать журнал.';
+      } else {
+        final running = await platform.runningBrowsers();
+        final pick = pickQuickCategories(settings.quickCategories,
+            browserRunning: running.isNotEmpty);
+        final steam = await platform.steamPath();
+        final cats = buildCatalog(env, steamPath: steam)
+            .where((c) => pick.ids.contains(c.id))
+            .toList();
+        final sum = CleanSummary();
+        try {
+          final log = CleanLog(logFile!);
+          await log.note('Быстрая очистка начата');
+          await Cleaner(platform, log, systemDrive: systemDrive).run(
+            categories: cats,
+            filesToRecycle: const [],
+            userRoots: userRoots,
+            skipBrowsers: running.isNotEmpty,
+            into: sum,
+          );
+        } catch (_) {
+          // Уже сделанное сохранено в журнале.
+        } finally {
+          try {
+            totalFreedEver = await _stats?.add(sum.freedBytes) ?? totalFreedEver;
+          } catch (_) {}
+        }
+        try {
+          disk = await platform.diskSpace(systemDrive) ?? disk;
+        } catch (_) {}
+        msg = 'Освобождено ${formatSize(sum.freedBytes)}';
+        if (pick.skippedBrowsers) msg += '. Кэш браузера пропущен: браузер запущен.';
+      }
+    } finally {
+      _quickBusy = false;
+    }
+    await platform.notify('ЧистоДиск', msg);
+    notifyListeners();
+    return msg;
+  }
+
+  // ---------- Автозагрузка ----------
+
+  LoadState startupState = LoadState.idle;
+  List<StartupItem> startupItems = [];
+
+  Future<void> loadStartup() async {
+    startupState = LoadState.loading;
+    notifyListeners();
+    try {
+      startupItems = await startupService.load();
+      startupState = LoadState.loaded;
+    } catch (_) {
+      startupState = LoadState.error;
+    }
+    notifyListeners();
+  }
+
+  /// Переключает запись; при неудаче состояние в списке не меняется.
+  Future<bool> toggleStartup(StartupItem item, bool on) async {
+    final ok = await startupService.setEnabled(item, on);
+    if (ok) {
+      final i = startupItems.indexWhere((e) => e.source == item.source && e.path == item.path);
+      if (i >= 0) startupItems[i] = startupItems[i].copyWith(enabled: on);
+    }
+    notifyListeners();
+    return ok;
   }
 }

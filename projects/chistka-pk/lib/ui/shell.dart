@@ -7,6 +7,8 @@ import 'main_screen.dart';
 import 'programs_screen.dart';
 import 'map_screen.dart';
 import 'result_screen.dart';
+import 'settings_screen.dart';
+import 'startup_screen.dart';
 
 class Shell extends StatelessWidget {
   const Shell({super.key, required this.controller});
@@ -34,6 +36,10 @@ class Shell extends StatelessWidget {
               content = MapScreen(controller: c);
             case Section.programs:
               content = ProgramsScreen(controller: c);
+            case Section.startup:
+              content = StartupScreen(controller: c);
+            case Section.settings:
+              content = SettingsScreen(controller: c);
           }
         }
         return Scaffold(
@@ -43,7 +49,11 @@ class Shell extends StatelessWidget {
                 NavigationRail(
                   extended: true,
                   minExtendedWidth: 240,
-                  selectedIndex: c.phase == Phase.done ? 0 : c.section.index,
+                  selectedIndex: c.phase == Phase.done
+                      ? 0
+                      : c.section == Section.settings
+                          ? null
+                          : c.section.index,
                   onDestinationSelected: busy ? null : (i) => c.go(Section.values[i]),
                   leading: const Padding(
                     padding: EdgeInsets.fromLTRB(8, 16, 8, 16),
@@ -81,18 +91,28 @@ class Shell extends StatelessWidget {
                       selectedIcon: Icon(Icons.apps),
                       label: Text('Программы'),
                     ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.rocket_launch_outlined),
+                      selectedIcon: Icon(Icons.rocket_launch),
+                      label: Text('Автозагрузка'),
+                    ),
                   ],
                   trailing: Expanded(
                     child: Align(
                       alignment: Alignment.bottomCenter,
                       child: Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.only(bottom: 8),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               'За всё время: ${formatSize(c.totalFreedEver)}',
                               style: const TextStyle(fontSize: 12),
+                            ),
+                            TextButton.icon(
+                              onPressed: busy ? null : () => c.go(Section.settings),
+                              icon: const Icon(Icons.settings_outlined),
+                              label: const Text('Настройки'),
                             ),
                             TextButton.icon(
                               onPressed: c.openLog,

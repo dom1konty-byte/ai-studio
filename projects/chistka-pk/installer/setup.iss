@@ -15,6 +15,9 @@ OutputDir=output
 OutputBaseFilename=ChistoDisk-setup
 SetupIconFile=..\assets\icon\app_icon.ico
 UninstallDisplayIcon={app}\chistka_pk.exe
+; Закрыть запущенную программу (в трее) при установке/удалении
+AppMutex=ChistoDiskSingleInstance
+CloseApplications=yes
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -33,5 +36,20 @@ Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignore
 Name: "{userprograms}\ЧистоДиск"; Filename: "{app}\chistka_pk.exe"
 Name: "{userdesktop}\ЧистоДиск"; Filename: "{app}\chistka_pk.exe"; Tasks: desktopicon
 
+[Registry]
+; Автозапуск программы: при удалении убираем только своё значение
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "ChistoDisk"; Flags: dontcreatekey uninsdeletevalue
+
+[UninstallRun]
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM chistka_pk.exe"; Flags: runhidden; RunOnceId: "KillChistoDisk"
+
 [Run]
 Filename: "{app}\chistka_pk.exe"; Description: "Запустить ЧистоДиск"; Flags: nowait postinstall skipifsilent
+
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  // Только своё значение автозапуска; остальное в Run не трогаем.
+  if CurUninstallStep = usUninstall then
+    RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'ChistoDisk');
+end;

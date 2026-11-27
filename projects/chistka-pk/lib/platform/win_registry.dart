@@ -19,6 +19,18 @@ typedef _QueryD = int Function(
     int, Pointer<Utf16>, Pointer<Uint32>, Pointer<Uint32>, Pointer<Uint8>, Pointer<Uint32>);
 typedef _CloseN = Int32 Function(IntPtr);
 typedef _CloseD = int Function(int);
+typedef _EnumValN = Int32 Function(IntPtr, Uint32, Pointer<Utf16>, Pointer<Uint32>,
+    Pointer<Uint32>, Pointer<Uint32>, Pointer<Uint8>, Pointer<Uint32>);
+typedef _EnumValD = int Function(int, int, Pointer<Utf16>, Pointer<Uint32>, Pointer<Uint32>,
+    Pointer<Uint32>, Pointer<Uint8>, Pointer<Uint32>);
+typedef _CreateN = Int32 Function(IntPtr, Pointer<Utf16>, Uint32, Pointer<Utf16>, Uint32,
+    Uint32, Pointer<Void>, Pointer<IntPtr>, Pointer<Uint32>);
+typedef _CreateD = int Function(int, Pointer<Utf16>, int, Pointer<Utf16>, int, int,
+    Pointer<Void>, Pointer<IntPtr>, Pointer<Uint32>);
+typedef _SetValN = Int32 Function(IntPtr, Pointer<Utf16>, Uint32, Uint32, Pointer<Uint8>, Uint32);
+typedef _SetValD = int Function(int, Pointer<Utf16>, int, int, Pointer<Uint8>, int);
+typedef _DelValN = Int32 Function(IntPtr, Pointer<Utf16>);
+typedef _DelValD = int Function(int, Pointer<Utf16>);
 
 // HKEY — знаковые 32-битные значения, расширенные до размера указателя.
 const _hkcu = -2147483647; // 0x80000001
@@ -30,6 +42,10 @@ const _errorNoMoreItems = 259;
 const _regSz = 1;
 const _regExpandSz = 2;
 const _regDword = 4;
+const _regBinary = 3;
+const _keyWrite = 0x20006; // KEY_SET_VALUE | KEY_CREATE_SUB_KEY | READ_CONTROL
+const _keySetValue = 0x2;
+const _errorFileNotFound = 2;
 
 const uninstallSubPath = r'Software\Microsoft\Windows\CurrentVersion\Uninstall';
 
@@ -57,11 +73,16 @@ class WinRegistry {
   late final _QueryD _query = _adv.lookupFunction<_QueryN, _QueryD>('RegQueryValueExW');
   late final _CloseD _close = _adv.lookupFunction<_CloseN, _CloseD>('RegCloseKey');
 
-  int? _openKey(int hive, String sub, int wow) {
+  late final _EnumValD _enumVal = _adv.lookupFunction<_EnumValN, _EnumValD>('RegEnumValueW');
+  late final _CreateD _create = _adv.lookupFunction<_CreateN, _CreateD>('RegCreateKeyExW');
+  late final _SetValD _setVal = _adv.lookupFunction<_SetValN, _SetValD>('RegSetValueExW');
+  late final _DelValD _delVal = _adv.lookupFunction<_DelValN, _DelValD>('RegDeleteValueW');
+
+  int? _openKey(int hive, String sub, int wow, [int access = _keyRead]) {
     final s = sub.toNativeUtf16();
     final out = calloc<IntPtr>();
     try {
-      final rc = _open(hive, s, 0, _keyRead | wow, out);
+      final rc = _open(hive, s, 0, access | wow, out);
       return rc == 0 ? out.value : null;
     } finally {
       calloc.free(s);
@@ -161,6 +182,140 @@ class WinRegistry {
       }
     } finally {
       _close(root);
+    }
+  }
+
+  // ---------- значения (автозагрузка, настройки) ----------
+
+  /// Все строковые значения ключа: имя → данные (пусто, если ключа нет).
+  Map<String, String> stringValues(String key) {
+    final k = parseKey(key);
+    if (k == null) return const {};
+    final h = _openKey(k.hive, k.sub, 0);
+    if (h == null) return const {};
+    final res = <String, String>{};
+    const cap = 16384;
+    final buf = calloc<Uint16>(cap).cast<Utf16>();
+    final len = calloc<Uint32>();
+    try {
+      for (var i = 0;; i++) {
+        len.value = cap;
+        final rc = _enumVal(h, i, buf, len, nullptr, nullptr, nullptr, nullptr);
+        if (rc == _errorNoMoreItems) break;
+        if (rc != 0) continue;
+        final name = buf.toDartString(length: len.value);
+        final v = _value(h, name);
+        if (v != null) res[name] = v;
+      }
+    } finally {
+      calloc.free(buf);
+      calloc.free(len);
+      _close(h);
+    }
+    return res;
+  }
+
+  /// Двоичное значение (null — нет значения или другой тип).
+  Uint8List? readBinary(String key, String name) {
+    final k = parseKey(key);
+    if (k == null) return null;
+    final h = _openKey(k.hive, k.sub, 0);
+    if (h == null) return null;
+    final n = name.toNativeUtf16();
+    final type = calloc<Uint32>();
+    final size = calloc<Uint32>();
+    try {
+      if (_query(h, n, nullptr, type, nullptr, size) != 0) return null;
+      final bytes = size.value;
+      final buf = calloc<Uint8>(bytes + 1);
+      try {
+        size.value = bytes;
+        if (_query(h, n, nullptr, type, buf, size) != 0 || type.value != _regBinary) return null;
+        return Uint8List.fromList(buf.asTypedList(size.value));
+      } finally {
+        calloc.free(buf);
+      }
+    } finally {
+      calloc.free(n);
+      calloc.free(type);
+      calloc.free(size);
+      _close(h);
+    }
+  }
+
+  bool _write(String key, String name, int type, Uint8List data) {
+    final k = parseKey(key);
+    if (k == null) return false;
+    final sub = k.sub.toNativeUtf16();
+    final out = calloc<IntPtr>();
+    try {
+      if (_create(k.hive, sub, 0, nullptr, 0, _keyWrite, nullptr, out, nullptr) != 0) {
+        return false;
+      }
+      final h = out.value;
+      final n = name.toNativeUtf16();
+      final buf = calloc<Uint8>(data.length + 1);
+      try {
+        buf.asTypedList(data.length).setAll(0, data);
+        return _setVal(h, n, 0, type, buf, data.length) == 0;
+      } finally {
+        calloc.free(n);
+        calloc.free(buf);
+        _close(h);
+      }
+    } finally {
+      calloc.free(sub);
+      calloc.free(out);
+    }
+  }
+
+  bool writeBinary(String key, String name, Uint8List data) =>
+      _write(key, name, _regBinary, data);
+
+  /// REG_SZ (с завершающим нулём).
+  bool writeString(String key, String name, String value) {
+    final units = Uint16List(value.length + 1)..setAll(0, value.codeUnits);
+    return _write(key, name, _regSz, units.buffer.asUint8List());
+  }
+
+  /// Удаляет ТОЛЬКО значение [name]; ключ не трогает. true — значения теперь нет.
+  bool deleteValue(String key, String name) {
+    final k = parseKey(key);
+    if (k == null) return false;
+    final h = _openKey(k.hive, k.sub, 0, _keySetValue);
+    if (h == null) return false;
+    final n = name.toNativeUtf16();
+    try {
+      final rc = _delVal(h, n);
+      return rc == 0 || rc == _errorFileNotFound;
+    } finally {
+      calloc.free(n);
+      _close(h);
+    }
+  }
+
+  /// Можно ли писать значения в ключ: пробуем открыть с KEY_SET_VALUE
+  /// (если ключа ещё нет — ближайший существующий родитель).
+  bool canWrite(String key) {
+    final k = parseKey(key);
+    if (k == null) return false;
+    var sub = k.sub;
+    while (true) {
+      final s = sub.toNativeUtf16();
+      final out = calloc<IntPtr>();
+      try {
+        final rc = _open(k.hive, s, 0, _keySetValue, out);
+        if (rc == 0) {
+          _close(out.value);
+          return true;
+        }
+        if (rc != _errorFileNotFound || sub.isEmpty) return false;
+      } finally {
+        calloc.free(s);
+        calloc.free(out);
+      }
+      final i = sub.lastIndexOf(r'\');
+      sub = i < 0 ? '' : sub.substring(0, i);
     }
   }
 
