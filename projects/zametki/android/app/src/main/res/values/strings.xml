@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_recent_desc">Последние заметки</string>
+    <string name="widget_pinned_desc">Закреплённая заметка</string>
+    <string name="widget_new_desc">Новая заметка</string>
+</resources>
