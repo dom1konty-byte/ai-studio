@@ -155,7 +155,7 @@ jobs:
     # Сборка для iPhone — только если в проекте есть папка ios/ (включить: flutter create --platforms=ios .).
     # Без подписи: на свой айфон ставится через AltStore / Sideloadly (навык flutter-ios-personal).
     # Mac в GitHub тратит бесплатные минуты в 10 раз быстрее — поэтому только на push, не на PR.
-    if: ${{ github.event_name != 'pull_request' && hashFiles('projects/zametki/ios/Runner.xcodeproj/project.pbxproj') != '' }}
+    if: ${{ github.event_name != 'pull_request' }}   # ios/ в проекте есть; hashFiles() в if задачи GitHub не принимает
     runs-on: macos-latest
     defaults:
       run:
