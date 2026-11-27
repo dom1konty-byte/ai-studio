@@ -44,7 +44,7 @@ jobs:
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [ ! -f "$ISCC" ]; then ISCC="iscc"; fi
           VERSION=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*([0-9.]+).*/\1/')
-          "$ISCC" "/DMyAppVersion=$VERSION" installer/setup.iss
+          MSYS_NO_PATHCONV=1 "$ISCC" "/DMyAppVersion=$VERSION" installer/setup.iss
       - uses: actions/upload-artifact@v7
         with:
           name: ChistoDisk-setup
