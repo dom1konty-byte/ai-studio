@@ -27,3 +27,33 @@ String filesWord(int n) {
   if (m10 >= 2 && m10 <= 4) return '$n файла';
   return '$n файлов';
 }
+
+/// «1 группа», «3 группы», «17 групп».
+String groupsWord(int n) {
+  final m100 = n % 100;
+  final m10 = n % 10;
+  if (m100 >= 11 && m100 <= 14) return '$n групп';
+  if (m10 == 1) return '$n группа';
+  if (m10 >= 2 && m10 <= 4) return '$n группы';
+  return '$n групп';
+}
+
+/// «1 пустая папка», «3 пустые папки», «17 пустых папок».
+String emptyDirsWord(int n) {
+  final m100 = n % 100;
+  final m10 = n % 10;
+  if (m100 >= 11 && m100 <= 14) return '$n пустых папок';
+  if (m10 == 1) return '$n пустая папка';
+  if (m10 >= 2 && m10 <= 4) return '$n пустые папки';
+  return '$n пустых папок';
+}
+
+/// «2 копии», «5 копий», «21 копия».
+String copiesWord(int n) {
+  final m100 = n % 100;
+  final m10 = n % 10;
+  if (m100 >= 11 && m100 <= 14) return '$n копий';
+  if (m10 == 1) return '$n копия';
+  if (m10 >= 2 && m10 <= 4) return '$n копии';
+  return '$n копий';
+}

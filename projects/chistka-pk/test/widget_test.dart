@@ -31,7 +31,7 @@ void main() {
     expect(c.phase, Phase.idle);
     expect(c.downloadsSelected, isEmpty);
     expect(c.downloadsState, LoadState.idle);
-    expect(find.text('Найти'), findsNWidgets(2)); // Загрузки и Большие файлы
+    expect(find.text('Найти'), findsNWidgets(4)); // Загрузки, Большие файлы, Дубликаты, Пустые папки
     expect(p.binEmptied, isFalse);
     expect(p.moved, isEmpty);
   });

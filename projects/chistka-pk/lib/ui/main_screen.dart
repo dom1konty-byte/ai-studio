@@ -150,20 +150,8 @@ class _MainScreenState extends State<MainScreen> {
           TileGrid(children: [
             _FilesTile(c: c, downloads: true),
             _FilesTile(c: c, downloads: false),
-            const PultTile(
-              icon: Icons.file_copy_outlined,
-              color: Color(0xFF7B5EA7),
-              title: 'Дубликаты',
-              caption: 'Одинаковые файлы',
-              kind: TileKind.soon,
-            ),
-            const PultTile(
-              icon: Icons.folder_off_outlined,
-              color: Color(0xFF566B6B),
-              title: 'Пустые папки',
-              caption: 'Папки без файлов',
-              kind: TileKind.soon,
-            ),
+            _DupTile(c: c),
+            _EmptyDirsTile(c: c),
             PultTile(
               icon: Icons.pie_chart_outline,
               color: const Color(0xFF3D5A80),
@@ -487,6 +475,146 @@ class _FilesTile extends StatelessWidget {
           actionLabel: 'Выбрать',
           onAction: files.isEmpty || busyApp ? null : () => c.openLayer(layer),
           onAgain: find,
+        );
+    }
+  }
+}
+
+/// Плитка «Дубликаты»: «Найти» → прогресс + «Стоп» → «Найдено N групп, X лишнего» + «Выбрать».
+class _DupTile extends StatelessWidget {
+  const _DupTile({required this.c});
+  final AppController c;
+
+  @override
+  Widget build(BuildContext context) {
+    const icon = Icons.file_copy_outlined;
+    const color = Color(0xFF7B5EA7);
+    const title = 'Дубликаты';
+    const caption = 'Одинаковые файлы';
+    final busyApp = c.phase == Phase.analyzing || c.phase == Phase.cleaning;
+    final recycled = c.dupRecycled;
+    if (recycled != null) {
+      return PultTile(
+        icon: icon,
+        color: color,
+        title: title,
+        caption: caption,
+        kind: TileKind.result,
+        resultText: 'В Корзину ${formatSize(recycled)}',
+        onAgain: c.loadDuplicates,
+      );
+    }
+    switch (c.dupState) {
+      case LoadState.idle:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          actionLabel: 'Найти',
+          onAction: busyApp ? null : c.loadDuplicates,
+        );
+      case LoadState.loading:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.busy,
+          progressText: c.dupProgress,
+          onStop: c.cancelDuplicates,
+        );
+      case LoadState.error:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.error,
+          onRetry: c.loadDuplicates,
+        );
+      case LoadState.loaded:
+        final n = c.dupGroups.length;
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.result,
+          resultText: n == 0 ? 'Пусто ✓' : 'Найдено ${groupsWord(n)}, ${formatSize(c.dupWasted)} лишнего',
+          actionLabel: 'Выбрать',
+          onAction: n == 0 || busyApp ? null : () => c.openLayer(Layer.dupes),
+          onAgain: c.loadDuplicates,
+        );
+    }
+  }
+}
+
+/// Плитка «Пустые папки»: «Найти» → «Найдено N пустых папок» + «Выбрать».
+class _EmptyDirsTile extends StatelessWidget {
+  const _EmptyDirsTile({required this.c});
+  final AppController c;
+
+  @override
+  Widget build(BuildContext context) {
+    const icon = Icons.folder_off_outlined;
+    const color = Color(0xFF566B6B);
+    const title = 'Пустые папки';
+    const caption = 'Папки без файлов';
+    final busyApp = c.phase == Phase.analyzing || c.phase == Phase.cleaning;
+    final recycled = c.emptyRecycled;
+    if (recycled != null) {
+      return PultTile(
+        icon: icon,
+        color: color,
+        title: title,
+        caption: caption,
+        kind: TileKind.result,
+        resultText: 'В Корзину ${emptyDirsWord(recycled)}',
+        onAgain: c.loadEmptyDirs,
+      );
+    }
+    switch (c.emptyState) {
+      case LoadState.idle:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          actionLabel: 'Найти',
+          onAction: busyApp ? null : c.loadEmptyDirs,
+        );
+      case LoadState.loading:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.busy,
+          progressText: 'Ищу…',
+          onStop: c.cancelEmptyDirs,
+        );
+      case LoadState.error:
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.error,
+          onRetry: c.loadEmptyDirs,
+        );
+      case LoadState.loaded:
+        final n = c.emptyDirs.length;
+        return PultTile(
+          icon: icon,
+          color: color,
+          title: title,
+          caption: caption,
+          kind: TileKind.result,
+          resultText: n == 0 ? 'Пусто ✓' : 'Найдено ${emptyDirsWord(n)}',
+          actionLabel: 'Выбрать',
+          onAction: n == 0 || busyApp ? null : () => c.openLayer(Layer.emptyDirs),
+          onAgain: c.loadEmptyDirs,
         );
     }
   }

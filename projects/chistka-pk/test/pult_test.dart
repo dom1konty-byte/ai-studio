@@ -75,9 +75,9 @@ void main() {
     // Полоса быстрой очистки — 88 px.
     final strip = find.ancestor(of: find.text('Быстрая очистка'), matching: find.byType(Container)).first;
     expect(tester.getSize(strip).height, greaterThanOrEqualTo(88));
-    // Дубликаты и Пустые папки — заглушки.
-    expect(find.text('Скоро'), findsNWidgets(2));
-    expect(find.widgetWithText(FilledButton, 'Скоро'), findsNWidgets(2));
+    // Дубликаты и Пустые папки — рабочие плитки (кнопка «Найти»).
+    expect(find.text('Скоро'), findsNothing);
+    expect(find.text('Найти'), findsNWidgets(4));
   });
 
   testWidgets('Две колонки при узком содержимом', (tester) async {
@@ -160,7 +160,7 @@ void main() {
     final now = DateTime.now();
     final c = _make(tmp: tmp, downloads: (_) => gate.future);
     await _pump(tester, c);
-    expect(find.text('Найти'), findsNWidgets(2));
+    expect(find.text('Найти'), findsNWidgets(4));
     await tester.tap(find.text('Найти').first);
     await tester.pump();
     expect(find.text('Ищу…'), findsOneWidget);
@@ -302,7 +302,7 @@ void main() {
           FileInfo('C:/v/b.mkv', 1024 * 1024 * 1024, DateTime(2024)),
         ]);
     await _pump(tester, c);
-    await tester.tap(find.text('Найти').last);
+    await tester.tap(find.text('Найти').at(1));
     await tester.pumpAndSettle();
     expect(find.textContaining('Найдено 2, 3'), findsOneWidget);
     await tester.tap(find.text('Выбрать'));

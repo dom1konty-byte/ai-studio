@@ -9,6 +9,8 @@ import 'package:path/path.dart' as p;
 import '../core/catalog.dart';
 import '../core/cleaner.dart';
 import '../core/disk_map.dart';
+import '../core/duplicates.dart';
+import '../core/empty_dirs.dart';
 import '../core/journal.dart';
 import '../core/leftovers.dart';
 import '../core/models.dart';
@@ -29,7 +31,7 @@ enum Phase { idle, analyzing, ready, cleaning, done }
 enum Section { main, computer, programs, startup, internet, settings }
 
 /// Экран поверх «Очистки» (кнопка «Назад» возвращает к плиткам).
-enum Layer { none, downloads, big, map }
+enum Layer { none, downloads, big, dupes, emptyDirs, map }
 
 /// Порог «Мало места»: свободно меньше 10 ГБ на системном диске.
 const lowSpaceBytes = 10 * 1024 * 1024 * 1024;
@@ -55,6 +57,11 @@ typedef FolderSizer = Future<FolderSize> Function(String path);
 
 Future<FolderSize> _defaultFolderSizer(String path) => Isolate.run(() => measureFolderSync(path));
 
+typedef EmptyDirsScan = Future<List<String>> Function(List<String> roots);
+
+Future<List<String>> _defaultEmptyDirsScan(List<String> roots) =>
+    Isolate.run(() => findEmptyDirsSync(roots));
+
 typedef LargeScan = Future<List<FileInfo>> Function(List<String> dirs, int n);
 
 Future<List<FileInfo>> _defaultDownloadsScan(String dir) =>
@@ -78,6 +85,8 @@ class AppController extends ChangeNotifier {
   AppController({
     required this.platform,
     Env? env,
+    DupScanner? dupScanner,
+    EmptyDirsScan? emptyDirsScan,
     DownloadsScan? downloadsScan,
     LargeScan? largeScan,
     FolderSizer? folderSizer,
@@ -96,6 +105,8 @@ class AppController extends ChangeNotifier {
   })  : env = env ?? Env.system(),
         speedNetwork = speedNetwork ?? CloudflareSpeedNetwork(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
+        _dupScanner = dupScanner ?? startDupScan,
+        _emptyDirsScan = emptyDirsScan ?? _defaultEmptyDirsScan,
         _folderSizer = folderSizer ?? _defaultFolderSizer,
         _largeScan = largeScan ?? _defaultLargeScan,
         _listDir = listDir ?? listDirReal,
@@ -126,6 +137,8 @@ class AppController extends ChangeNotifier {
         downloadsDir!,
         '$profile\\Documents',
         '$profile\\Desktop',
+        '$profile\\Pictures',
+        '$profile\\Videos',
         if (this.env['OneDrive'] != null) ...[
           '${this.env['OneDrive']}\\Documents',
           '${this.env['OneDrive']}\\Desktop',
@@ -141,6 +154,8 @@ class AppController extends ChangeNotifier {
   final PlatformApi platform;
   final Env env;
   final DownloadsScan _downloadsScan;
+  final DupScanner _dupScanner;
+  final EmptyDirsScan _emptyDirsScan;
   final LargeScan _largeScan;
   final FolderSizer _folderSizer;
   final DirLister _listDir;
@@ -314,6 +329,13 @@ class AppController extends ChangeNotifier {
     big = [];
     bigSelected.clear();
     bigState = LoadState.idle;
+    _dupToken++;
+    _dupJob?.cancel();
+    _dupJob = null;
+    dupGroups = [];
+    dupSelected.clear();
+    dupRecycled = null;
+    dupState = LoadState.idle;
     progressText = '';
     notifyListeners();
   }
@@ -432,6 +454,170 @@ class AppController extends ChangeNotifier {
       downloadsState = LoadState.idle;
       notifyListeners();
     }
+  }
+
+  // ---------- Дубликаты ----------
+
+  LoadState dupState = LoadState.idle;
+  String dupProgress = 'Ищу…';
+  List<DupGroup> dupGroups = [];
+  final Set<String> dupSelected = {};
+  int? dupRecycled;
+  int dupSkipped = 0;
+  int _dupToken = 0;
+  DupScanJob? _dupJob;
+
+  int get dupWasted => dupGroups.fold(0, (a, g) => a + g.wasted);
+
+  List<FileInfo> get dupSelectedFiles => [
+        for (final g in dupGroups)
+          for (final f in g.files)
+            if (dupSelected.contains(f.path)) f
+      ];
+  int get dupSelectedBytes => dupSelectedFiles.fold(0, (a, f) => a + f.size);
+
+  Future<void> loadDuplicates() async {
+    final roots = userRoots.where((d) => Directory(d).existsSync()).toList();
+    final token = ++_dupToken;
+    _dupJob?.cancel();
+    dupRecycled = null;
+    dupProgress = 'Ищу…';
+    dupState = LoadState.loading;
+    notifyListeners();
+    try {
+      final job = _dupScanner(roots, (t) {
+        if (token != _dupToken) return;
+        dupProgress = t;
+        notifyListeners();
+      });
+      _dupJob = job;
+      final res = await job.result;
+      if (token != _dupToken) return;
+      dupGroups = res;
+      dupSelected
+        ..clear()
+        ..addAll(defaultDupSelection(res));
+      dupState = LoadState.loaded;
+    } catch (_) {
+      if (token != _dupToken) return;
+      dupState = LoadState.error;
+    }
+    _dupJob = null;
+    notifyListeners();
+  }
+
+  void cancelDuplicates() {
+    _dupToken++;
+    _dupJob?.cancel();
+    _dupJob = null;
+    dupState = LoadState.idle;
+    notifyListeners();
+  }
+
+  /// false — это последняя неотмеченная копия группы (одна копия остаётся всегда).
+  bool toggleDup(DupGroup g, String path, bool on) {
+    final ok = trySelectDup(g, dupSelected, path, on);
+    notifyListeners();
+    return ok;
+  }
+
+  /// Отмеченные копии — только в Корзину (после подтверждения в UI), с перепроверкой.
+  Future<void> recycleDuplicates() async {
+    final plan = planDupDelete(dupGroups, dupSelected);
+    dupSkipped = plan.skipped;
+    if (plan.files.isEmpty) {
+      notifyListeners();
+      return;
+    }
+    await _runClean(categories: const [], files: plan.files, skipBrowsers: false);
+    if (phase == Phase.done && !failedAll) {
+      dupRecycled = summary?.recycledBytes ?? 0;
+      dupGroups = [];
+      dupSelected.clear();
+      dupState = LoadState.idle;
+      notifyListeners();
+    }
+  }
+
+  // ---------- Пустые папки ----------
+
+  LoadState emptyState = LoadState.idle;
+  List<String> emptyDirs = [];
+  final Set<String> emptySelected = {};
+  int? emptyRecycled;
+  int emptySkipped = 0;
+  int _emptyToken = 0;
+  bool emptyBusy = false;
+
+  Future<void> loadEmptyDirs() async {
+    final roots = userRoots.where((d) => Directory(d).existsSync()).toList();
+    final token = ++_emptyToken;
+    emptyRecycled = null;
+    emptyState = LoadState.loading;
+    notifyListeners();
+    try {
+      final res = await _emptyDirsScan(roots);
+      if (token != _emptyToken) return;
+      emptyDirs = res;
+      final od = env['OneDrive'];
+      emptySelected
+        ..clear()
+        ..addAll(res.where((d) => !isInOneDrive(d, od)));
+      emptyState = LoadState.loaded;
+    } catch (_) {
+      if (token != _emptyToken) return;
+      emptyState = LoadState.error;
+    }
+    notifyListeners();
+  }
+
+  void cancelEmptyDirs() {
+    _emptyToken++;
+    emptyState = LoadState.idle;
+    notifyListeners();
+  }
+
+  void toggleEmptyDirPath(String path, bool on) {
+    toggleEmptyDir(emptyDirs, emptySelected, path, on);
+    notifyListeners();
+  }
+
+  void setAllEmptyDirs(bool on) {
+    emptySelected.clear();
+    if (on) emptySelected.addAll(emptyDirs);
+    notifyListeners();
+  }
+
+  /// Отмеченные пустые папки — только в Корзину (после подтверждения в UI).
+  Future<void> recycleEmptyDirs() async {
+    if (emptyBusy || emptySelected.isEmpty) return;
+    final lf = logFile;
+    if (lf == null) {
+      emptyState = LoadState.error;
+      notifyListeners();
+      return;
+    }
+    emptyBusy = true;
+    notifyListeners();
+    try {
+      final log = CleanLog(lf);
+      await log.note('Пустые папки: удаление');
+      final res = await EmptyDirCleaner(
+        platform: platform,
+        log: log,
+        userRoots: userRoots,
+        guard: leftoverGuard,
+      ).run(emptyDirs.where(emptySelected.contains).toList());
+      emptyRecycled = res.recycled;
+      emptySkipped = res.skipped;
+      emptyDirs = [];
+      emptySelected.clear();
+      emptyState = LoadState.idle;
+    } catch (_) {
+      emptyState = LoadState.error;
+    }
+    emptyBusy = false;
+    notifyListeners();
   }
 
   // ---------- Большие файлы ----------

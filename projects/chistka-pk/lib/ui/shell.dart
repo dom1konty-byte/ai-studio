@@ -4,6 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import '../state/app_controller.dart';
 import 'anim.dart';
 import 'computer_screen.dart';
+import 'empty_dirs_screen.dart';
+import 'dupes_screen.dart';
 import 'files_screen.dart';
 import 'internet_screen.dart';
 import 'nav_panel.dart';
@@ -78,6 +80,10 @@ class _ShellState extends State<Shell> {
         screen = FilesScreen(key: const ValueKey('downloads'), controller: c, isDownloads: true);
       case Layer.big:
         screen = FilesScreen(key: const ValueKey('big'), controller: c, isDownloads: false);
+      case Layer.dupes:
+        screen = DupesScreen(key: const ValueKey('dupes'), controller: c);
+      case Layer.emptyDirs:
+        screen = EmptyDirsScreen(key: const ValueKey('empty-dirs'), controller: c);
       case Layer.map:
         screen = MapScreen(key: const ValueKey('map'), controller: c);
       case Layer.none:
