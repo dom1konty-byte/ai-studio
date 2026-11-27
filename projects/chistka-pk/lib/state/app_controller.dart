@@ -9,6 +9,7 @@ import '../core/journal.dart';
 import '../core/models.dart';
 import '../core/scanner.dart';
 import '../core/stats.dart';
+import '../core/whitelist.dart';
 import '../platform/platform_api.dart';
 
 enum Phase { idle, analyzing, ready, cleaning, done }
@@ -70,7 +71,7 @@ class AppController extends ChangeNotifier {
     final profile = this.env['USERPROFILE'];
     if (profile != null) {
       downloadsDir = '$profile\\Downloads';
-      userRoots = [
+      final candidates = [
         downloadsDir!,
         '$profile\\Documents',
         '$profile\\Desktop',
@@ -78,6 +79,10 @@ class AppController extends ChangeNotifier {
           '${this.env['OneDrive']}\\Documents',
           '${this.env['OneDrive']}\\Desktop',
         ],
+      ];
+      userRoots = [
+        for (final r in candidates)
+          if (isSafeCleanTarget(r, minSegments: 3) && isInsideAllowedRoot(r, [profile])) r,
       ];
     }
   }

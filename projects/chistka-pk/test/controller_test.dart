@@ -48,4 +48,29 @@ void main() {
     expect(c.summary!.freedBytes, 1000);
     expect(c.totalFreedEver, 1000);
   });
+
+  test('userRoots: небезопасные и внешние корни (OneDrive) отбрасываются', () {
+    final c = make(
+      FakePlatform(),
+      const Env({
+        'USERPROFILE': r'C:\Users\X',
+        'OneDrive': r'\\server\share',
+      }),
+    );
+    expect(c.userRoots, [
+      r'C:\Users\X\Downloads',
+      r'C:\Users\X\Documents',
+      r'C:\Users\X\Desktop',
+    ]);
+    final d = make(
+      FakePlatform(),
+      const Env({'USERPROFILE': r'C:\Users\X', 'OneDrive': r'D:\Other'}),
+    );
+    expect(d.userRoots.any((r) => r.startsWith(r'D:')), isFalse);
+    final ok = make(
+      FakePlatform(),
+      const Env({'USERPROFILE': r'C:\Users\X', 'OneDrive': r'C:\Users\X\OneDrive'}),
+    );
+    expect(ok.userRoots, contains(r'C:\Users\X\OneDrive\Desktop'));
+  });
 }

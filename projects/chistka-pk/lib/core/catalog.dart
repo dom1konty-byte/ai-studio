@@ -83,37 +83,14 @@ String systemDriveRoot(Env env) {
   return r'C:\';
 }
 
-/// Папка Temp пользователя: TEMP принимается, только если это %LOCALAPPDATA%\Temp
-/// (или подпапка) либо папка с именем Temp внутри %USERPROFILE%\AppData\Local.
-/// Иначе — %LOCALAPPDATA%\Temp. Нет подходящего — null.
+/// Папка Temp пользователя: всегда %LOCALAPPDATA%\Temp (длинная форма пути).
+/// Переменная TEMP игнорируется: у пользователей с кириллическим именем она часто
+/// в коротком виде 8.3 (C:\Users\4D0A~1\...), который не совпал бы с реальным путём.
+/// Нет LOCALAPPDATA — null.
 ({String dir, String base})? resolveUserTemp(Env env) {
   final local = env['LOCALAPPDATA'];
-  final profile = env['USERPROFILE'];
-  final temp = env['TEMP'];
-  final localTemp = local == null ? null : _join(local, 'Temp');
-  final profLocal = profile == null ? null : _join(profile, r'AppData\Local');
-  if (temp != null) {
-    final n = normalizeWinPath(temp);
-    if (n != null) {
-      final w = p.windows;
-      if (local != null && localTemp != null) {
-        final nl = normalizeWinPath(localTemp);
-        if (nl != null && (w.equals(nl, n) || w.isWithin(nl, n))) {
-          return (dir: temp, base: local);
-        }
-      }
-      if (profLocal != null) {
-        final npl = normalizeWinPath(profLocal);
-        if (npl != null &&
-            w.basename(n).toLowerCase() == 'temp' &&
-            w.isWithin(npl, n)) {
-          return (dir: temp, base: profLocal);
-        }
-      }
-    }
-  }
-  if (local != null && localTemp != null) return (dir: localTemp, base: local);
-  return null;
+  if (local == null || normalizeWinPath(local) == null) return null;
+  return (dir: _join(local, 'Temp'), base: local);
 }
 
 /// SteamPath из реестра: только абсолютный `X:\…`, не UNC, существующая папка

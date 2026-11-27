@@ -16,15 +16,19 @@ void main() {
   const safe = r'C:\Users\X\AppData\Local\Temp';
 
   group('TEMP: принимается только безопасное', () {
-    test('TEMP = LOCALAPPDATA\\Temp и подпапка — принимается', () {
+    test('TEMP игнорируется: всегда LOCALAPPDATA\\Temp', () {
       expect(resolveUserTemp(env({'TEMP': safe}))!.dir, safe);
-      expect(resolveUserTemp(env({'TEMP': r'c:\users\x\appdata\local\temp'}))!.dir,
-          r'c:\users\x\appdata\local\temp');
-      expect(resolveUserTemp(env({'TEMP': '$safe\\sub'}))!.dir, '$safe\\sub');
+      expect(resolveUserTemp(env({'TEMP': '$safe\\sub'}))!.dir, safe);
+      expect(resolveUserTemp(env({'TEMP': r'C:\Users\X\AppData\Local\Foo\Temp'}))!.dir, safe);
     });
-    test('папка Temp внутри AppData\\Local профиля — принимается', () {
-      final e = env({'TEMP': r'C:\Users\X\AppData\Local\Foo\Temp'});
-      expect(resolveUserTemp(e)!.dir, r'C:\Users\X\AppData\Local\Foo\Temp');
+    test('TEMP в коротком виде 8.3 → используется LOCALAPPDATA\\Temp', () {
+      final e = env({
+        'LOCALAPPDATA': r'C:\Users\Дамир\AppData\Local',
+        'TEMP': r'C:\Users\4D0A~1\AppData\Local\Temp',
+      });
+      final r = resolveUserTemp(e)!;
+      expect(r.dir, r'C:\Users\Дамир\AppData\Local\Temp');
+      expect(r.base, r'C:\Users\Дамир\AppData\Local');
     });
     for (final bad in [
       r'C:\',
@@ -46,7 +50,7 @@ void main() {
     test('TEMP=%USERPROFILE% заменяется', () {
       expect(resolveUserTemp(env({'TEMP': r'C:\Users\X'}))!.dir, safe);
     });
-    test('нет LOCALAPPDATA и TEMP плохой — цели нет', () {
+    test('нет LOCALAPPDATA — цели нет', () {
       final e = Env({'USERPROFILE': r'C:\Users\X', 'TEMP': r'C:\Users\X'});
       expect(resolveUserTemp(e), isNull);
     });

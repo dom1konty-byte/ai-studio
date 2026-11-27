@@ -36,9 +36,14 @@ String? targetRejectReason(CleanTarget t) {
         }
       }
     }
-    final real = _stripExtended(Directory(n).resolveSymbolicLinksSync());
-    final nr = normalizeWinPath(real);
-    if (nr == null || !win.equals(nr, n)) return 'реальный путь не совпадает';
+    // Сравниваем с реальным путём base + относительный хвост: короткие имена 8.3
+    // в base не ломают проверку, а junction в хвосте даст расхождение.
+    final realBase = normalizeWinPath(_stripExtended(Directory(nb).resolveSymbolicLinksSync()));
+    final realTarget = normalizeWinPath(_stripExtended(Directory(n).resolveSymbolicLinksSync()));
+    if (realBase == null || realTarget == null) return 'реальный путь не совпадает';
+    final tail = win.equals(nb, n) ? '' : win.relative(n, from: nb);
+    final expected = tail.isEmpty ? realBase : win.join(realBase, tail);
+    if (!win.equals(realTarget, expected)) return 'реальный путь не совпадает';
   } catch (e) {
     return 'не удалось проверить путь';
   }
