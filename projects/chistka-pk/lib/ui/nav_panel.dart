@@ -242,7 +242,7 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
     final logo = InkWell(
       key: const Key('nav-logo'),
       borderRadius: BorderRadius.circular(16),
-      onTap: () => showAboutChisto(context),
+      onTap: () => showAboutChisto(context, c),
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Row(

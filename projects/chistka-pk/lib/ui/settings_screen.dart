@@ -46,6 +46,12 @@ class SettingsScreen extends StatelessWidget {
               value: c.settings.minimizeToTray,
               onChanged: c.setMinimizeToTray,
             ),
+            SwitchListTile(
+              key: const Key('auto-update-switch'),
+              title: const Text('Проверять обновления автоматически'),
+              value: c.settings.autoUpdate,
+              onChanged: c.setAutoUpdate,
+            ),
           ],
         );
       },

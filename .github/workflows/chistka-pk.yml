@@ -3,7 +3,7 @@ name: "chistka-pk"
 
 on:
   push:
-    branches: [chistka-pk]
+    branches: [chistka-pk, main]
     paths: ["projects/chistka-pk/**", ".github/workflows/chistka-pk.yml"]
   pull_request:
     paths: ["projects/chistka-pk/**", ".github/workflows/chistka-pk.yml"]
@@ -72,3 +72,33 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X POST repos/${{ github.repository }}/actions/workflows/studio-board.yml/dispatches -f ref=main || echo "табло ещё не в main"
+
+  release:
+    # только слияние в main: публикуем релиз с установщиком и sha256 (для обновления из программы)
+    needs: [windows]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: ChistoDisk-setup
+          path: dist
+      - name: Релиз на GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -E '^version:' projects/chistka-pk/pubspec.yaml | sed -E 's/version:[[:space:]]*([0-9.]+).*/\1/')
+          TAG="chistka-pk-v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Релиз $TAG уже есть — ничего не делаю"
+            exit 0
+          fi
+          cd dist
+          sha256sum ChistoDisk-setup.exe > ChistoDisk-setup.exe.sha256
+          gh release create "$TAG" ChistoDisk-setup.exe ChistoDisk-setup.exe.sha256 \
+            --title "ЧистоДиск $VERSION" \
+            --notes "Установщик ЧистоДиск $VERSION. Программа сама предложит обновиться." \
+            --target ${{ github.sha }}

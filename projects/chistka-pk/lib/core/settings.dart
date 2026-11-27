@@ -23,11 +23,19 @@ class AppSettings {
     this.trayHintShown = false,
     this.quickCategories = const [],
     this.navWidth = defaultNavWidth,
+    this.autoUpdate = true,
+    this.lastUpdateCheck,
   });
 
   final bool autostart;
   final bool minimizeToTray;
   final bool trayHintShown;
+
+  /// Проверять обновления при запуске (раз в сутки).
+  final bool autoUpdate;
+
+  /// Когда последний раз успешно проверяли обновления.
+  final DateTime? lastUpdateCheck;
 
   /// Ширина левой панели, px (64–360).
   final double navWidth;
@@ -41,6 +49,8 @@ class AppSettings {
     bool? trayHintShown,
     List<String>? quickCategories,
     double? navWidth,
+    bool? autoUpdate,
+    DateTime? lastUpdateCheck,
   }) =>
       AppSettings(
         autostart: autostart ?? this.autostart,
@@ -48,6 +58,8 @@ class AppSettings {
         trayHintShown: trayHintShown ?? this.trayHintShown,
         quickCategories: quickCategories ?? this.quickCategories,
         navWidth: clampNavWidth(navWidth ?? this.navWidth),
+        autoUpdate: autoUpdate ?? this.autoUpdate,
+        lastUpdateCheck: lastUpdateCheck ?? this.lastUpdateCheck,
       );
 
   Map<String, Object?> toJson() => {
@@ -56,6 +68,8 @@ class AppSettings {
         'trayHintShown': trayHintShown,
         'quickCategories': quickCategories,
         'navWidth': navWidth,
+        'autoUpdate': autoUpdate,
+        'lastUpdateCheck': lastUpdateCheck?.toIso8601String(),
       };
 
   static AppSettings fromJson(Object? m) {
@@ -68,6 +82,9 @@ class AppSettings {
       trayHintShown: b('trayHintShown', false),
       quickCategories: q is List ? q.whereType<String>().toList() : const [],
       navWidth: m['navWidth'] is num ? clampNavWidth((m['navWidth'] as num).toDouble()) : defaultNavWidth,
+      autoUpdate: b('autoUpdate', true),
+      lastUpdateCheck:
+          m['lastUpdateCheck'] is String ? DateTime.tryParse(m['lastUpdateCheck'] as String) : null,
     );
   }
 }

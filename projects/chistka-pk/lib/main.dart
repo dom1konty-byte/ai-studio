@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -53,6 +54,9 @@ Future<void> main(List<String> args) async {
       // Нет значка в трее — окно остаётся обычным.
       if (trayOnly) await windowManager.show();
     }
+    // Проверка обновлений: при запуске в трее — через минуту.
+    unawaited(controller.autoCheckUpdates(
+        delay: trayOnly ? const Duration(minutes: 1) : const Duration(seconds: 3)));
   }
   runApp(ChistoApp(controller: controller, splash: !trayOnly));
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart' show sha256;
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:path/path.dart' as p;
@@ -23,9 +24,11 @@ import '../core/settings.dart';
 import '../core/speed.dart';
 import '../core/startup.dart';
 import '../core/stats.dart';
+import '../core/update.dart';
 import '../core/whitelist.dart';
 import '../platform/platform_api.dart';
 import 'startup_service.dart';
+import 'update_network.dart';
 
 enum Phase { idle, analyzing, ready, cleaning, done }
 
@@ -101,10 +104,15 @@ class AppController extends ChangeNotifier {
     this.fileExists,
     this.dirExists,
     this.exitApp,
+    UpdateNetwork? updateNetwork,
+    this.launchInstaller,
+    DateTime Function()? clock,
     this.uninstallPollInterval = const Duration(seconds: 3),
     this.uninstallTimeout = const Duration(minutes: 10),
   })  : env = env ?? Env.system(),
         speedNetwork = speedNetwork ?? CloudflareSpeedNetwork(),
+        updateNetwork = updateNetwork ?? HttpUpdateNetwork(version: appVersion),
+        _clock = clock ?? DateTime.now,
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _dupScanner = dupScanner ?? startDupScan,
         _emptyDirsScan = emptyDirsScan ?? _defaultEmptyDirsScan,
@@ -125,6 +133,7 @@ class AppController extends ChangeNotifier {
                 ? '$roaming\\ChistoDisk'
                 : null);
     if (base != null) {
+      updateDir = '$base${Platform.pathSeparator}update';
       logFile = File('$base${Platform.pathSeparator}log.txt');
       _stats = StatsStore(File('$base${Platform.pathSeparator}stats.json'));
       speedStore = SpeedHistoryStore(File('$base${Platform.pathSeparator}speed.json'));
@@ -152,6 +161,17 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// Найденная новая версия (null — нет или ещё не проверяли).
+  UpdateInfo? availableUpdate;
+  bool updateBannerHidden = false;
+  bool updateChecking = false;
+  bool updateInstalling = false;
+
+  /// Доля скачанного 0..1; null — размер неизвестен или не качаем.
+  double? updateProgress;
+
+  bool get showUpdateBanner => availableUpdate != null && !updateBannerHidden;
+
   final PlatformApi platform;
   final Env env;
   final DownloadsScan _downloadsScan;
@@ -178,6 +198,14 @@ class AppController extends ChangeNotifier {
   final String exePath;
   late final StartupService startupService;
   SettingsStore? _settingsStore;
+  final UpdateNetwork updateNetwork;
+  final DateTime Function() _clock;
+
+  /// Запуск установщика (в тестах подменяется).
+  final Future<void> Function(String exe, List<String> args)? launchInstaller;
+
+  /// %LOCALAPPDATA%\ChistoDisk\update — сюда качается установщик.
+  String? updateDir;
 
   /// Тест скорости: сеть и история (speed.json рядом с настройками).
   final SpeedNetwork speedNetwork;
@@ -1383,4 +1411,88 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     return ok;
   }
+  Future<void> setAutoUpdate(bool on) => _saveSettings(settings.copyWith(autoUpdate: on));
+
+  /// Проверка при запуске: если включена, прошли сутки и (в трее) выдержана [delay].
+  /// Ошибки сети молча игнорируются.
+  Future<void> autoCheckUpdates({Duration delay = Duration.zero}) async {
+    await init();
+    if (!settings.autoUpdate || !isUpdateCheckDue(settings.lastUpdateCheck, _clock())) return;
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
+    await checkForUpdates();
+  }
+
+  /// Спрашивает сеть о новой версии. Успех (даже «новее нет») запоминается как проверка.
+  Future<UpdateCheck> checkForUpdates() async {
+    if (updateChecking) return UpdateCheck.error;
+    updateChecking = true;
+    notifyListeners();
+    try {
+      final info = await updateNetwork.fetchLatest();
+      await _saveSettings(settings.copyWith(lastUpdateCheck: _clock()));
+      if (info != null && isNewerVersion(info.version, appVersion)) {
+        if (availableUpdate?.version != info.version) updateBannerHidden = false;
+        availableUpdate = info;
+        return UpdateCheck.available;
+      }
+      availableUpdate = null;
+      return UpdateCheck.upToDate;
+    } catch (_) {
+      return UpdateCheck.error;
+    } finally {
+      updateChecking = false;
+      notifyListeners();
+    }
+  }
+
+  void hideUpdateBanner() {
+    updateBannerHidden = true;
+    notifyListeners();
+  }
+
+  /// Качает установщик, сверяет SHA-256, запускает тихую установку и выходит.
+  /// Возвращает текст ошибки или null (установщик запущен, программа закрывается).
+  Future<String?> installUpdate() async {
+    final info = availableUpdate;
+    final dir = updateDir;
+    if (info == null || dir == null) return 'Не удалось скачать обновление.';
+    if (updateInstalling) return null;
+    updateInstalling = true;
+    updateProgress = 0;
+    notifyListeners();
+    final file = File('$dir${Platform.pathSeparator}ChistoDisk-setup-${info.version}.exe');
+    try {
+      final expected = parseSha256(await updateNetwork.fetchText(info.checksumUrl));
+      if (expected == null) throw const FormatException('sha256');
+      await updateNetwork.download(info.installerUrl, file, (got, total) {
+        updateProgress = total > 0 ? (got / total).clamp(0.0, 1.0) : null;
+        notifyListeners();
+      });
+      final actual = (await sha256.bind(file.openRead()).first).toString();
+      if (actual != expected) {
+        try {
+          file.deleteSync();
+        } catch (_) {}
+        return 'Файл повреждён, попробуйте позже.';
+      }
+      const args = ['/SP-', '/SILENT', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'];
+      final launch = launchInstaller ??
+          ((exe, a) => Process.start(exe, a, mode: ProcessStartMode.detached).then((_) {}));
+      await launch(file.path, args);
+      final exitFn = exitApp ?? (() async => exit(0));
+      await exitFn();
+      return null;
+    } catch (_) {
+      try {
+        if (file.existsSync()) file.deleteSync();
+      } catch (_) {}
+      return 'Не удалось скачать обновление. Проверьте интернет и попробуйте позже.';
+    } finally {
+      updateInstalling = false;
+      updateProgress = null;
+      notifyListeners();
+    }
+  }
 }
+
+enum UpdateCheck { upToDate, available, error }

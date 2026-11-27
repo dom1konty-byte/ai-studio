@@ -42,7 +42,7 @@ Filename: "{sys}\taskkill.exe"; Parameters: "/IM chistka_pk.exe"; Flags: runhidd
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM chistka_pk.exe"; Flags: runhidden; RunOnceId: "KillChistoDisk"
 
 [Run]
-Filename: "{app}\chistka_pk.exe"; Description: "Запустить ЧистоДиск"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\chistka_pk.exe"; Description: "Запустить ЧистоДиск"; Flags: nowait postinstall
 
 [Code]
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

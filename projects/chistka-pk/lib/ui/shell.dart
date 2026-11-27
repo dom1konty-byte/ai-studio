@@ -18,6 +18,7 @@ import 'map_screen.dart';
 import 'result_screen.dart';
 import 'settings_screen.dart';
 import 'startup_screen.dart';
+import 'update_ui.dart';
 
 class Shell extends StatefulWidget {
   const Shell({super.key, required this.controller});
@@ -175,6 +176,10 @@ class _ShellState extends State<Shell> {
                   ),
                 ),
                 Expanded(
+                  child: Column(
+                    children: [
+                      UpdateBanner(controller: c),
+                      Expanded(
                   child: LayoutBuilder(
                     builder: (context, box) => Stack(
                       children: [
@@ -209,6 +214,9 @@ class _ShellState extends State<Shell> {
                         ),
                       ],
                     ),
+                  ),
+                      ),
+                    ],
                   ),
                 ),
               ],

@@ -1,22 +1,25 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/update.dart';
+import '../state/app_controller.dart';
 import 'anim.dart';
+import 'update_ui.dart';
 
-/// Версия программы (совпадает с version в pubspec.yaml; проверяется тестом).
-const appVersion = '1.3.0';
+export '../core/update.dart' show appVersion;
+
 const publisherName = 'Дамир';
 final ideaUrl = Uri.parse('https://t.me/dmrzhvm');
 
 /// Окно «О программе»: появляется с масштабом 0,92→1 и прозрачностью.
-Future<void> showAboutChisto(BuildContext context) {
+Future<void> showAboutChisto(BuildContext context, AppController controller) {
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Закрыть',
     barrierColor: Colors.black54,
     transitionDuration: animDuration(context, const Duration(milliseconds: 200)),
-    pageBuilder: (ctx, _, __) => const _AboutDialog(),
+    pageBuilder: (ctx, _, __) => _AboutDialog(controller),
     transitionBuilder: (ctx, anim, _, child) {
       final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
       return FadeTransition(
@@ -31,7 +34,8 @@ Future<void> showAboutChisto(BuildContext context) {
 }
 
 class _AboutDialog extends StatelessWidget {
-  const _AboutDialog();
+  const _AboutDialog(this.controller);
+  final AppController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +68,13 @@ class _AboutDialog extends StatelessWidget {
                     launchUrl(ideaUrl, mode: LaunchMode.externalApplication).catchError((_) => false),
                 icon: const Icon(Icons.send),
                 label: const Text('Предложить идею / связь'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const Key('check-updates'),
+                onPressed: () => checkUpdatesManually(context, controller),
+                icon: const Icon(Icons.system_update_alt),
+                label: const Text('Проверить обновления'),
               ),
               const SizedBox(height: 8),
               TextButton(
