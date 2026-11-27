@@ -75,14 +75,13 @@ class AppController extends ChangeNotifier {
     String? dataDir,
     DirLister? listDir,
     SizeOf? sizeOf,
-    PathGuard? leftoverGuard,
+    this.leftoverGuard,
   })  : env = env ?? Env.system(),
         _downloadsScan = downloadsScan ?? _defaultDownloadsScan,
         _folderSizer = folderSizer ?? _defaultFolderSizer,
         _largeScan = largeScan ?? _defaultLargeScan,
         _listDir = listDir ?? listDirReal,
-        _sizeOf = sizeOf ?? _defaultSizeOf,
-        _leftoverGuard = leftoverGuard {
+        _sizeOf = sizeOf ?? _defaultSizeOf {
     systemDrive = systemDriveRoot(this.env);
     // Журнал и статистика: %LOCALAPPDATA%\ChistoDisk, иначе %APPDATA%\ChistoDisk.
     // Во временную папку не пишем; если негде — очистка не запускается.
@@ -124,7 +123,7 @@ class AppController extends ChangeNotifier {
   final FolderSizer _folderSizer;
   final DirLister _listDir;
   final SizeOf _sizeOf;
-  final PathGuard? _leftoverGuard;
+  final PathGuard? leftoverGuard;
   File? logFile;
   StatsStore? _stats;
 
@@ -638,7 +637,7 @@ class AppController extends ChangeNotifier {
       log: log,
       env: env,
       backupDir: bd,
-      guard: _leftoverGuard,
+      guard: leftoverGuard,
     );
     final todo = leftovers.where(leftoverSelected.contains).toList();
     try {

@@ -18,7 +18,7 @@ const _env = Env({
 });
 
 FsEntry d(String n) => FsEntry(n, isDir: true);
-FsEntry f(String n) => FsEntry(n);
+FsEntry f(String n) => FsEntry(n, isDir: false);
 
 const _sm = r'C:\Users\X\AppData\Roaming\Microsoft\Windows\Start Menu\Programs';
 const _smAll = r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs';
