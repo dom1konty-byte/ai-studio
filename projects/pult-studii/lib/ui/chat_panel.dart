@@ -379,6 +379,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title,
+                      overflow: TextOverflow.ellipsis,
                       style: Rubka.body(
                           size: 14,
                           color: enabled ? Rubka.text : Rubka.disabledFg)),
@@ -788,11 +789,10 @@ class _ChatPanelState extends State<ChatPanel> {
               const SizedBox(height: 8),
               SelectableText(m.text, style: Rubka.mono()),
               const SizedBox(height: 8),
-              Row(children: [
+              Wrap(spacing: 8, runSpacing: 4, children: [
                 OutlinedButton(
                     onPressed: chat.canSend ? chat.retry : null,
                     child: const Text('Повторить')),
-                const SizedBox(width: 8),
                 TextButton(
                     onPressed: () =>
                         Clipboard.setData(ClipboardData(text: m.text)),
@@ -1114,7 +1114,9 @@ class _ApprovalCardState extends State<_ApprovalCard> {
           const SizedBox(height: 4),
           Text(widget.question, style: Rubka.body()),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
             children: [
               FilledButton(
                 key: const Key('approve-yes'),
@@ -1125,7 +1127,6 @@ class _ApprovalCardState extends State<_ApprovalCard> {
                 onPressed: widget.chat.sendYes,
                 child: const Text('Да'),
               ),
-              const SizedBox(width: 10),
               OutlinedButton(
                 key: const Key('approve-fix'),
                 style: OutlinedButton.styleFrom(
@@ -1164,13 +1165,14 @@ class _ApprovalCardState extends State<_ApprovalCard> {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: [
               FilledButton(
                 onPressed: () => widget.chat.sendFix(_text.text),
                 child: const Text('Отправить поправку'),
               ),
-              const SizedBox(width: 8),
               TextButton(
                 onPressed: () => setState(() => _editing = false),
                 child: const Text('Отмена'),
@@ -1214,8 +1216,12 @@ class _WorkingIndicatorState extends State<_WorkingIndicator>
           ),
         ),
         const SizedBox(width: 8),
-        Text('Директор работает…',
-            style: Rubka.body(size: 14, color: Rubka.working)),
+        Flexible(
+          child: Text('Директор работает…',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Rubka.body(size: 14, color: Rubka.working)),
+        ),
       ],
     );
   }
@@ -1319,8 +1325,13 @@ class _ActionsGroupState extends State<_ActionsGroup> {
                 children: [
                   const Icon(Icons.settings, size: 14, color: Rubka.mute),
                   const SizedBox(width: 6),
-                  Text('$n ${_plural(n, 'действие', 'действия', 'действий')}',
-                      style: Rubka.body(size: 13, color: Rubka.mute)),
+                  Flexible(
+                    child: Text(
+                        '$n ${_plural(n, 'действие', 'действия', 'действий')}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Rubka.body(size: 13, color: Rubka.mute)),
+                  ),
                 ],
               ),
             ),

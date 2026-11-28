@@ -288,7 +288,9 @@ class _ProjectRow extends StatelessWidget {
                         color: Rubka.send, shape: BoxShape.circle),
                   ),
                 ),
-              Tooltip(
+              Flexible(
+                flex: 2,
+                child: Tooltip(
                 message: 'Этап: ${p.stage}',
                 child: Container(
                   key: Key('tag-${p.slug}'),
@@ -297,11 +299,14 @@ class _ProjectRow extends StatelessWidget {
                   decoration: BoxDecoration(
                       color: tag.bg, borderRadius: BorderRadius.circular(10)),
                   child: Text(tag.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Rubka.body(
                           size: 11,
                           color: tag.fg,
                           weight: FontWeight.w600)),
                 ),
+              ),
               ),
             ],
           ),

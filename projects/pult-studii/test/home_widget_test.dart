@@ -51,10 +51,7 @@ Future<void> _settle(WidgetTester t) async {
 }
 
 Color? _tagColor(WidgetTester t, String slug) {
-  final box = t.widget<Container>(find
-      .descendant(
-          of: find.byKey(Key('tag-$slug')), matching: find.byType(Container))
-      .first);
+  final box = t.widget<Container>(find.byKey(Key('tag-$slug')));
   return (box.decoration as BoxDecoration?)?.color;
 }
 
