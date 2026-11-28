@@ -180,6 +180,8 @@ class UpdateService {
   }
 
   static Future<void> _removeDir(String dir) async {
+    // Удаляем только свою временную папку, никогда — общую temp.
+    if (!p.basename(dir).startsWith('ai-studio-update-')) return;
     try {
       final d = Directory(dir);
       if (await d.exists()) await d.delete(recursive: true);

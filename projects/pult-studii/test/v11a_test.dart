@@ -375,7 +375,8 @@ void main() {
         updateEvery: null,
         build: 5,
         updater: UpdateService(proc,
-            makeTempDir: () async => Directory.systemTemp.path),
+            makeTempDir: () async =>
+                Directory.systemTemp.createTempSync('ai-studio-update-').path),
         quitApp: () async => quit++,
       );
       addTearDown(app.dispose);
