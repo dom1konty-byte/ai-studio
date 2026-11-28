@@ -82,6 +82,17 @@ void main() {
     expect(shortcutFileName(r'A\B/C:D*E?F"G<H>I|J'), 'ABCDEFGHIJ');
     expect(shortcutFileName('  Foo.  '), 'Foo');
     expect(shortcutFileName('???'), 'Программа');
+    expect(shortcutFileName('con'), '_con');
+    expect(shortcutFileName('NUL.txt'), '_NUL.txt');
+    expect(shortcutFileName('COM1'), '_COM1');
+    expect(shortcutFileName('Console'), 'Console');
+  });
+
+  test('новые неудаляемые', () {
+    for (final n in ['Microsoft.Windows.Cortana', 'Microsoft.MicrosoftEdge.Stable', 'Windows.PrintDialog', 'Microsoft.ECApp']) {
+      expect(isLockedStoreApp(n), isTrue, reason: n);
+    }
+    expect(isLockedStoreApp('Microsoft.ZuneMusic'), isFalse);
   });
 
   test('аргументы ярлыка Store', () {

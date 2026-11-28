@@ -1224,6 +1224,7 @@ class AppController extends ChangeNotifier {
   /// Штатное удаление: запуск программы удаления, ожидание исчезновения записи
   /// (опрос реестра), затем «Остатки».
   Future<void> uninstall(Program prog) async {
+    if (prog.isStore) return;
     if (uninstallBusy) return;
     recheckProgram = null;
     forceOffer = null;
@@ -1346,7 +1347,10 @@ class AppController extends ChangeNotifier {
   }
 
   /// Принудительное удаление: программа удаления не запускается.
-  Future<void> forceRemove(Program prog) => startLeftovers(prog, forced: true);
+  Future<void> forceRemove(Program prog) async {
+    if (prog.isStore) return;
+    await startLeftovers(prog, forced: true);
+  }
 
   // ---------- остатки ----------
 

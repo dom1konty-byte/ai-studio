@@ -43,6 +43,27 @@ const lockedStoreNames = <String>[
   'MicrosoftWindows.Client.*',
   'Microsoft.Windows.Search',
   'Microsoft.LockApp',
+  'Microsoft.Windows.Cortana',
+  'Microsoft.Windows.PeopleExperienceHost',
+  'Microsoft.Win32WebViewHost',
+  'Microsoft.Windows.CapturePicker',
+  'Microsoft.Windows.OOBENetworkConnectionFlow',
+  'Microsoft.Windows.OOBENetworkCaptivePortal',
+  'Microsoft.XboxGameCallableUI',
+  'Microsoft.MicrosoftEdge*',
+  'Microsoft.Windows.ParentalControls',
+  'Microsoft.Windows.SecureAssessmentBrowser',
+  'Microsoft.Windows.NarratorQuickStart',
+  'Microsoft.Windows.XGpuEjectDialog',
+  'Microsoft.Windows.Apprep.ChxApp',
+  'Microsoft.Windows.AssignedAccessLockApp',
+  'Microsoft.BioEnrollment',
+  'Microsoft.CredDialogHost',
+  'Microsoft.ECApp',
+  'Microsoft.Windows.PinningConfirmationDialog',
+  'Windows.CBSPreview',
+  'Windows.PrintDialog',
+  'MicrosoftWindows.UndockedDevKit',
 ];
 
 /// Часть Windows: NonRemovable, подпись System или имя из списка.
@@ -146,7 +167,11 @@ String shortcutFileName(String name) {
   var s = name.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '').replaceAll(RegExp(r'\s+'), ' ');
   s = s.replaceAll(RegExp(r'^[\s.]+|[\s.]+$'), '');
   if (s.length > 120) s = s.substring(0, 120).trimRight();
-  return s.isEmpty ? 'Программа' : s;
+  if (s.isEmpty) return 'Программа';
+  if (RegExp(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$', caseSensitive: false).hasMatch(s)) {
+    s = '_$s';
+  }
+  return s;
 }
 
 final RegExp _idPart = RegExp(r'^[A-Za-z0-9._-]+$');
@@ -262,7 +287,11 @@ const shortcutScript = r'''
 $ErrorActionPreference='Stop'
 try{
   $d=[Environment]::GetFolderPath('Desktop')
-  $s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d ($env:CD_NAME+'.lnk')))
+  $f=Join-Path $d ($env:CD_NAME+'.lnk')
+  $i=2
+  while((Test-Path -LiteralPath $f) -and $i -le 20){ $f=Join-Path $d ($env:CD_NAME+' ('+$i+').lnk'); $i++ }
+  if(Test-Path -LiteralPath $f){ throw 'Ярлык уже существует' }
+  $s=(New-Object -ComObject WScript.Shell).CreateShortcut($f)
   $s.TargetPath=$env:CD_TARGET
   if($env:CD_ARGS){ $s.Arguments=$env:CD_ARGS }
   if($env:CD_ICON){ $s.IconLocation=$env:CD_ICON }
