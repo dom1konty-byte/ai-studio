@@ -628,7 +628,9 @@ class _SetupScreenState extends State<SetupScreen> {
         if (!_w.folderDone && _w.folderMessage.isNotEmpty)
           _statusLine(false, _w.folderMessage),
         const SizedBox(height: 12),
-        ExpansionTile(
+        Material(
+          type: MaterialType.transparency,
+          child: ExpansionTile(
           title: const Text('Указать папку вручную'),
           tilePadding: EdgeInsets.zero,
           childrenPadding: const EdgeInsets.only(bottom: 8),
@@ -663,6 +665,7 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
             ),
           ],
+        ),
         ),
       ],
     );
