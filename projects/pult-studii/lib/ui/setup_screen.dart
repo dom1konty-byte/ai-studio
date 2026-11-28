@@ -38,8 +38,10 @@ class _SetupScreenState extends State<SetupScreen> {
         builder: (context, _) => Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
-            child: ListView(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
+              child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text('Нужно поставить, чтобы Рубка работала',
                     style: Rubka.head(22)),
@@ -91,6 +93,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 ),
               ],
             ),
+            ),
           ),
         ),
       ),
@@ -115,13 +118,13 @@ class _ToolRow extends StatelessWidget {
               Icon(t.ok ? Icons.check_circle : Icons.cancel,
                   color: t.ok ? Rubka.success : Rubka.error),
               const SizedBox(width: 12),
-              Text(t.title, style: Rubka.head(16)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(t.ok ? t.detail : 'не готово: ${t.detail}',
-                    style: Rubka.body(size: 13, color: Rubka.text2)),
-              ),
+              Expanded(child: Text(t.title, style: Rubka.head(16))),
             ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 36, top: 2),
+            child: Text(t.ok ? t.detail : 'не готово: ${t.detail}',
+                style: Rubka.body(size: 13, color: Rubka.text2)),
           ),
           if (!t.ok && t.installCommand != null)
             Container(
