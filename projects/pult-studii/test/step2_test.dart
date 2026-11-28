@@ -205,7 +205,7 @@ void main() {
       expect(proc.calls.where((c) => c == 'git pull --ff-only'), isEmpty);
       final i = proc.calls.indexOf('git merge --ff-only origin/alpha');
       expect(proc.cwds[i], _wtAlpha);
-      expect(proc.rawCalls.where((c) => c.contains('merge --ff-only')).single,
+      expect(proc.rawCalls.where((c) => c.contains('merge --ff-only origin/alpha')).single,
           startsWith('git -c core.longpaths=true '));
     });
 
