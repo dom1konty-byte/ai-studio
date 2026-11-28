@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>ЧистоДиск 1.4 — «Стекло», цветные плитки, без обводок</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1440px;height:860px;overflow:hidden;position:relative;font-family:"Segoe UI",system-ui,sans-serif;color:#1B2B2B;font-size:14px;
+background:
+ radial-gradient(520px 420px at 12% 18%,#ff9f7a 0,transparent 70%),
+ radial-gradient(600px 460px at 62% 8%,#7aa7ff 0,transparent 70%),
+ radial-gradient(560px 460px at 90% 70%,#c58bff 0,transparent 70%),
+ radial-gradient(520px 400px at 30% 95%,#ffd36e 0,transparent 70%),
+ radial-gradient(420px 340px at 52% 55%,#6fe0c4 0,transparent 70%),#6d8fd6}
+.win{position:absolute;left:40px;top:40px;width:1000px;height:680px;display:flex;border-radius:16px;overflow:hidden;box-shadow:0 24px 64px rgba(20,40,70,.35);background:rgba(238,246,246,.72);backdrop-filter:blur(24px)}
+.side{width:240px;flex:none;display:flex;flex-direction:column;padding:16px 8px 8px;background:rgba(255,255,255,.38);backdrop-filter:blur(28px) saturate(1.4);box-shadow:inset -1px 0 0 rgba(255,255,255,.5)}
+.logo{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:24px;font-size:20px;font-weight:600;height:56px;margin-bottom:8px}
+.drop{width:32px;height:32px;background:#0F9D9A;border-radius:50%/62% 62% 38% 38%;display:grid;place-items:center;color:#fff;font-size:15px}
+.item{display:flex;align-items:center;gap:12px;height:48px;padding:0 16px;border-radius:24px;font-size:15px;margin-bottom:2px}
+.item.sel{background:rgba(255,255,255,.75);color:#0B3F3E;font-weight:600;box-shadow:0 2px 8px rgba(11,63,62,.1)}
+.item .i{width:20px;text-align:center;font-size:16px}
+.sp{flex:1}
+.stat{font-size:12px;color:#33484a;padding:0 16px 8px}
+.row{display:flex;gap:8px;padding:0 8px}
+.ib{width:48px;height:48px;border-radius:24px;display:grid;place-items:center;font-size:18px}
+.main{flex:1;padding:32px;display:flex;flex-direction:column;gap:24px;min-width:0}
+h1{font-size:36px;font-weight:600;line-height:1.1;letter-spacing:-.5px}
+.card{background:#fff;border-radius:24px;box-shadow:0 6px 20px rgba(20,60,70,.09)}
+.disk{padding:16px 24px}
+.disk .t{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.disk .t b{font-size:16px}.disk .t span{font-size:14px;color:#4a5f5f}.disk .t span strong{font-size:22px;color:#1B2B2B;font-weight:600}
+.bar{height:8px;border-radius:4px;background:#E1ECEC;overflow:hidden}
+.bar i{display:block;height:100%;width:62%;background:#0F9D9A;border-radius:4px}
+.quick{height:104px;flex:none;display:flex;align-items:center;gap:20px;padding:0 24px;background:linear-gradient(90deg,#E4F5F4,#CBEBE9)}
+.quick .dot{background:#0F9D9A;color:#fff;width:56px;height:56px;font-size:26px;border-radius:50%;display:grid;place-items:center;flex:none}
+.tx{flex:1;display:flex;flex-direction:column;gap:2px}
+.tx b{font-size:20px;font-weight:600;color:#0B3F3E}.tx span{font-size:14px;color:#2d4a4a}
+.tx strong{font-size:28px;font-weight:700;color:#0B3F3E;vertical-align:-3px}
+.quick a{color:#0B6E6C;font-weight:600;font-size:14px;padding:14px 8px}
+.btn{height:48px;border-radius:24px;border:0;font:600 14px "Segoe UI",system-ui;cursor:pointer;color:#fff;background:#0B7C7A;padding:0 32px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:168px;gap:24px;align-content:start}
+.tile{border-radius:24px;padding:16px 20px;display:flex;flex-direction:column;gap:2px;box-shadow:0 6px 20px rgba(20,60,70,.09)}
+.dot2{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:18px;color:#fff;margin-bottom:4px}
+.tile b{font-size:18px;font-weight:600}.tile .d{font-size:12px;color:#3d4f50}
+.tile .btn{margin-top:auto;background:rgba(255,255,255,.75);color:#1B2B2B;box-shadow:0 2px 6px rgba(20,40,60,.1)}
+.blue{background:#DCEBFA}.blue .dot2{background:#3B78C2}
+.sand{background:#F6E9CF}.sand .dot2{background:#A9740A}
+.lilac{background:#E8E0F6}.lilac .dot2{background:#7B5EA7}
+.peach{background:#FCE3D6}.peach .dot2{background:#C2552B}
+.mint{background:#D6F2E6}.mint .dot2{background:#1B8A5C}
+.prog{margin-top:auto}
+.prog .l{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:8px}
+.prog .l u{color:#1F4E87;font-weight:600;text-decoration:none;padding:8px 0 8px 12px}
+.prog .bar{background:rgba(255,255,255,.7)}.prog .bar i{width:42%;background:#3B78C2}
+.res{margin-top:auto;display:flex;align-items:center;gap:8px;font-weight:600;color:#1E5E24;font-size:14px}
+.res .ok{width:24px;height:24px;border-radius:50%;background:#2E7D32;color:#fff;display:grid;place-items:center;font-size:13px}
+.again{color:#7A4F00;font-weight:600;font-size:13px;margin:4px 0 0}
+.mini{position:absolute;right:16px;bottom:64px;width:360px;height:480px;border-radius:24px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:12px;background:rgba(255,255,255,.55);backdrop-filter:blur(28px) saturate(1.4);box-shadow:0 20px 56px rgba(20,40,70,.35),inset 0 0 0 1px rgba(255,255,255,.55)}
+.drop.sm{width:28px;height:28px;font-size:13px}
+.mini h2{font-size:20px;font-weight:600;align-self:flex-start;display:flex;gap:8px;align-items:center}
+.ring{position:relative;width:168px;height:168px}
+.ring svg{transform:rotate(-90deg)}
+.ring div{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring strong{font-size:36px;font-weight:600;line-height:1}.ring span{font-size:12px;color:#33484a;margin-top:4px}
+.mini .btn{width:100%}
+.speed{width:100%;border-radius:16px;background:rgba(255,255,255,.8);box-shadow:0 4px 12px rgba(20,60,70,.08);padding:8px 8px 8px 16px;display:flex;align-items:center;gap:8px}
+.speed .tx b{font-size:18px;color:#1B2B2B}.speed .tx span{font-size:12px;color:#4a5f5f}
+.speed .btn{width:auto;padding:0 20px;background:#CDEDEC;color:#0B3F3E}
+.link{color:#0B5F5D;font-weight:600;font-size:14px;padding:14px;margin-top:auto}
+.task{position:absolute;left:0;right:0;bottom:0;height:48px;background:rgba(20,30,50,.45);backdrop-filter:blur(20px);display:flex;align-items:center;justify-content:space-between;padding:0 16px;color:#fff;font-size:12px}
+.clock{text-align:right;line-height:1.3}
+</style></head><body>
+<div class="win">
+ <div class="side">
+  <div class="logo"><div class="drop">✓</div>ЧистоДиск</div>
+  <div class="item sel"><span class="i">🧹</span>Очистка</div>
+  <div class="item"><span class="i">🖥</span>Компьютер</div>
+  <div class="item"><span class="i">▦</span>Программы</div>
+  <div class="item"><span class="i">🚀</span>Автозагрузка</div>
+  <div class="item"><span class="i">📶</span>Интернет</div>
+  <div class="sp"></div>
+  <div class="stat">За всё время: 27,4 ГБ</div>
+  <div class="row"><div class="ib">⚙</div><div class="ib">🕘</div></div>
+ </div>
+ <div class="main">
+  <h1>Очистка</h1>
+  <div class="card disk">
+   <div class="t"><b>Диск C:</b><span>свободно <strong>182</strong> из 476 ГБ</span></div>
+   <div class="bar"><i></i></div>
+  </div>
+  <div class="card quick">
+   <div class="dot">🧹</div>
+   <div class="tx"><b>Быстрая очистка</b><span>Можно освободить <strong>3,1 ГБ</strong></span></div>
+   <a>Что чистить?</a>
+   <button type="button" class="btn">Очистить</button>
+  </div>
+  <div class="grid">
+   <div class="tile blue"><div class="dot2">⬇</div><b>Загрузки</b><div class="d">Старые файлы из папки «Загрузки»</div>
+    <div class="prog"><div class="l"><span>Ищу… 42 %</span><u>Стоп</u></div><div class="bar"><i></i></div></div></div>
+   <div class="tile sand"><div class="dot2">◔</div><b>Большие файлы</b><div class="d">Что занимает больше всего места</div>
+    <div class="res"><span class="ok">✓</span>Освобождено 2,4 ГБ</div><div class="again">Ещё раз</div></div>
+   <div class="tile lilac"><div class="dot2">❐</div><b>Дубликаты</b><div class="d">Одинаковые файлы, одна копия остаётся</div><button type="button" class="btn">Найти</button></div>
+   <div class="tile peach"><div class="dot2">▢</div><b>Пустые папки</b><div class="d">Папки без файлов</div><button type="button" class="btn">Найти</button></div>
+   <div class="tile mint"><div class="dot2">◑</div><b>Карта диска</b><div class="d">Наглядно, где лежат файлы</div><button type="button" class="btn">Открыть</button></div>
+  </div>
+ </div>
+</div>
+
+<div class="mini">
+ <h2><span class="drop sm">✓</span>ЧистоДиск</h2>
+ <div class="ring">
+  <svg width="168" height="168" viewBox="0 0 168 168"><circle cx="84" cy="84" r="72" fill="none" stroke="rgba(15,157,154,.2)" stroke-width="16"/><circle cx="84" cy="84" r="72" fill="none" stroke="#0F9D9A" stroke-width="16" stroke-linecap="round" stroke-dasharray="173 452"/></svg>
+  <div><strong>182 ГБ</strong><span>свободно из 476</span></div>
+ </div>
+ <button type="button" class="btn">Быстрая очистка · 3,1 ГБ</button>
+ <div class="speed"><div class="tx"><b>412 Мбит/с</b><span>Скорость, вчера 14:32</span></div><button type="button" class="btn">Замерить</button></div>
+ <a class="link">Открыть ЧистоДиск</a>
+</div>
+
+<div class="task"><span>⊞ Пуск</span><div class="clock">14:32<br>28.11.2026</div></div>
+</body></html>
