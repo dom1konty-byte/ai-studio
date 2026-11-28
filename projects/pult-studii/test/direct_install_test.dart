@@ -77,7 +77,7 @@ void main() {
       final err = await inst.install('git', (s, p) => seen.add('$s $p'));
       expect(err, isNull);
       expect(dl.downloaded, ['https://github.com/x/Git-2.50.0-64-bit.exe']);
-      expect(proc.calls.last,
+      expect(proc.calls.last.replaceAll(r'\', '/'),
           '/tmp/rubka-test/Git-2.50.0-64-bit.exe /VERYSILENT /NORESTART /NOCANCEL /SP- /CURRENTUSER');
       expect(seen.any((s) => s.endsWith(' 50')), isTrue);
     });
@@ -104,13 +104,13 @@ void main() {
       expect(dl.downloaded, isEmpty);
     });
 
-    test('Node: msiexec /qn и адрес из LTS', () async {
+    test('Node: msiexec /passive и адрес из LTS', () async {
       sig = '{"Status":0,"S":"CN=OpenJS Foundation"}';
       final err = await inst.install('node', (_, __) {});
       expect(err, isNull);
       expect(dl.downloaded, ['https://nodejs.org/dist/v22.5.0/node-v22.5.0-x64.msi']);
-      expect(proc.calls.last,
-          'msiexec /i /tmp/rubka-test/node-v22.5.0-x64.msi /qn /norestart');
+      expect(proc.calls.last.replaceAll(r'\', '/'),
+          'msiexec /i /tmp/rubka-test/node-v22.5.0-x64.msi /passive /norestart');
     });
 
     test('Python: фиксированная версия и ключи', () async {
