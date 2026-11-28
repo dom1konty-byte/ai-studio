@@ -1,32 +1,37 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
+import 'package:window_manager/window_manager.dart';
 
-void main() => runApp(const App());
+import 'app/app.dart';
+import 'services/app_storage.dart';
+import 'services/real_process_runner.dart';
+import 'state/app_controller.dart';
 
-class App extends StatelessWidget {
-  const App({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Пульт студии',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isWindows) {
+    await windowManager.ensureInitialized();
+    const options = WindowOptions(
+      title: 'Рубка',
+      size: Size(1200, 760),
+      minimumSize: Size(960, 600),
+      center: true,
     );
+    await windowManager.waitUntilReadyToShow(options, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
   }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Пульт студии')),
-      body: const Center(child: Text('Скоро здесь будет программа для Windows')),
-    );
-  }
+  final env = Platform.environment;
+  final appData = env['APPDATA'] ?? env['HOME'] ?? '.';
+  final home = env['USERPROFILE'] ?? env['HOME'] ?? '.';
+  final controller = AppController(
+    proc: RealProcessRunner(),
+    storage: FileStorage(p.join(appData, 'pult-studii')),
+    downloadsDir: p.join(home, 'Downloads'),
+  );
+  runApp(RubkaApp(controller: controller));
+  controller.init();
 }
