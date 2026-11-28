@@ -53,8 +53,8 @@ class ChatNightTarget implements NightTarget {
   Future<NightOutcome> run(String text, String label) async {
     await chat.send(text, scheduled: label);
     final ok = chat.lastTurnOk;
-    final text = _last(ok ? MsgKind.director : MsgKind.error);
-    return NightOutcome(ok, brief(text));
+    final reply = _last(ok ? MsgKind.director : MsgKind.error);
+    return NightOutcome(ok, brief(reply));
   }
 
   String _last(MsgKind kind) {
