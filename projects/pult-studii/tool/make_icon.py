@@ -1,4 +1,5 @@
-"""Рисует иконку Рубки (штурвал) через Pillow: assets/icon/app_icon.png (1024) и app_icon.ico.
+"""Иконка AI Studio через Pillow: assets/icon/app_icon.png (1024) и app_icon.ico.
+Знак: большая янтарная «искра» (4-лучевая звезда) и малая бумажная искра на бирюзовом квадрате.
 Запуск из папки проекта: python tool/make_icon.py  (нужен: pip install pillow)
 Фигуры те же, что в assets/icon/app_icon.svg (сетка 256)."""
 from pathlib import Path
@@ -9,31 +10,28 @@ TEAL, AMBER, PAPER = "#0F5C63", "#F2B33D", "#F6F1E7"
 SS = 4  # суперсэмплинг для гладких краёв
 
 
+def sparkle(cx, cy, r, k=0.22, n=24):
+    """4-лучевая звезда с вогнутыми сторонами: точки по кривой Безье между лучами."""
+    pts = []
+    tips = [(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)]
+    for i in range(4):
+        a, b = tips[i], tips[(i + 1) % 4]
+        c = (cx + (a[0] + b[0] - 2 * cx) * k, cy + (a[1] + b[1] - 2 * cy) * k)
+        for j in range(n):
+            t = j / n
+            x = (1 - t) ** 2 * a[0] + 2 * (1 - t) * t * c[0] + t * t * b[0]
+            y = (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * c[1] + t * t * b[1]
+            pts.append((x, y))
+    return pts
+
+
 def draw(size: int) -> Image.Image:
     s = size * SS / 256.0
     img = Image.new("RGBA", (size * SS, size * SS), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-
-    def p(v):
-        return v * s
-
-    d.rounded_rectangle([0, 0, size * SS - 1, size * SS - 1], radius=p(56), fill=TEAL)
-    import math
-    # 8 спиц с ручками на концах (штурвал)
-    for k in range(8):
-        a = math.pi / 4 * k
-        cx, cy = 128 + 98 * math.cos(a), 128 + 98 * math.sin(a)
-        d.line([p(128), p(128), p(cx), p(cy)], fill=AMBER, width=int(p(14)))
-        d.ellipse([p(cx - 14), p(cy - 14), p(cx + 14), p(cy + 14)], fill=AMBER)
-    # кольцо
-    d.ellipse([p(128 - 72), p(128 - 72), p(128 + 72), p(128 + 72)], fill=AMBER)
-    d.ellipse([p(128 - 52), p(128 - 52), p(128 + 52), p(128 + 52)], fill=TEAL)
-    for k in range(8):
-        a = math.pi / 4 * k
-        x2, y2 = 128 + 56 * math.cos(a), 128 + 56 * math.sin(a)
-        d.line([p(128), p(128), p(x2), p(y2)], fill=AMBER, width=int(p(14)))
-    # втулка
-    d.ellipse([p(104), p(104), p(152), p(152)], fill=PAPER)
+    d.rounded_rectangle([0, 0, size * SS - 1, size * SS - 1], radius=56 * s, fill=TEAL)
+    d.polygon([(x * s, y * s) for x, y in sparkle(112, 140, 84)], fill=AMBER)
+    d.polygon([(x * s, y * s) for x, y in sparkle(192, 64, 34)], fill=PAPER)
     return img.resize((size, size), Image.LANCZOS)
 
 
