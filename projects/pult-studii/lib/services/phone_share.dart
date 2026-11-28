@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:path/path.dart' as p;
 
 import 'git_service.dart';
+import 'temp_cleanup.dart';
 
 /// Ищет `*.apk` строго внутри [dir] (без симлинков). Нет — null.
 Future<String?> findApk(String dir) async {
@@ -85,9 +86,13 @@ String randomToken([Random? rng]) {
       List.generate(24, (_) => _tokenChars.codeUnitAt(r.nextInt(62))));
 }
 
+/// Сколько загрузок одновременно (остальным — 503).
+const maxApkConnections = 4;
+
 /// Раздаёт один APK по адресу `/<токен>/app.apk`; всё остальное — 404.
 class ApkServer {
-  ApkServer._(this._server, this.token, this._apk, this.slug) {
+  ApkServer._(this._server, this.token, this._apk, this.slug, this._maxActive) {
+    _server.idleTimeout = const Duration(seconds: 30);
     _server.listen(_handle, onError: (Object _) {});
   }
 
@@ -95,6 +100,14 @@ class ApkServer {
   final String token;
   final String _apk;
   final String slug;
+  final int _maxActive;
+  int _active = 0;
+
+  /// Путь к раздаваемому APK.
+  String get apkPath => _apk;
+
+  /// Адрес, на котором слушает сервер.
+  String get address => _server.address.address;
 
   /// Сколько раз APK отдан целиком.
   int served = 0;
@@ -102,11 +115,13 @@ class ApkServer {
   int get port => _server.port;
 
   /// [bindAddress] по умолчанию — все адреса (0.0.0.0), порт случайный.
+  /// Сверх [maxConnections] одновременных загрузок отвечаем 503.
   static Future<ApkServer> start({
     required String apkPath,
     required String slug,
     InternetAddress? bindAddress,
     String? token,
+    int maxConnections = maxApkConnections,
   }) async {
     if (!isSafeSlug(slug)) throw ArgumentError('slug');
     final t = token ?? randomToken();
@@ -114,7 +129,7 @@ class ApkServer {
       throw ArgumentError('token');
     }
     final server = await HttpServer.bind(bindAddress ?? InternetAddress.anyIPv4, 0);
-    return ApkServer._(server, t, apkPath, slug);
+    return ApkServer._(server, t, apkPath, slug, maxConnections);
   }
 
   String pathPart() => '/$token/app.apk';
@@ -129,6 +144,26 @@ class ApkServer {
         await res.close();
         return;
       }
+      if (_active >= _maxActive) {
+        res.statusCode = HttpStatus.serviceUnavailable;
+        await res.close();
+        return;
+      }
+      _active++;
+      try {
+        await _send(res);
+      } finally {
+        _active--;
+      }
+    } catch (_) {
+      try {
+        await res.close();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _send(HttpResponse res) async {
+    try {
       final f = File(_apk);
       final len = await f.length();
       res.statusCode = HttpStatus.ok;
@@ -137,9 +172,9 @@ class ApkServer {
         ..set('Content-Disposition', 'attachment; filename=$slug.apk')
         ..set('Cache-Control', 'no-store');
       res.contentLength = len;
-      served++; // считаем начатую выдачу (клиент может дочитать раньше close)
       await res.addStream(f.openRead());
       await res.close();
+      served++;
     } catch (_) {
       try {
         await res.close();
@@ -164,3 +199,7 @@ Future<void> deleteTempDir(String dir) async {
 
 Future<String> makeTempDir() async =>
     (await Directory.systemTemp.createTemp('aistudio-apk-')).path;
+
+/// При запуске: убрать папки `aistudio-apk-*` старше часа (остались после сбоя).
+Future<void> cleanOldApkDirs({Directory? root, DateTime? now}) =>
+    cleanOldTempDirs('aistudio-apk-', root: root, now: now);

@@ -1,4 +1,6 @@
 // Окно «На телефон»: QR-код и адрес для скачивания APK.
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -102,7 +104,7 @@ class _PhoneShareDialogState extends State<PhoneShareDialog> {
                         value: a, child: Text('${a.ip} (${a.name})')),
                 ],
                 onChanged: (a) {
-                  if (a != null) s.select(a);
+                  if (a != null) unawaited(s.select(a));
                 },
               ),
             Row(

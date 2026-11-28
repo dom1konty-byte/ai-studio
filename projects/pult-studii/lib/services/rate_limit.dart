@@ -8,6 +8,13 @@ DateTime? _fromEpoch(num v) {
   return DateTime.fromMillisecondsSinceEpoch(ms);
 }
 
+/// Дальше этого срока вперёд время сброса считаем ошибкой разбора.
+const maxLimitAhead = Duration(days: 8);
+
+/// Разумное время сброса: в будущем, но не дальше [maxLimitAhead]. Иначе null.
+DateTime? saneLimitUntil(DateTime at, DateTime now) =>
+    at.isAfter(now) && !at.isAfter(now.add(maxLimitAhead)) ? at : null;
+
 DateTime? _fromAny(Object? v) {
   if (v is num) return _fromEpoch(v);
   if (v is String) {
@@ -36,8 +43,8 @@ DateTime? parseRateLimitEvent(Map<dynamic, dynamic> j, DateTime now) {
       info['resets_at'] ??
       info['resetAt'] ??
       info['reset_at']);
-  if (at == null || !at.isAfter(now)) return null;
-  return at;
+  if (at == null) return null;
+  return saneLimitUntil(at, now);
 }
 
 const _months = {
@@ -59,7 +66,34 @@ final _resetsAt = RegExp(
 /// «5-hour limit reached ∙ resets 6pm», «You've hit your limit · resets 18:40
 /// (Europe/Moscow)», «resets Dec 1 at 10am». Часовой пояс в скобках игнорируем
 /// (считаем местным). Время не нашли — null.
+/// Часовой пояс в скобках: Europe/Moscow (UTC+3), UTC, UTC±N учитываем,
+/// остальное — местное время. Время в прошлом или дальше 8 суток — null.
 DateTime? parseLimitText(String text, DateTime now) {
+  final at = _parseLimitText(text, now);
+  return at == null ? null : saneLimitUntil(at, now);
+}
+
+final _zoneInParens = RegExp(r'\(([^()]{1,40})\)');
+final _utcOffset =
+    RegExp(r'^(?:UTC|GMT)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?$', caseSensitive: false);
+
+/// Смещение пояса от UTC; null — пояс незнакомый (берём местное время).
+Duration? zoneOffset(String zone) {
+  final z = zone.trim();
+  if (z == 'Europe/Moscow') return const Duration(hours: 3);
+  if (RegExp(r'^(?:UTC|GMT|Z)$', caseSensitive: false).hasMatch(z)) {
+    return Duration.zero;
+  }
+  final m = _utcOffset.firstMatch(z);
+  if (m == null) return null;
+  final h = int.parse(m.group(2)!);
+  final min = int.tryParse(m.group(3) ?? '0') ?? 0;
+  if (h > 14 || min > 59) return null;
+  final d = Duration(hours: h, minutes: min);
+  return m.group(1) == '-' ? -d : d;
+}
+
+DateTime? _parseLimitText(String text, DateTime now) {
   if (text.isEmpty || !_limitWord.hasMatch(text)) return null;
   final e = _epochAfterPipe.firstMatch(text);
   if (e != null) {
@@ -79,6 +113,22 @@ DateTime? parseLimitText(String text, DateTime now) {
   if (hour > 23 || minute > 59) return null;
   final month = m.group(1) == null ? null : _months[m.group(1)!.toLowerCase()];
   if (m.group(1) != null && month == null) return null;
+  final zm = _zoneInParens.firstMatch(text.substring(m.end));
+  final off = zm == null ? null : zoneOffset(zm.group(1)!);
+  if (off != null) {
+    // время в чужом поясе: считаем «стенные» часы как UTC-поля, потом сдвигаем
+    final wall = now.toUtc().add(off);
+    DateTime build(int y) => month != null
+        ? DateTime.utc(y, month, int.parse(m.group(2)!), hour, minute)
+        : DateTime.utc(wall.year, wall.month, wall.day, hour, minute);
+    var at = build(wall.year);
+    if (!at.isAfter(wall)) {
+      at = month != null
+          ? build(wall.year + 1)
+          : DateTime.utc(wall.year, wall.month, wall.day + 1, hour, minute);
+    }
+    return at.subtract(off).toLocal();
+  }
   if (month != null) {
     final day = int.parse(m.group(2)!);
     var at = DateTime(now.year, month, day, hour, minute);

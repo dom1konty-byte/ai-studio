@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'app/app.dart';
 import 'services/app_storage.dart';
 import 'services/attachments.dart';
+import 'services/phone_share.dart';
 import 'services/real_process_runner.dart';
 import 'services/updater.dart';
 import 'services/windows_notifier.dart';
@@ -49,12 +50,18 @@ Future<void> main() async {
   final home = env['USERPROFILE'] ?? env['HOME'] ?? '.';
   final proc = RealProcessRunner();
   final win = Platform.isWindows;
+  final attachments =
+      FileAttachmentStore(p.join(appData, 'pult-studii', 'attachments'));
+  // уборка остатков прошлых запусков (ошибки внутри глушатся)
+  unawaited(attachments.purgeOld());
+  unawaited(UpdateService.cleanOld());
+  unawaited(cleanOldApkDirs());
   final controller = AppController(
     proc: proc,
     storage: FileStorage(p.join(appData, 'pult-studii')),
     downloadsDir: p.join(home, 'Downloads'),
     homeDir: home,
-    attachments: FileAttachmentStore(p.join(appData, 'pult-studii', 'attachments')),
+    attachments: attachments,
     updater: win ? UpdateService(proc) : null,
     notifier: win ? WindowsNotifier() : null,
     isWindowFocused: win ? windowManager.isFocused : null,

@@ -3,7 +3,7 @@ name: "pult-studii"
 
 on:
   push:
-    branches: [pult-studii]
+    branches: [pult-studii, main]
     paths: ["projects/pult-studii/**", ".github/workflows/pult-studii.yml"]
   pull_request:
     paths: ["projects/pult-studii/**", ".github/workflows/pult-studii.yml"]

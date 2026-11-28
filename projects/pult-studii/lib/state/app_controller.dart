@@ -7,6 +7,7 @@ import 'package:path/path.dart' as pth;
 import '../models/models.dart';
 import '../services/app_storage.dart';
 import '../services/attachments.dart';
+import '../services/rate_limit.dart';
 import '../services/claude_runner.dart';
 import '../services/gh_service.dart';
 import '../services/git_service.dart';
@@ -309,7 +310,7 @@ class AppController extends ChangeNotifier {
 
   void setLimit(DateTime until) {
     final now = _now();
-    if (!until.isAfter(now)) return;
+    if (saneLimitUntil(until, now) == null) return;
     limitUntil = until;
     _limitTimer?.cancel();
     _limitTimer = Timer(until.difference(now) + const Duration(seconds: 1), () {
@@ -766,7 +767,10 @@ class AppController extends ChangeNotifier {
         if (remote == null) {
           throw GitException('не удалось определить репозиторий');
         }
-        await gh.downloadInto(remote, id, dir, cwd: git.repoPath);
+        // качаем только артефакт с APK, а не всю сборку
+        final name = await gh.apkArtifactName(remote, id, cwd: git.repoPath);
+        await gh.downloadInto(remote, id, dir,
+            cwd: git.repoPath, artifact: name);
       },
     );
     activeShare = share;

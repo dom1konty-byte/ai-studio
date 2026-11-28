@@ -1,6 +1,8 @@
 import 'app_storage.dart';
 
-int _int(Object? v) => v is num ? v.round() : 0;
+/// Целое из JSON: NaN, бесконечность, отрицательное и больше 1e12 — 0.
+int _int(Object? v) =>
+    v is num && v.isFinite && v >= 0 && v <= 1e12 ? v.round() : 0;
 
 /// Расход одного хода: данные из события `result` потока Claude.
 class TurnUsage {
@@ -90,7 +92,7 @@ class UsageTotals {
     if (j is! Map) return UsageTotals();
     final c = j['cost'];
     return UsageTotals(
-      cost: c is num && c >= 0 ? c.toDouble() : 0,
+      cost: c is num && c.isFinite && c >= 0 && c <= 1e12 ? c.toDouble() : 0,
       input: _int(j['in']),
       output: _int(j['out']),
       cacheRead: _int(j['cr']),

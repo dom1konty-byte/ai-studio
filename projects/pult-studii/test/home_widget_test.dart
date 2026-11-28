@@ -37,7 +37,7 @@ ProcResult _handler(String exe, List<String> args, String? cwd) {
   }
   if (k.startsWith('api ') && k.contains('/alpha.yml/')) {
     return const ProcResult(0,
-        '{"workflow_runs":[{"id":7,"status":"completed","conclusion":"success","updated_at":"2999-01-01T00:00:00Z"}]}');
+        '{"workflow_runs":[{"event":"push","head_repository":{"full_name":"dom/ai-studio"},"id":7,"status":"completed","conclusion":"success","updated_at":"2999-01-01T00:00:00Z"}]}');
   }
   if (k.startsWith('api ')) return const ProcResult(1, '', 'gh: Not Found (HTTP 404)');
   return const ProcResult(0);

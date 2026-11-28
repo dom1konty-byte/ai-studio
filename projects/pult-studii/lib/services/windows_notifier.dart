@@ -14,7 +14,8 @@ class WindowsNotifier implements AppNotifier {
     try {
       await localNotifier.setup(
         appName: notifyTitle,
-        shortcutPolicy: ShortcutPolicy.requireCreate,
+        // ярлык «AI Studio» с тем же AppUserModelID создаёт установщик
+        shortcutPolicy: ShortcutPolicy.requireNoCreate,
       );
       _ready = true;
     } catch (_) {

@@ -79,8 +79,47 @@ class PhoneShareController extends ChangeNotifier {
     super.dispose();
   }
 
-  void select(LanAddress a) {
+  bool _rebinding = false;
+
+  /// Выбрать адрес. Сервер слушает только его, поэтому при смене адреса
+  /// он перезапускается с тем же токеном и APK (порт может смениться).
+  Future<void> select(LanAddress a) async {
     selected = a;
+    notifyListeners();
+    if (_rebinding || _stopped || bindAddress != null) return;
+    _rebinding = true;
+    try {
+      while (!_stopped) {
+        final old = _server;
+        final want = selected;
+        if (old == null || want == null || old.address == want.ip) break;
+        _server = null;
+        notifyListeners();
+        await old.stop();
+        if (_stopped) return;
+        final ApkServer srv;
+        try {
+          srv = await ApkServer.start(
+              apkPath: old.apkPath,
+              slug: slug,
+              token: old.token,
+              bindAddress: InternetAddress(want.ip));
+        } catch (e) {
+          error = 'Не получилось сменить адрес: $e';
+          await stop();
+          step = ShareStep.error;
+          notifyListeners();
+          return;
+        }
+        if (_stopped) {
+          await srv.stop();
+          return;
+        }
+        _server = srv;
+      }
+    } finally {
+      _rebinding = false;
+    }
     notifyListeners();
   }
 
@@ -106,8 +145,10 @@ class PhoneShareController extends ChangeNotifier {
         throw ShareException('Не нашёл адрес компьютера в домашней сети. '
             'Подключи компьютер к той же Wi-Fi, что и телефон, и повтори.');
       }
-      final srv =
-          await ApkServer.start(apkPath: apk, slug: slug, bindAddress: bindAddress);
+      final srv = await ApkServer.start(
+          apkPath: apk,
+          slug: slug,
+          bindAddress: bindAddress ?? InternetAddress(found.first.ip));
       if (_stopped) {
         await srv.stop();
         return await _cleanup();

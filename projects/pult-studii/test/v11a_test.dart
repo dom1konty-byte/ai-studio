@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:pult_studii/services/notifications.dart';
 import 'package:pult_studii/services/process_runner.dart';
 import 'package:pult_studii/services/rate_limit.dart';
 import 'package:pult_studii/services/stream_json.dart';
+import 'package:pult_studii/services/temp_cleanup.dart';
 import 'package:pult_studii/services/updater.dart';
 import 'package:pult_studii/services/usage.dart';
 import 'package:pult_studii/state/app_controller.dart';
@@ -18,21 +20,17 @@ const _main = 'C:\\ai';
 const _sidO = '11111111-2222-3333-4444-777777777777';
 
 final _now = DateTime(2026, 11, 28, 12, 0);
+const _repoName = 'dom/ai-studio';
 
 int _epoch(DateTime t) => t.millisecondsSinceEpoch ~/ 1000;
 
-String _runs(List<Map<String, Object?>> runs) {
-  final items = runs.map((r) {
-    final fields = r.entries
-        .map((e) => '"${e.key}":${e.value is String ? '"${e.value}"' : e.value}')
-        .join(',');
-    return '{$fields}';
-  }).join(',');
-  return '{"workflow_runs":[$items]}';
-}
+String _runs(List<Map<String, Object?>> runs) =>
+    jsonEncode({'workflow_runs': runs});
 
 Map<String, Object?> _run(int id, int number, String branch,
-        {String event = 'push', String conclusion = 'success'}) =>
+        {String event = 'push',
+        String conclusion = 'success',
+        String repo = 'dom/ai-studio'}) =>
     {
       'id': id,
       'run_number': number,
@@ -40,6 +38,7 @@ Map<String, Object?> _run(int id, int number, String branch,
       'event': event,
       'status': 'completed',
       'conclusion': conclusion,
+      'head_repository': {'full_name': repo},
     };
 
 class FakeNotifier implements AppNotifier {
@@ -182,13 +181,14 @@ void main() {
   });
 
   group('выбор обновления', () {
-    test('берёт самый свежий успешный на main/pult-studii', () {
+    test('берёт самый свежий успешный только на main', () {
       final json = _runs([
         _run(1, 10, 'pult-studii'),
         _run(2, 12, 'main'),
-        _run(3, 11, 'pult-studii'),
+        _run(3, 13, 'pult-studii'),
+        _run(4, 11, 'main'),
       ]);
-      final u = pickUpdate(json, 5)!;
+      final u = pickUpdate(json, 5, _repoName)!;
       expect(u.runId, 2);
       expect(u.runNumber, 12);
       expect(u.branch, 'main');
@@ -196,13 +196,13 @@ void main() {
 
     test('номер не больше текущего — обновления нет', () {
       final json = _runs([_run(1, 10, 'main')]);
-      expect(pickUpdate(json, 10), isNull);
-      expect(pickUpdate(json, 11), isNull);
-      expect(pickUpdate(json, 9)!.runNumber, 10);
+      expect(pickUpdate(json, 10, _repoName), isNull);
+      expect(pickUpdate(json, 11, _repoName), isNull);
+      expect(pickUpdate(json, 9, _repoName)!.runNumber, 10);
     });
 
     test('0 = dev-сборка: не предлагаем', () {
-      expect(pickUpdate(_runs([_run(1, 10, 'main')]), 0), isNull);
+      expect(pickUpdate(_runs([_run(1, 10, 'main')]), 0, _repoName), isNull);
     });
 
     test('чужие ветки, события и неуспешные запуски пропускаем', () {
@@ -210,19 +210,80 @@ void main() {
         _run(1, 20, 'feature'),
         _run(2, 21, 'main', event: 'pull_request'),
         _run(3, 22, 'main', conclusion: 'failure'),
-        _run(4, 13, 'pult-studii', event: 'workflow_dispatch'),
+        _run(4, 13, 'main', event: 'workflow_dispatch'),
+        _run(5, 30, 'main', repo: 'evil/ai-studio'),
+        _run(6, 31, 'pult-studii'),
       ]);
-      expect(pickUpdate(json, 5)!.runId, 4);
+      expect(pickUpdate(json, 5, _repoName)!.runId, 4);
     });
 
     test('мусор в ответе — null', () {
-      expect(pickUpdate('не json', 1), isNull);
-      expect(pickUpdate('{"workflow_runs":"x"}', 1), isNull);
-      expect(pickUpdate('{"workflow_runs":[1,{"id":"a"}]}', 1), isNull);
+      expect(pickUpdate('не json', 1, _repoName), isNull);
+      expect(pickUpdate('{"workflow_runs":"x"}', 1, _repoName), isNull);
+      expect(pickUpdate('{"workflow_runs":[1,{"id":"a"}]}', 1, _repoName), isNull);
     });
 
     test('buildNumber по умолчанию 0 (dev)', () {
       expect(buildNumber, 0);
+    });
+  });
+
+  group('обновление: безопасность', () {
+    test('ошибка скачивания удаляет временную папку', () async {
+      final d = Directory.systemTemp.createTempSync('ai-studio-test-');
+      addTearDown(() {
+        if (d.existsSync()) d.deleteSync(recursive: true);
+      });
+      final s = UpdateService(
+          FakeProc((e, a, c) => const ProcResult(1, '', 'нет')),
+          makeTempDir: () async => d.path);
+      await expectLater(
+          s.download(const RepoRemote('dom', 'ai-studio'),
+              const UpdateInfo(runId: 1, runNumber: 9, branch: 'main')),
+          throwsA(isA<UpdateException>()));
+      expect(d.existsSync(), isFalse);
+    });
+
+    test('install: файла нет — ошибка, процесс не запускается', () async {
+      final proc = FakeProc((e, a, c) => const ProcResult(0));
+      final s = UpdateService(proc);
+      await expectLater(s.install(p.join(Directory.systemTemp.path, 'нет-такого.exe')),
+          throwsA(isA<UpdateException>()));
+      expect(proc.detached, isEmpty);
+    });
+
+    test('старые ai-studio-update-* чистятся, свежие и чужие — нет', () async {
+      final root = Directory.systemTemp.createTempSync('v11a-clean-');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final upd = Directory(p.join(root.path, 'ai-studio-update-abc'))..createSync();
+      final other = Directory(p.join(root.path, 'other-dir'))..createSync();
+      await cleanOldTempDirs('ai-studio-update-', root: root); // свежая — остаётся
+      expect(upd.existsSync(), isTrue);
+      await UpdateService.cleanOld(
+          root: root, now: DateTime.now().add(const Duration(hours: 2)));
+      expect(upd.existsSync(), isFalse);
+      expect(other.existsSync(), isTrue);
+    });
+  });
+
+  group('расходы: мусор в файле', () {
+    test('NaN, бесконечность, минус и огромные числа — 0', () {
+      final t = UsageTotals.fromJson({
+        'cost': double.nan,
+        'in': -5,
+        'out': double.infinity,
+        'cr': 2e12,
+        'cc': 7,
+        'n': 1,
+      });
+      expect(t.cost, 0);
+      expect(t.input, 0);
+      expect(t.output, 0);
+      expect(t.cacheRead, 0);
+      expect(t.cacheCreate, 7);
+      expect(t.turns, 1);
+      expect(UsageTotals.fromJson({'cost': 1e13}).cost, 0);
+      expect(UsageTotals.fromJson({'cost': 2.5}).cost, 2.5);
     });
   });
 
@@ -259,7 +320,7 @@ void main() {
       expect(
           proc.calls.single,
           'gh api repos/dom/ai-studio/actions/workflows/pult-studii.yml/runs'
-          '?status=success&per_page=5&exclude_pull_requests=true');
+          '?branch=main&status=success&per_page=5&exclude_pull_requests=true');
       final bad = UpdateService(FakeProc((e, a, c) => const ProcResult(1)));
       expect(await bad.check(const RepoRemote('dom', 'ai-studio'), 5), isNull);
       expect(await s.check(const RepoRemote('dom', 'ai-studio'), 0), isNull);
@@ -484,12 +545,50 @@ void main() {
     });
 
     test('текст: время уже прошло — завтра; дата и пояс в скобках', () {
+      // 12:00 UTC = 15:00 в Москве: 11:30 уже прошло, значит завтра
+      final utcNow = DateTime.utc(2026, 11, 28, 12, 0);
       expect(
           parseLimitText(
-              "You've hit your limit · resets 11:30am (Europe/Moscow)", _now),
-          DateTime(2026, 11, 29, 11, 30));
+                  "You've hit your limit · resets 11:30am (Europe/Moscow)", utcNow)!
+              .toUtc(),
+          DateTime.utc(2026, 11, 29, 8, 30));
+      expect(
+          parseLimitText('Usage limit reached. Resets at 18:00 (Europe/Moscow)',
+                  utcNow)!
+              .toUtc(),
+          DateTime.utc(2026, 11, 28, 15, 0));
+      expect(
+          parseLimitText('Usage limit reached. Resets at 18:00 (UTC+5)', utcNow)!
+              .toUtc(),
+          DateTime.utc(2026, 11, 28, 13, 0));
+      expect(
+          parseLimitText('Usage limit reached. Resets at 18:00 (UTC)', utcNow)!
+              .toUtc(),
+          DateTime.utc(2026, 11, 28, 18, 0));
+      // незнакомый пояс — местное время
+      expect(
+          parseLimitText('Usage limit reached. Resets at 18:00 (Mars/Base)', _now),
+          DateTime(2026, 11, 28, 18, 0));
       expect(parseLimitText('Weekly limit reached ∙ resets Dec 1 at 10am', _now),
           DateTime(2026, 12, 1, 10, 0));
+    });
+
+    test('время сброса далеко (больше 8 суток) или в прошлом — null', () {
+      final far = _epoch(_now.add(const Duration(days: 9)));
+      final near = _epoch(_now.add(const Duration(days: 7)));
+      expect(parseLimitText('Claude AI usage limit reached|$far', _now), isNull);
+      expect(parseLimitText('Claude AI usage limit reached|$near', _now),
+          isNotNull);
+      expect(
+          parseStreamLine(
+              '{"type":"rate_limit_event","rate_limit_info":'
+              '{"status":"rejected","resetsAt":$far}}',
+              now: _now),
+          isEmpty);
+      // Dec 1 следующего года — слишком далеко
+      expect(
+          parseLimitText('Weekly limit reached ∙ resets Nov 20 at 10am', _now),
+          isNull);
     });
 
     test('текст без времени или не про лимит — null', () {
@@ -585,20 +684,20 @@ void main() {
     test('сборка: готова / упала при смене статуса последнего запуска',
         () async {
       final env = _Env()
-        ..runJson = '{"workflow_runs":[{"id":1,"status":"in_progress",'
+        ..runJson = '{"workflow_runs":[{"event":"push","head_repository":{"full_name":"dom/ai-studio"},"id":1,"status":"in_progress",'
             '"conclusion":null,"updated_at":"2999-01-01T00:00:00Z"}]}';
       final (app, _, n, _) = await _app(env);
       await app.refreshBoard();
       await _pump();
       expect(n.shown, isEmpty); // первое наблюдение
 
-      env.runJson = '{"workflow_runs":[{"id":1,"status":"completed",'
+      env.runJson = '{"workflow_runs":[{"event":"push","head_repository":{"full_name":"dom/ai-studio"},"id":1,"status":"completed",'
           '"conclusion":"success","updated_at":"2999-01-01T00:00:00Z"}]}';
       await app.refreshBoard();
       await _pump();
       expect(n.shown, ['Альфа: сборка готова']);
 
-      env.runJson = '{"workflow_runs":[{"id":2,"status":"completed",'
+      env.runJson = '{"workflow_runs":[{"event":"push","head_repository":{"full_name":"dom/ai-studio"},"id":2,"status":"completed",'
           '"conclusion":"failure","updated_at":"2999-01-01T00:00:00Z"}]}';
       await app.refreshBoard();
       await _pump();
@@ -669,6 +768,14 @@ void main() {
       expect(stageName('Разработка'), 'Разработка');
       expect(notifyBody(NotifyKind.buildFailed, 'Альфа'), 'Альфа: сборка упала');
       expect(notifyBody(NotifyKind.waitsYes, 'Альфа'), 'Альфа ждёт «да»');
+    });
+
+    test('notifyBody: без управляющих символов и <>&, не длиннее 80', () {
+      final b = notifyBody(NotifyKind.buildOk, 'A<b>&\n\x07c');
+      expect(b, 'A b c: сборка готова');
+      final long = notifyBody(NotifyKind.directorReply, 'я' * 300);
+      expect(long.runes.length, lessThanOrEqualTo(80));
+      expect(RegExp(r'[<>&\x00-\x1f]').hasMatch(long), isFalse);
     });
   });
 }

@@ -35,7 +35,8 @@ Name: "desktopicon"; Description: "Ярлык на рабочем столе"; G
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{userprograms}\AI Studio"; Filename: "{app}\pult_studii.exe"
+; AppUserModelID = имя, которое программа передаёт в local_notifier (notifyTitle): тосты привязаны к этому ярлыку
+Name: "{userprograms}\AI Studio"; Filename: "{app}\pult_studii.exe"; AppUserModelID: "AI Studio"
 Name: "{userdesktop}\AI Studio"; Filename: "{app}\pult_studii.exe"; Tasks: desktopicon
 
 [Run]

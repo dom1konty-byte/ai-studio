@@ -11,13 +11,14 @@ class GhService {
 
   final ProcessRunner _proc;
 
-  /// Последняя сборка workflow `<slug>.yml` в ветке `<slug>`.
+  /// Последняя сборка workflow `<slug>.yml` в ветке `<slug>`: только push
+  /// (и workflow_dispatch) из самого репозитория, без запросов на слияние.
   /// Нет workflow / нет запусков → [BuildRun.none]. Ошибка gh → [BuildRun.unknown].
   Future<BuildRun> latestRun(RepoRemote r, String slug) async {
     if (!isSafeSlug(slug)) return BuildRun.none;
     final res = await _proc.run('gh', [
       'api',
-      'repos/${r.owner}/${r.repo}/actions/workflows/$slug.yml/runs?branch=$slug&per_page=1',
+      'repos/${r.owner}/${r.repo}/actions/workflows/$slug.yml/runs?branch=$slug&event=push&exclude_pull_requests=true&per_page=5',
     ]);
     if (!res.ok) {
       final all = '${res.stdout}${res.stderr}';
@@ -25,7 +26,7 @@ class GhService {
           ? BuildRun.none
           : BuildRun.unknown;
     }
-    return parseLatestRun(res.stdout);
+    return parseLatestRun(res.stdout, '${r.owner}/${r.repo}');
   }
 
   /// Скачать артефакты запуска в `<downloads>\<slug>\<runId>`; вернуть папку.
@@ -38,15 +39,47 @@ class GhService {
     return dir;
   }
 
-  /// Скачать артефакты запуска прямо в папку [dir].
+  /// Имя артефакта с APK в запуске [runId]: имя с «apk», иначе первый
+  /// неустаревший. Не нашли или ошибка gh — null (тогда качаем всё).
+  Future<String?> apkArtifactName(RepoRemote r, int runId, {String? cwd}) async {
+    if (!_repoPartRe.hasMatch(r.owner) || !_repoPartRe.hasMatch(r.repo)) {
+      return null;
+    }
+    try {
+      final res = await _proc.run(
+          'gh', ['api', 'repos/${r.owner}/${r.repo}/actions/runs/$runId/artifacts'],
+          cwd: cwd);
+      if (!res.ok) return null;
+      return pickApkArtifact(res.stdout);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Скачать артефакты запуска прямо в папку [dir]
+  /// (только артефакт [artifact], если имя задано).
   Future<void> downloadInto(RepoRemote r, int runId, String dir,
-      {String? cwd}) async {
+      {String? cwd, String? artifact}) async {
     if (!_repoPartRe.hasMatch(r.owner) || !_repoPartRe.hasMatch(r.repo)) {
       throw GitException('Недопустимый адрес репозитория.');
     }
+    if (artifact != null && !_artifactRe.hasMatch(artifact)) {
+      throw GitException('Недопустимое имя артефакта.');
+    }
     final res = await _proc.run(
-        'gh', ['run', 'download', '$runId', '-R', '${r.owner}/${r.repo}', '-D', dir],
-        cwd: cwd, timeout: const Duration(minutes: 10));
+        'gh',
+        [
+          'run',
+          'download',
+          '$runId',
+          '-R',
+          '${r.owner}/${r.repo}',
+          if (artifact != null) ...['-n', artifact],
+          '-D',
+          dir,
+        ],
+        cwd: cwd,
+        timeout: const Duration(minutes: 10));
     if (!res.ok) {
       final t = res.stderr.trim().isNotEmpty ? res.stderr.trim() : res.stdout.trim();
       throw GitException('gh run download: $t');
@@ -61,6 +94,46 @@ class GhService {
 }
 
 final _repoPartRe = RegExp(r'^[A-Za-z0-9._-]+$');
+final _artifactRe = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$');
+
+/// Из ответа `actions/runs/<id>/artifacts`: имя артефакта с «apk»,
+/// иначе первое безопасное имя. Нет подходящих — null.
+String? pickApkArtifact(String json) {
+  try {
+    final j = jsonDecode(json);
+    final list = j is Map ? j['artifacts'] : null;
+    if (list is! List) return null;
+    final names = <String>[];
+    for (final a in list) {
+      if (a is! Map || a['expired'] == true) continue;
+      final n = a['name'];
+      if (n is String && _artifactRe.hasMatch(n)) names.add(n);
+    }
+    if (names.isEmpty) return null;
+    return names.firstWhere((n) => n.toLowerCase().contains('apk'),
+        orElse: () => names.first);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// События, сборкам которых доверяем (не pull_request).
+const trustedRunEvents = {'push', 'workflow_dispatch'};
+
+/// Запуск можно показывать и раздавать: событие push / workflow_dispatch,
+/// код из самого репозитория [repoFullName] (`owner/repo`), не из форка,
+/// и без привязанных запросов на слияние.
+bool isTrustedRun(Map<dynamic, dynamic> run, String repoFullName) {
+  if (!trustedRunEvents.contains(run['event'])) return false;
+  final head = run['head_repository'];
+  final name = head is Map ? head['full_name'] : null;
+  if (name is! String || name.toLowerCase() != repoFullName.toLowerCase()) {
+    return false;
+  }
+  final prs = run['pull_requests'];
+  if (prs is List && prs.isNotEmpty) return false;
+  return true;
+}
 
 /// Домен, если ссылка безопасна для открытия (https, есть host, без
 /// пробелов, кавычек и управляющих символов); иначе null.
@@ -72,12 +145,17 @@ String? safeHttpsHost(String? href) {
   return u.host;
 }
 
-BuildRun parseLatestRun(String json) {
+/// Самый свежий доверенный запуск ([isTrustedRun]) из ответа `.../runs`.
+BuildRun parseLatestRun(String json, String repoFullName) {
   try {
     final j = jsonDecode(json);
     final runs = j is Map ? j['workflow_runs'] : null;
-    if (runs is List && runs.isNotEmpty && runs.first is Map) {
-      return BuildRun.fromApi(Map<String, dynamic>.from(runs.first as Map));
+    if (runs is List) {
+      for (final r in runs) {
+        if (r is Map && isTrustedRun(r, repoFullName)) {
+          return BuildRun.fromApi(Map<String, dynamic>.from(r));
+        }
+      }
     }
     return BuildRun.none;
   } catch (_) {

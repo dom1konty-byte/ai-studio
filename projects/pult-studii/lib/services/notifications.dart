@@ -25,7 +25,21 @@ String stageName(String stage) {
   return t.isEmpty ? stage.trim() : t;
 }
 
+/// Текст уведомления: без управляющих символов и `< > &`, не длиннее 80.
+String cleanNotifyText(String s) {
+  final t = s
+      .replaceAll(RegExp(r'[\x00-\x1f\x7f<>&]'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  final runes = t.runes.toList();
+  if (runes.length <= 80) return t;
+  return '${String.fromCharCodes(runes.take(79)).trimRight()}…';
+}
+
 String notifyBody(NotifyKind kind, String projectName, {String stage = ''}) =>
+    cleanNotifyText(_notifyBody(kind, projectName, stage));
+
+String _notifyBody(NotifyKind kind, String projectName, String stage) =>
     switch (kind) {
       NotifyKind.directorReply => 'Директор ответил: $projectName',
       NotifyKind.waitsYes => stage.isEmpty

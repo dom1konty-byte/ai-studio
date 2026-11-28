@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'gh_service.dart';
 import 'git_service.dart';
 import 'process_runner.dart';
+import 'temp_cleanup.dart';
 
 /// Номер сборки, зашитый CI (`--dart-define=BUILD_NUMBER=<run_number>`).
 /// 0 — сборка из исходников (dev): обновление не предлагаем.
@@ -12,9 +14,8 @@ const buildNumber = int.fromEnvironment('BUILD_NUMBER');
 
 const updateWorkflow = 'pult-studii.yml';
 
-/// Ветки, сборки которых считаем «релизом».
-const updateBranches = {'main', 'pult-studii'};
-const _updateEvents = {'push', 'workflow_dispatch'};
+/// Ветки, сборки которых считаем «релизом»: только main.
+const updateBranches = {'main'};
 
 /// Имена артефакта с установщиком: новое и прежнее («Рубка»).
 const setupArtifacts = ['AI-Studio-setup', 'Rubka-setup'];
@@ -31,9 +32,10 @@ class UpdateInfo {
 }
 
 /// Из ответа `actions/workflows/.../runs`: самый свежий успешный запуск
-/// на ветке main или pult-studii (push / workflow_dispatch), если его номер
-/// больше [current]. [current] <= 0 (dev-сборка) — всегда null.
-UpdateInfo? pickUpdate(String json, int current) {
+/// на ветке main (push / workflow_dispatch из репозитория [repoFullName],
+/// `owner/repo`), если его номер больше [current].
+/// [current] <= 0 (dev-сборка) — всегда null.
+UpdateInfo? pickUpdate(String json, int current, String repoFullName) {
   if (current <= 0) return null;
   final Object? j;
   try {
@@ -51,7 +53,7 @@ UpdateInfo? pickUpdate(String json, int current) {
     final branch = r['head_branch'];
     if (id is! int || number is! int || branch is! String) continue;
     if (!updateBranches.contains(branch)) continue;
-    if (!_updateEvents.contains(r['event'])) continue;
+    if (!isTrustedRun(r, repoFullName)) continue;
     if (r['conclusion'] != 'success') continue;
     if (best == null || number > best.runNumber) {
       best = UpdateInfo(runId: id, runNumber: number, branch: branch);
@@ -110,11 +112,11 @@ class UpdateService {
           [
             'api',
             'repos/${r.owner}/${r.repo}/actions/workflows/$updateWorkflow/runs'
-                '?status=success&per_page=5&exclude_pull_requests=true',
+                '?branch=main&status=success&per_page=5&exclude_pull_requests=true',
           ],
           cwd: cwd);
       if (!res.ok) return null;
-      return pickUpdate(res.stdout, current);
+      return pickUpdate(res.stdout, current, '${r.owner}/${r.repo}');
     } catch (_) {
       return null;
     }
@@ -126,6 +128,16 @@ class UpdateService {
       throw UpdateException('Недопустимый адрес репозитория.');
     }
     final dir = await _makeTempDir();
+    try {
+      return await _downloadInto(r, u, dir, cwd);
+    } catch (_) {
+      await _removeDir(dir);
+      rethrow;
+    }
+  }
+
+  Future<String> _downloadInto(
+      RepoRemote r, UpdateInfo u, String dir, String? cwd) async {
     String? lastError;
     for (final name in setupArtifacts) {
       final res = await _proc.run(
@@ -157,6 +169,24 @@ class UpdateService {
   }
 
   /// Тихая установка отдельным процессом (переживает закрытие программы).
-  Future<void> install(String exePath) => _proc.startDetached(
-      exePath, const ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART']);
+  /// Файл проверяем прямо перед запуском.
+  Future<void> install(String exePath) async {
+    if (await FileSystemEntity.type(exePath, followLinks: false) !=
+        FileSystemEntityType.file) {
+      throw UpdateException('Установщик пропал: $exePath');
+    }
+    await _proc.startDetached(
+        exePath, const ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART']);
+  }
+
+  static Future<void> _removeDir(String dir) async {
+    try {
+      final d = Directory(dir);
+      if (await d.exists()) await d.delete(recursive: true);
+    } catch (_) {}
+  }
+
+  /// При запуске: убрать старые (больше часа) папки `ai-studio-update-*`.
+  static Future<void> cleanOld({Directory? root, DateTime? now}) =>
+      cleanOldTempDirs('ai-studio-update-', root: root, now: now);
 }

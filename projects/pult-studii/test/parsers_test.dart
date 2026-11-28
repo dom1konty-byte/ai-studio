@@ -106,15 +106,72 @@ void main() {
     });
 
     test('последняя сборка', () {
+      const repo = 'dom/ai-studio';
       final ok = parseLatestRun(
-          '{"workflow_runs":[{"id":42,"status":"completed","conclusion":"success","html_url":"u","updated_at":"2026-11-28T10:00:00Z"}]}');
+          '{"workflow_runs":[{"event":"push","head_repository":{"full_name":"dom/ai-studio"},"id":42,"status":"completed","conclusion":"success","html_url":"u","updated_at":"2026-11-28T10:00:00Z"}]}', repo);
       expect(ok.state, BuildState.success);
       expect(ok.id, 42);
-      expect(parseLatestRun('{"workflow_runs":[{"id":1,"status":"in_progress"}]}').state,
+      expect(parseLatestRun('{"workflow_runs":[{"event":"push","head_repository":{"full_name":"dom/ai-studio"},"id":1,"status":"in_progress"}]}', repo).state,
           BuildState.running);
-      expect(parseLatestRun('{"workflow_runs":[{"id":1,"status":"completed","conclusion":"failure"}]}').state,
+      expect(parseLatestRun('{"workflow_runs":[{"event":"push","head_repository":{"full_name":"dom/ai-studio"},"id":1,"status":"completed","conclusion":"failure"}]}', repo).state,
           BuildState.failed);
-      expect(parseLatestRun('{"workflow_runs":[]}').state, BuildState.none);
+      expect(parseLatestRun('{"workflow_runs":[]}', repo).state, BuildState.none);
+    });
+
+    test('сборка: чужой репозиторий и pull_request отсекаются', () {
+      const repo = 'dom/ai-studio';
+      String one(String extra) =>
+          '{"workflow_runs":[{"id":5,"status":"completed","conclusion":"success",$extra}]}';
+      const mine = '"head_repository":{"full_name":"dom/ai-studio"}';
+      expect(
+          parseLatestRun(
+                  one('"event":"push","head_repository":{"full_name":"evil/ai-studio"}'),
+                  repo)
+              .state,
+          BuildState.none);
+      expect(parseLatestRun(one('"event":"pull_request",$mine'), repo).state,
+          BuildState.none);
+      expect(
+          parseLatestRun(
+                  one('"event":"push",$mine,"pull_requests":[{"number":1}]'), repo)
+              .state,
+          BuildState.none);
+      expect(parseLatestRun(one('"event":"push"'), repo).state, BuildState.none);
+      final mixed = parseLatestRun(
+          '{"workflow_runs":[{"id":9,"event":"push","head_repository":{"full_name":"evil/x"},"status":"completed","conclusion":"success"},'
+          '{"id":8,"event":"workflow_dispatch","head_repository":{"full_name":"DOM/ai-studio"},"status":"completed","conclusion":"success"}]}',
+          repo);
+      expect(mixed.id, 8);
+    });
+
+    test('артефакт с APK выбирается по имени', () {
+      expect(
+          pickApkArtifact(
+              '{"artifacts":[{"name":"logs"},{"name":"app-apk","expired":false}]}'),
+          'app-apk');
+      expect(pickApkArtifact('{"artifacts":[{"name":"one"},{"name":"two"}]}'),
+          'one');
+      expect(pickApkArtifact('{"artifacts":[{"name":"-x"},{"name":"a b"}]}'),
+          isNull);
+      expect(pickApkArtifact('{"artifacts":[]}'), isNull);
+      expect(pickApkArtifact('мусор'), isNull);
+    });
+
+    test('latestRun: запрос только push без pull request; скачивание с -n',
+        () async {
+      final proc = FakeProc((exe, args, cwd) => const ProcResult(0,
+          '{"workflow_runs":[]}'));
+      final gh = GhService(proc);
+      const r = RepoRemote('dom', 'ai-studio');
+      await gh.latestRun(r, 'alpha');
+      expect(
+          proc.calls.single,
+          'gh api repos/dom/ai-studio/actions/workflows/alpha.yml/runs'
+          '?branch=alpha&event=push&exclude_pull_requests=true&per_page=5');
+      proc.calls.clear();
+      await gh.downloadInto(r, 7, 'C:\\t', artifact: 'app-apk');
+      expect(proc.calls.single,
+          'gh run download 7 -R dom/ai-studio -n app-apk -D C:\\t');
     });
 
     test('prepare: нет локальной ветки → checkout -b, сводка с телефона', () async {
