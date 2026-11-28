@@ -59,7 +59,7 @@ class UpdateBanner extends StatelessWidget {
             style: Rubka.body(size: 13, color: Rubka.onAmber));
         actions = [
           FilledButton(
-              style: _thin,
+              style: _thin.merge(accentButtonStyle),
               onPressed: c.applyUpdate,
               child: const Text('Обновить')),
           IconButton(

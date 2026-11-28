@@ -11,6 +11,7 @@ import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
 import 'board_panel.dart';
 import 'chat_panel.dart';
+import 'studio_rail.dart';
 import 'update_banner.dart';
 import 'usage_panel.dart';
 
@@ -84,9 +85,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Row(
                           children: [
-                            _Rail(
-                                tab: _tab,
-                                onTab: _go,
+                            StudioRail(
+                                active: _tab.name,
+                                onOverview: () => _go(_Tab.overview),
+                                onChats: () => _go(_Tab.chats),
+                                onOffice: () => _go(_Tab.office),
                                 onSetup: c.openSetup),
                             Expanded(
                               child: Padding(
@@ -127,74 +130,6 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 enum _Tab { overview, chats, office }
-
-/// Чёрная полоса значков 64 px.
-class _Rail extends StatelessWidget {
-  const _Rail({required this.tab, required this.onTab, required this.onSetup});
-
-  final _Tab tab;
-  final void Function(_Tab) onTab;
-  final VoidCallback onSetup;
-
-  Widget _item(Key key, IconData icon, String tip, bool on, VoidCallback tap) =>
-      Tooltip(
-        message: tip,
-        child: InkWell(
-          key: key,
-          borderRadius: BorderRadius.circular(14),
-          onTap: tap,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-                color: on ? Colors.white : Colors.transparent,
-                borderRadius: BorderRadius.circular(14)),
-            child: Icon(icon,
-                size: 20, color: on ? Rubka.ink : const Color(0xFF9AA0A6)),
-          ),
-        ),
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 64,
-      decoration: const BoxDecoration(
-        color: Rubka.ink,
-        borderRadius: BorderRadius.only(
-            topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Column(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration:
-                const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-            child: Text('AI',
-                style: Rubka.head(13, weight: FontWeight.w700, color: Rubka.ink)),
-          ),
-          const SizedBox(height: 14),
-          _item(const Key('nav-overview'), Icons.home_outlined,
-              'Обзор (Ctrl+1)', tab == _Tab.overview, () => onTab(_Tab.overview)),
-          const SizedBox(height: 14),
-          _item(const Key('nav-chats'), Icons.chat_bubble_outline,
-              'Чаты (Ctrl+2)', tab == _Tab.chats, () => onTab(_Tab.chats)),
-          const SizedBox(height: 14),
-          _item(const Key('office-tile'), Icons.apartment,
-              'Офис студии: общие вопросы, новые проекты (Ctrl+3)',
-              tab == _Tab.office, () => onTab(_Tab.office)),
-          const Spacer(),
-          _item(const Key('btn-setup'), Icons.settings_outlined,
-              'Настройка: проверка Git, Node, Claude Code и папки', false,
-              onSetup),
-        ],
-      ),
-    );
-  }
-}
 
 /// Плитка чата выбранного проекта (или офиса).
 class _ChatTile extends StatelessWidget {

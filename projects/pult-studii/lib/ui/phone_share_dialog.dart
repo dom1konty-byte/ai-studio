@@ -67,7 +67,7 @@ class _PhoneShareDialogState extends State<PhoneShareDialog> {
           decoration: BoxDecoration(
               color: Rubka.errorBg,
               border: Border.all(color: Rubka.error),
-              borderRadius: BorderRadius.circular(12)),
+              borderRadius: BorderRadius.circular(16)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -88,7 +88,10 @@ class _PhoneShareDialogState extends State<PhoneShareDialog> {
           children: [
             Center(
               child: Container(
-                color: Colors.white,
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: Rubka.line),
+                    borderRadius: BorderRadius.circular(18)),
                 padding: const EdgeInsets.all(16),
                 child: QrImageView(data: url, size: 240),
               ),
@@ -123,7 +126,7 @@ class _PhoneShareDialogState extends State<PhoneShareDialog> {
                 style: Rubka.body(size: 14)),
             const SizedBox(height: 4),
             Text('Раздача выключится через ${_clock(s.remaining)}',
-                style: Rubka.body(size: 14, color: Rubka.text2)),
+                style: Rubka.body(size: 14, color: Rubka.ink2)),
             const SizedBox(height: 8),
             Text(
                 'Если телефон не открывает — Windows могла спросить про '

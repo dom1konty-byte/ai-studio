@@ -47,7 +47,8 @@ class _DocsDialogState extends State<DocsDialog> {
   Widget build(BuildContext context) {
     final docs = _docs;
     return Dialog(
-      backgroundColor: Rubka.surface,
+      backgroundColor: Colors.white,
+      clipBehavior: Clip.antiAlias,
       insetPadding: const EdgeInsets.all(24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 960, maxHeight: 640),
@@ -60,7 +61,7 @@ class _DocsDialogState extends State<DocsDialog> {
         children: [
           Container(
             width: 220,
-            color: Rubka.panel,
+            color: Rubka.bento,
             padding: const EdgeInsets.all(12),
             child: Column(
               children: List.generate(
@@ -70,7 +71,7 @@ class _DocsDialogState extends State<DocsDialog> {
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   decoration: BoxDecoration(
                       color: Rubka.disabledBg,
-                      borderRadius: BorderRadius.circular(8)),
+                      borderRadius: BorderRadius.circular(14)),
                 ),
               ),
             ),
@@ -87,8 +88,8 @@ class _DocsDialogState extends State<DocsDialog> {
       children: [
         Container(
           width: 220,
-          color: Rubka.panel,
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          color: Rubka.bento,
+          padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -101,11 +102,13 @@ class _DocsDialogState extends State<DocsDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 8, 0),
+                padding: const EdgeInsets.fromLTRB(24, 16, 16, 8),
                 child: Row(
                   children: [
                     Expanded(
-                        child: Text(cur.spec.title, style: Rubka.head(18))),
+                        child: Text(cur.spec.title,
+                            overflow: TextOverflow.ellipsis,
+                            style: Rubka.head(22, weight: FontWeight.w700))),
                     TextButton(
                       onPressed: () => Navigator.pop(context),
                       child: const Text('Закрыть (Esc)'),
@@ -113,7 +116,7 @@ class _DocsDialogState extends State<DocsDialog> {
                   ],
                 ),
               ),
-              const Divider(height: 1, color: Rubka.border),
+              const Divider(height: 1, color: Rubka.line),
               Expanded(
                 child: !any
                     ? Center(
@@ -152,21 +155,27 @@ class _DocsDialogState extends State<DocsDialog> {
   Widget _item(List<DocEntry> docs, int i) {
     final d = docs[i];
     final sel = i == _selected;
-    return InkWell(
-      onTap: d.exists ? () => setState(() => _selected = i) : null,
-      child: Container(
-        height: 44,
-        padding: const EdgeInsets.only(left: 12),
-        alignment: Alignment.centerLeft,
-        decoration: BoxDecoration(
-          color: sel ? Rubka.selected : Colors.transparent,
-          border: Border(
-              left: BorderSide(
-                  color: sel ? Rubka.primary : Colors.transparent, width: 4)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: sel ? Rubka.ink : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: d.exists ? () => setState(() => _selected = i) : null,
+          child: Container(
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            alignment: Alignment.centerLeft,
+            child: Text(d.spec.title,
+                overflow: TextOverflow.ellipsis,
+                style: Rubka.body(
+                    size: 14,
+                    color: sel
+                        ? Colors.white
+                        : (d.exists ? Rubka.text : Rubka.disabledFg))),
+          ),
         ),
-        child: Text(d.spec.title,
-            style: Rubka.body(
-                color: d.exists ? Rubka.text : Rubka.disabledFg)),
       ),
     );
   }

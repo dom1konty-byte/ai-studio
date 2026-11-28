@@ -349,6 +349,7 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      backgroundColor: Colors.white,
       title: const Text('Новый проект'),
       content: SizedBox(
         width: 460,
@@ -391,6 +392,7 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Отмена')),
         FilledButton(
+          style: accentButtonStyle,
           onPressed: _valid
               ? () => Navigator.pop(
                   context,

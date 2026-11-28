@@ -80,6 +80,14 @@ class Rubka {
       color: color);
 }
 
+/// Стиль главного действия: оранжевая кнопка.
+final ButtonStyle accentButtonStyle = FilledButton.styleFrom(
+  backgroundColor: Rubka.send,
+  foregroundColor: Colors.white,
+  disabledBackgroundColor: Rubka.disabledBg,
+  disabledForegroundColor: Rubka.disabledFg,
+);
+
 ThemeData buildTheme() {
   final scheme = ColorScheme.fromSeed(seedColor: Rubka.primary).copyWith(
     primary: Rubka.primary,
@@ -90,18 +98,20 @@ ThemeData buildTheme() {
     onSurface: Rubka.text,
     error: Rubka.error,
   );
-  final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(8));
+  final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
   const minSize = Size(64, 48);
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: Rubka.bg,
+    scaffoldBackgroundColor: Rubka.bento,
     fontFamily: Rubka.bodyFont,
     fontFamilyFallback: Rubka.fallback,
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: minSize,
         shape: shape,
+        backgroundColor: Rubka.ink,
+        foregroundColor: Colors.white,
         disabledBackgroundColor: Rubka.disabledBg,
         disabledForegroundColor: Rubka.disabledFg,
       ),
@@ -110,12 +120,37 @@ ThemeData buildTheme() {
       style: OutlinedButton.styleFrom(
         minimumSize: minSize,
         shape: shape,
-        side: const BorderSide(color: Rubka.primary),
-        foregroundColor: Rubka.primary,
+        side: const BorderSide(color: Rubka.ink),
+        foregroundColor: Rubka.ink,
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(shape: shape),
+      style: TextButton.styleFrom(shape: shape, foregroundColor: Rubka.ink),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      titleTextStyle: Rubka.head(22, weight: FontWeight.w700),
+      contentTextStyle: Rubka.body(color: Rubka.ink2),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: Rubka.ink,
+      contentTextStyle: Rubka.body(size: 14, color: Colors.white),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+    switchTheme: SwitchThemeData(
+      thumbColor: const WidgetStatePropertyAll(Colors.white),
+      trackColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected) ? Rubka.ink : Rubka.dotGray),
+      trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+    ),
+    checkboxTheme: CheckboxThemeData(
+      fillColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.selected) ? Rubka.ink : null),
+      checkColor: const WidgetStatePropertyAll(Colors.white),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
     ),
   );
 }

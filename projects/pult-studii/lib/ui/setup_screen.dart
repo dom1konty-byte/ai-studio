@@ -7,6 +7,8 @@ import '../models/models.dart';
 import '../services/setup_service.dart';
 import '../state/app_controller.dart';
 import '../state/wizard_controller.dart';
+import 'board_panel.dart';
+import 'studio_rail.dart';
 
 /// «Настройка» = мастер первого запуска.
 class SetupScreen extends StatefulWidget {
@@ -28,7 +30,25 @@ class _SetupScreenState extends State<SetupScreen> {
     'Вход в GitHub',
     'Вход в Claude',
     'Папка студии',
+    'Уведомления',
   ];
+
+  /// Пятый шаг «Уведомления» живёт только в окне (мастер знает 4 шага).
+  bool _notify = false;
+
+  int get _cur => _notify ? 4 : _w.step;
+
+  void _go(int i) {
+    if (i < 0 || i >= _titles.length) return;
+    if (i == 4) {
+      setState(() => _notify = true);
+    } else {
+      setState(() => _notify = false);
+      _w.goTo(i);
+    }
+  }
+
+  void _leave() => widget.controller.closeSetup();
 
   @override
   void initState() {
@@ -66,42 +86,56 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Rubka.bento,
       body: ListenableBuilder(
         listenable: _w,
-        builder: (context, _) => Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 940),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Мастер первого запуска', style: Rubka.head(24)),
-                  const SizedBox(height: 4),
-                  Text(
-                      'Программа сама поставит всё нужное. Иди по шагам слева направо.',
-                      style: Rubka.body(color: Rubka.text2)),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(width: 220, child: _nav()),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: _content(),
+        builder: (context, _) => Row(
+          children: [
+            StudioRail(
+                active: 'setup',
+                onOverview: _leave,
+                onChats: _leave,
+                onOffice: _leave,
+                onSetup: () {}),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Мастер первого запуска',
+                        overflow: TextOverflow.ellipsis,
+                        style: Rubka.head(26, weight: FontWeight.w700)),
+                    Text(
+                        'Программа сама поставит всё нужное. Иди по шагам.',
+                        overflow: TextOverflow.ellipsis,
+                        style: Rubka.body(color: Rubka.ink2)),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(width: 240, child: _nav()),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: BentoTile(
+                              padding: EdgeInsets.zero,
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.all(22),
+                                child: _content(),
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  const Divider(color: Rubka.border),
-                  _footer(),
-                ],
+                    const SizedBox(height: 12),
+                    _footer(),
+                  ],
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -109,60 +143,108 @@ class _SetupScreenState extends State<SetupScreen> {
 
   Widget _nav() {
     final done = _w.stepsDone;
-    return Column(
-      children: [
-        for (var i = 0; i < _titles.length; i++)
-          Material(
-            color: i == _w.step ? Rubka.selected : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            child: ListTile(
-              dense: true,
-              shape:
-                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              leading: Icon(done[i] ? Icons.check_circle : Icons.circle_outlined,
-                  color: done[i] ? Rubka.success : Rubka.text2),
-              title: Text('${i + 1}. ${_titles[i]}', style: Rubka.body(size: 14)),
-              onTap: () => _w.goTo(i),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _footer() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          if (_w.step > 0)
-            OutlinedButton(
-                onPressed: () => _w.goTo(_w.step - 1), child: const Text('Назад')),
-          if (_w.step > 0) const SizedBox(width: 8),
-          if (_w.step < 3)
-            OutlinedButton(
-                onPressed: () => _w.goTo(_w.step + 1), child: const Text('Далее')),
-          const SizedBox(width: 12),
-          if (_w.checking)
-            const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2)),
-          if (_w.finishMessage.isNotEmpty)
-            Expanded(
-                child: Text(_w.finishMessage,
-                    style: Rubka.body(size: 13, color: Rubka.error)))
-          else
-            const Spacer(),
-          FilledButton(
-            onPressed: _w.allDone && !_w.busy ? _w.finish : null,
-            child: const Text('Готово'),
-          ),
-        ],
+    return BentoTile(
+      padding: const EdgeInsets.all(10),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            for (var i = 0; i < _titles.length; i++)
+              _navItem(i, i < done.length && done[i]),
+          ],
+        ),
       ),
     );
   }
 
+  Widget _navItem(int i, bool done) {
+    final cur = i == _cur;
+    final Color circle = done ? Rubka.yes : (cur ? Rubka.ink : Rubka.bento);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: cur ? Rubka.bento : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          key: Key('step-$i'),
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _go(i),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: circle, shape: BoxShape.circle),
+                  child: done
+                      ? const Icon(Icons.check, size: 16, color: Colors.white)
+                      : Text('${i + 1}',
+                          style: Rubka.body(
+                              size: 13,
+                              weight: FontWeight.w700,
+                              color: cur ? Colors.white : Rubka.ink2)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(_titles[i],
+                      overflow: TextOverflow.ellipsis,
+                      style: Rubka.body(
+                          size: 14,
+                          weight: cur ? FontWeight.w700 : FontWeight.w500)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _footer() {
+    return Row(
+      children: [
+        if (_w.checking)
+          const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+        if (_w.checking) const SizedBox(width: 8),
+        Expanded(
+          child: _w.finishMessage.isNotEmpty
+              ? Text(_w.finishMessage,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Rubka.body(size: 13, color: Rubka.error))
+              : const SizedBox.shrink(),
+        ),
+        if (_cur > 0)
+          OutlinedButton(
+              onPressed: () => _go(_cur - 1), child: const Text('Назад')),
+        if (_cur > 0) const SizedBox(width: 8),
+        if (_cur < _titles.length - 1)
+          FilledButton(
+              onPressed: () => _go(_cur + 1), child: const Text('Далее')),
+        if (_cur < _titles.length - 1) const SizedBox(width: 8),
+        FilledButton(
+          onPressed: _w.allDone && !_w.busy ? _w.finish : null,
+          child: const Text('Готово'),
+        ),
+      ],
+    );
+  }
+
+  Widget _h(String title, String text) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Rubka.head(26, weight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(text, style: Rubka.body(color: Rubka.ink2)),
+        ],
+      );
+
   Widget _content() {
+    if (_notify) return _notifications();
     switch (_w.step) {
       case 0:
         return _programs();
@@ -190,7 +272,7 @@ class _SetupScreenState extends State<SetupScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(ok ? Icons.check_circle : Icons.info_outline,
-                color: ok ? Rubka.success : Rubka.text2, size: 20),
+                color: ok ? Rubka.yes : Rubka.ink2, size: 20),
             const SizedBox(width: 8),
             Expanded(
                 child: Text(text, style: Rubka.body(size: 14, color: Rubka.text))),
@@ -204,27 +286,26 @@ class _SetupScreenState extends State<SetupScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Программы', style: Rubka.head(20)),
-        const SizedBox(height: 4),
-        Text(
-            'Уже стоящие отмечены галочкой и не трогаются. Для остальных '
-            'нажми «Установить выбранное».',
-            style: Rubka.body(color: Rubka.text2)),
+        _h('Программы',
+            'Уже стоящие отмечены и не трогаются. Для остальных нажми '
+                '«Установить выбранное».'),
         if (!_w.wingetOk)
           Container(
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-                color: Rubka.summaryBg, borderRadius: BorderRadius.circular(8)),
+                color: Rubka.tagWaitBg, borderRadius: BorderRadius.circular(16)),
             child: Text(
                 'Установщика winget нет — это нормально. AI Studio скачает '
                 'программы с официальных сайтов сама. Microsoft Store не нужен.',
                 style: Rubka.body(size: 14)),
           ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         for (final t in _w.tools) _toolRow(t),
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             FilledButton(
               onPressed: _w.hasSelection && !_w.busy
@@ -232,7 +313,6 @@ class _SetupScreenState extends State<SetupScreen> {
                   : null,
               child: const Text('Установить выбранное'),
             ),
-            const SizedBox(width: 8),
             OutlinedButton(
               onPressed: _w.busy || _w.checking ? null : _w.refresh,
               child: const Text('Проверить снова'),
@@ -245,15 +325,12 @@ class _SetupScreenState extends State<SetupScreen> {
         Text(
             'Поставил, а AI Studio не видит? Закрой и снова открой AI Studio — он '
             'подхватит новые настройки Windows.',
-            style: Rubka.body(size: 13, color: Rubka.text2)),
-        const SizedBox(height: 16),
-        const Divider(color: Rubka.border),
-        _notifications(),
+            style: Rubka.body(size: 13, color: Rubka.ink2)),
       ],
     );
   }
 
-  /// Четыре переключателя уведомлений Windows (хранятся в state.json).
+  /// Переключатели уведомлений Windows (хранятся в state.json).
   Widget _notifications() {
     final c = widget.controller;
     return ListenableBuilder(
@@ -261,39 +338,69 @@ class _SetupScreenState extends State<SetupScreen> {
       builder: (context, _) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Уведомления', style: Rubka.head(20)),
+          _h('Уведомления',
+              'О чём Windows будет сообщать, пока AI Studio работает.'),
+          const SizedBox(height: 12),
           for (final k in NotifyKind.values)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(notifyKindLabel(k), style: Rubka.body(size: 14)),
-              value: c.state.notifyEnabled(k),
-              onChanged: (v) => c.setNotifyEnabled(k, v),
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+              decoration: BoxDecoration(
+                  color: Rubka.bento, borderRadius: BorderRadius.circular(16)),
+              child: Row(
+                children: [
+                  Expanded(
+                      child: Text(notifyKindLabel(k),
+                          style: Rubka.body(size: 14, weight: FontWeight.w500))),
+                  Switch(
+                    value: c.state.notifyEnabled(k),
+                    onChanged: (v) => c.setNotifyEnabled(k, v),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
     );
   }
 
+  Widget _tag(String text, Color bg, Color fg) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration:
+            BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+        child: Text(text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Rubka.body(size: 12, weight: FontWeight.w600, color: fg)),
+      );
+
   Widget _toolRow(ToolItem t) {
     final Widget lead;
     if (t.run == InstallRun.running) {
-      lead = const Padding(
-        padding: EdgeInsets.all(12),
-        child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2)),
-      );
+      lead = const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2));
     } else if (t.installed) {
-      lead = const Padding(
-        padding: EdgeInsets.all(12),
-        child: Icon(Icons.check_circle, color: Rubka.success),
-      );
+      lead = const Icon(Icons.check_circle, color: Rubka.yes);
     } else {
       lead = Checkbox(
         value: t.selected,
         onChanged: _w.busy ? null : (v) => _w.toggle(t.spec.id, v ?? false),
       );
+    }
+    final Widget tag;
+    if (t.installed) {
+      tag = _tag('уже есть', Rubka.tagOkBg, Rubka.tagOkFg);
+    } else if (t.run == InstallRun.failed) {
+      tag = _tag('ошибка', Rubka.tagBadBg, Rubka.tagBadFg);
+    } else if (t.run == InstallRun.running) {
+      tag = _tag(
+          t.status.isNotEmpty ? t.statusText : 'ставлю…',
+          Rubka.tagWaitBg,
+          Rubka.tagWaitFg);
+    } else {
+      tag = const SizedBox.shrink();
     }
     final sub = t.installed
         ? 'уже установлено'
@@ -302,12 +409,15 @@ class _SetupScreenState extends State<SetupScreen> {
             : (t.run == InstallRun.running && t.status.isNotEmpty
                 ? t.statusText
                 : t.spec.hint));
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.fromLTRB(8, 8, 14, 10),
+      decoration: BoxDecoration(
+          color: Rubka.bento, borderRadius: BorderRadius.circular(16)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 48, height: 48, child: Center(child: lead)),
+          SizedBox(width: 44, height: 44, child: Center(child: lead)),
           const SizedBox(width: 4),
           Expanded(
             child: Padding(
@@ -315,25 +425,48 @@ class _SetupScreenState extends State<SetupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(t.spec.title, style: Rubka.head(16)),
+                  Row(
+                    children: [
+                      Flexible(
+                          child: Text(t.spec.title,
+                              overflow: TextOverflow.ellipsis,
+                              style: Rubka.head(16, weight: FontWeight.w700))),
+                      const SizedBox(width: 8),
+                      Flexible(child: tag),
+                    ],
+                  ),
                   Text(sub,
                       style: Rubka.body(
                           size: 13,
                           color: t.run == InstallRun.failed
                               ? Rubka.error
-                              : Rubka.text2)),
+                              : Rubka.ink2)),
+                  if (t.run == InstallRun.running)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: t.percent == null ? null : t.percent! / 100,
+                          minHeight: 4,
+                          color: Rubka.send,
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
                   if (t.log.isNotEmpty && !t.installed)
                     Container(
-                      margin: const EdgeInsets.only(top: 4),
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(top: 6),
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                          color: Rubka.codeBg,
-                          borderRadius: BorderRadius.circular(8)),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12)),
                       child: SelectableText(t.log, style: Rubka.mono(size: 12)),
                     ),
                   if (t.run == InstallRun.failed && !t.installed)
                     Padding(
-                      padding: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.only(top: 6),
                       child: OutlinedButton(
                         onPressed: _w.busy ? null : () => _w.retry(t.spec.id),
                         child: const Text('Повторить'),
@@ -355,21 +488,19 @@ class _SetupScreenState extends State<SetupScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Вход в GitHub', style: Rubka.head(20)),
-        const SizedBox(height: 4),
-        Text(
+        _h('Вход в GitHub',
             'GitHub — сайт, где хранится студия. Нужно один раз войти '
-            'в свой аккаунт.',
-            style: Rubka.body(color: Rubka.text2)),
+                'в свой аккаунт.'),
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             FilledButton(
                 onPressed: _w.busy ? null : _w.startGhLogin,
                 child: Text(_w.ghError.isEmpty
                     ? 'Войти в GitHub'
                     : 'Попробовать снова')),
-            if (_w.ghLoginRunning) const SizedBox(width: 8),
             if (_w.ghLoginRunning)
               OutlinedButton(
                   onPressed: _w.cancelGhLogin, child: const Text('Отмена')),
@@ -378,13 +509,15 @@ class _SetupScreenState extends State<SetupScreen> {
         if (code.isNotEmpty)
           Container(
             margin: const EdgeInsets.only(top: 12),
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-                color: Rubka.codeBg, borderRadius: BorderRadius.circular(12)),
+                color: Rubka.tagWaitBg, borderRadius: BorderRadius.circular(18)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SelectableText(code, style: Rubka.mono(size: 32)),
+                SelectableText(code,
+                    style: Rubka.mono(size: 40).copyWith(
+                        fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Text(
                     '1. Код уже скопирован.\n'
@@ -422,7 +555,7 @@ class _SetupScreenState extends State<SetupScreen> {
         Text(
             'Если GitHub при входе просит код из письма — он приходит на '
             'почту аккаунта GitHub; проверь «Спам»/«Промоакции».',
-            style: Rubka.body(size: 12, color: Rubka.text2)),
+            style: Rubka.body(size: 12, color: Rubka.ink2)),
       ],
     );
   }
@@ -441,15 +574,14 @@ class _SetupScreenState extends State<SetupScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title, style: Rubka.head(20)),
-        const SizedBox(height: 4),
-        Text(text, style: Rubka.body(color: Rubka.text2)),
+        _h(title, text),
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             FilledButton(
                 onPressed: _w.busy ? null : onStart, child: Text(startLabel)),
-            const SizedBox(width: 8),
             OutlinedButton(
                 onPressed: _w.busy ? null : onCheck,
                 child: const Text('Проверить')),
@@ -467,29 +599,26 @@ class _SetupScreenState extends State<SetupScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Папка студии', style: Rubka.head(20)),
-        const SizedBox(height: 4),
-        Text(
+        _h('Папка студии',
             'Здесь на компьютере будут лежать файлы студии. Программа скачает их '
-            'сама, если их ещё нет.',
-            style: Rubka.body(color: Rubka.text2)),
+                'сама, если их ещё нет.'),
         const SizedBox(height: 12),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-              color: Rubka.codeBg, borderRadius: BorderRadius.circular(8)),
+              color: Rubka.bento, borderRadius: BorderRadius.circular(14)),
           child: SelectableText(_w.folder, style: Rubka.mono()),
         ),
         const SizedBox(height: 12),
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
           children: [
             if (_w.folderState == FolderState.needsClone)
               FilledButton(
                   onPressed: _w.busy ? null : _w.downloadStudio,
                   child: const Text('Скачать студию')),
-            if (_w.folderState == FolderState.needsClone)
-              const SizedBox(width: 8),
             OutlinedButton(
                 onPressed: _w.busy ? null : _w.checkFolder,
                 child: const Text('Проверить')),
@@ -543,7 +672,9 @@ class _SetupScreenState extends State<SetupScreen> {
         labelText: label,
         hintText: hint,
         filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        fillColor: Rubka.bento,
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none),
       );
 }

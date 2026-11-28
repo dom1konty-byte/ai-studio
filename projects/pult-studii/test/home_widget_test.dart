@@ -178,6 +178,33 @@ void main() {
     expect(find.text('Проверить снова'), findsOneWidget);
   });
 
+  testWidgets('Настройка: нет переполнения на 960x600, все шаги', (tester) async {
+    tester.view.physicalSize = const Size(960, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final proc = FakeProc((exe, args, cwd) =>
+        exe == 'git' ? const ProcResult(-1, '', 'нет') : _handler(exe, args, cwd));
+    final controller = AppController(
+        proc: proc,
+        storage: MemoryStorage(state: {'repoPath': 'C:\\ai-studio'}),
+        downloadsDir: 'C:\\Downloads',
+        autoRefresh: null);
+
+    await tester.pumpWidget(RubkaApp(controller: controller));
+    controller.init();
+    await _settle(tester);
+
+    expect(find.byKey(const Key('btn-setup')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    for (var i = 0; i < 5; i++) {
+      await tester.tap(find.byKey(Key('step-$i')));
+      await _settle(tester);
+      expect(tester.takeException(), isNull, reason: 'шаг $i');
+    }
+    expect(find.byType(Switch), findsWidgets); // шаг «Уведомления»
+  });
+
   testWidgets('плитка «ждут да» показывает число и открывает чат',
       (tester) async {
     await _start(tester, const Size(1200, 760));
