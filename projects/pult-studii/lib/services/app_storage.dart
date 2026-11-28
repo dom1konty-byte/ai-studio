@@ -139,8 +139,15 @@ class StateRepo {
   }
 
   Map<String, dynamic> _proj(String slug) {
-    final all = (_data['projects'] ??= <String, dynamic>{}) as Map<String, dynamic>;
-    return (all[slug] ??= <String, dynamic>{}) as Map<String, dynamic>;
+    // Копия с типом <String, dynamic>: иначе запись списка в карту
+    // с узким типом (например Map<String, String>) упадёт.
+    final raw = _data['projects'];
+    final all = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    _data['projects'] = all;
+    final p = all[slug];
+    final m = p is Map ? Map<String, dynamic>.from(p) : <String, dynamic>{};
+    all[slug] = m;
+    return m;
   }
 
   /// Только корректный id (иначе не передаём в `--resume`).

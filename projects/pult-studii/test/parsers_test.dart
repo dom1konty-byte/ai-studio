@@ -132,7 +132,7 @@ void main() {
       expect(r.blockedReason, isNull);
       expect(r.newCommits, ['aaa1111 2026-11-28 С телефона']);
       expect(r.originSha, 'fff0000');
-      expect(proc.calls, contains('git checkout -b alpha origin/alpha'));
+      expect(proc.calls, contains('git switch -c alpha origin/alpha'));
       expect(proc.calls, contains('git pull --ff-only'));
       expect(proc.calls, contains('git log --format=%h %cs %s abc1234..origin/alpha'));
     });
