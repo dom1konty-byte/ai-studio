@@ -16,6 +16,9 @@ abstract class RunningProcess {
   /// Весь stderr (накапливается сразу).
   Future<String> get stderrText;
 
+  /// Строки stderr по ходу (подписаться можно один раз).
+  Stream<String> get stderrLines;
+
   Future<int> get exitCode;
 
   /// Убить процесс вместе с дочерними (дождаться результата).
@@ -30,8 +33,9 @@ abstract class ProcessRunner {
       {String? cwd, Duration timeout = const Duration(seconds: 120)});
 
   /// Запустить и читать вывод по ходу. [stdin] — текст для stdin (потом stdin закрывается).
+  /// [environment] — добавки к окружению процесса.
   Future<RunningProcess> start(String exe, List<String> args,
-      {String? cwd, String? stdin});
+      {String? cwd, String? stdin, Map<String, String>? environment});
 
   /// Полный путь к программе (на Windows предпочитаем .exe, потом .cmd/.bat).
   /// Не найдена → null (голое имя не запускаем).

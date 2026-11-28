@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
@@ -36,6 +37,7 @@ class _SetupScreenState extends State<SetupScreen> {
       service: SetupService(c.proc, c.storage),
       defaultFolder: p.join(c.homeDir, 'ai-studio'),
       initialFolder: c.repoPath,
+      copyText: (t) => Clipboard.setData(ClipboardData(text: t)),
       onFinish: (folder) async {
         await c.setRepoPath(folder);
         if (c.setupOk) {
@@ -162,16 +164,7 @@ class _SetupScreenState extends State<SetupScreen> {
       case 0:
         return _programs();
       case 1:
-        return _login(
-          title: 'Вход в GitHub',
-          text: 'GitHub — сайт, где хранится студия. Нужно один раз войти '
-              'в свой аккаунт.',
-          done: _w.ghDone,
-          message: _w.ghMessage,
-          startLabel: 'Войти в GitHub',
-          onStart: _w.launchGhLogin,
-          onCheck: _w.checkGh,
-        );
+        return _github();
       case 2:
         return _login(
           title: 'Вход в Claude',
@@ -328,7 +321,86 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 
-  // ---------- Шаги 2 и 3 ----------
+  // ---------- Шаг 2 ----------
+
+  Widget _github() {
+    final code = _w.ghCode;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Вход в GitHub', style: Rubka.head(20)),
+        const SizedBox(height: 4),
+        Text(
+            'GitHub — сайт, где хранится студия. Нужно один раз войти '
+            'в свой аккаунт.',
+            style: Rubka.body(color: Rubka.text2)),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            FilledButton(
+                onPressed: _w.busy ? null : _w.startGhLogin,
+                child: Text(_w.ghError.isEmpty
+                    ? 'Войти в GitHub'
+                    : 'Попробовать снова')),
+            if (_w.ghLoginRunning) const SizedBox(width: 8),
+            if (_w.ghLoginRunning)
+              OutlinedButton(
+                  onPressed: _w.cancelGhLogin, child: const Text('Отмена')),
+          ],
+        ),
+        if (code.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+                color: Rubka.codeBg, borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(code, style: Rubka.mono(size: 32)),
+                const SizedBox(height: 8),
+                Text(
+                    '1. Код уже скопирован.\n'
+                    '2. На открывшейся странице GitHub войди в аккаунт и '
+                    'вставь код (Ctrl+V).\n'
+                    '3. Нажми Authorize. Рубка сама увидит вход.',
+                    style: Rubka.body(size: 14)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton(
+                        onPressed: _w.copyGhCode,
+                        child: const Text('Скопировать код')),
+                    OutlinedButton(
+                        onPressed: _w.openGhDevicePage,
+                        child: const Text('Открыть страницу GitHub')),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        if (_w.ghLoginRunning && code.isEmpty)
+          _statusLine(false, 'Жду код от GitHub…'),
+        if (_w.ghDone) _statusLine(true, 'Готово: вход выполнен.'),
+        if (_w.ghMessage.isNotEmpty) _statusLine(false, _w.ghMessage),
+        if (_w.ghError.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(_w.ghError,
+                style: Rubka.body(size: 14, color: Rubka.error)),
+          ),
+        const SizedBox(height: 12),
+        Text(
+            'Если GitHub при входе просит код из письма — он приходит на '
+            'почту аккаунта GitHub; проверь «Спам»/«Промоакции».',
+            style: Rubka.body(size: 12, color: Rubka.text2)),
+      ],
+    );
+  }
+
+  // ---------- Шаг 3 ----------
 
   Widget _login({
     required String title,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../services/setup_service.dart';
@@ -30,6 +32,7 @@ class WizardController extends ChangeNotifier {
     required this.defaultFolder,
     String? initialFolder,
     required this.onFinish,
+    this.copyText,
   }) : folder = (initialFolder == null || initialFolder.isEmpty)
             ? defaultFolder
             : initialFolder;
@@ -39,6 +42,9 @@ class WizardController extends ChangeNotifier {
 
   /// Закрыть мастер: передать выбранную папку приложению. true — закрылся.
   final Future<bool> Function(String folder) onFinish;
+
+  /// Положить текст в буфер обмена (в тестах не задаётся).
+  final void Function(String text)? copyText;
 
   final List<ToolItem> tools = [for (final s in toolSpecs) ToolItem(s)];
   final _touched = <String>{};
@@ -50,6 +56,10 @@ class WizardController extends ChangeNotifier {
 
   String installMessage = '';
   String ghMessage = '';
+  String ghCode = '';
+  String ghError = '';
+  bool ghLoginRunning = false;
+  GhLoginSession? _ghSession;
   bool ghOk = false;
   String claudeMessage = '';
   LoginState claudeState = LoginState.no;
@@ -71,6 +81,8 @@ class WizardController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    final s = _ghSession;
+    if (s != null) unawaited(s.cancel());
     super.dispose();
   }
 
@@ -222,17 +234,79 @@ class WizardController extends ChangeNotifier {
 
   // ---------- Шаг 2 ----------
 
-  Future<void> launchGhLogin() async {
+  /// Вход в GitHub: код показываем в мастере, процесс ждём до конца.
+  Future<void> startGhLogin() async {
+    if (busy || ghLoginRunning) return;
     if (!tool('gh').installed) {
       ghMessage = 'Сначала поставь GitHub CLI (шаг «Программы»).';
       notifyListeners();
       return;
     }
-    final r = await service.launchGhLogin();
-    ghMessage = r.error ??
-        'Открылось чёрное окно. Нажми в нём Enter — откроется браузер, '
-            'введи там код из окна. Потом вернись сюда и нажми «Проверить».';
+    busy = true;
+    ghMessage = '';
+    ghCode = '';
+    ghError = '';
     notifyListeners();
+    try {
+      if (await service.ghAuthOk()) {
+        await _finishGhLogin();
+        return;
+      }
+      ghLoginRunning = true;
+      ghMessage = 'Запускаю вход…';
+      notifyListeners();
+      final session = await service.startGhLogin((code) {
+        ghCode = code;
+        ghMessage = '';
+        copyText?.call(code);
+        unawaited(service.openGithubDevice());
+        notifyListeners();
+      });
+      _ghSession = session;
+      final err = await session.result;
+      _ghSession = null;
+      ghLoginRunning = false;
+      if (err != null) {
+        ghError = err;
+        ghMessage = '';
+        ghCode = '';
+      } else {
+        await _finishGhLogin();
+      }
+    } finally {
+      ghLoginRunning = false;
+      _ghSession = null;
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _finishGhLogin() async {
+    ghOk = await service.ghAuthOk();
+    ghCode = '';
+    if (!ghOk) {
+      ghError = 'GitHub не подтвердил вход. Попробуй снова.';
+      ghMessage = '';
+      return;
+    }
+    final r = await service.ghSetupGit();
+    ghMessage = r.ok
+        ? 'Вход выполнен.'
+        : 'Вход выполнен, но настроить Git не вышло: ${shortLog(r)}';
+    await _checkFolder();
+  }
+
+  Future<void> cancelGhLogin() async {
+    await _ghSession?.cancel();
+  }
+
+  /// Скопировать код ещё раз.
+  void copyGhCode() {
+    if (ghCode.isNotEmpty) copyText?.call(ghCode);
+  }
+
+  void openGhDevicePage() {
+    unawaited(service.openGithubDevice());
   }
 
   Future<void> checkGh() async {

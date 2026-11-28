@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'app_storage.dart';
@@ -97,6 +98,77 @@ String shortLog(ProcResult r) {
 /// Путь можно безопасно дать `cmd /c start`.
 bool _safeForCmd(String path) => !RegExp(r'[&|<>^%!"\r\n]').hasMatch(path);
 
+const githubDeviceUrl = 'https://github.com/login/device';
+
+final _ghCodeRe = RegExp(r'\b[A-Z0-9]{4}-[A-Z0-9]{4}\b');
+
+/// Одноразовый код из строки вывода gh (или null).
+String? parseGhCode(String line) => _ghCodeRe.firstMatch(line)?.group(0);
+
+/// Идущий вход `gh auth login --web`.
+class GhLoginSession {
+  GhLoginSession._(RunningProcess p, void Function(String) onCode, Duration timeout)
+      : _p = p {
+    result = _wait(onCode, timeout);
+  }
+
+  GhLoginSession._failed(String error) : _p = null {
+    result = Future<String?>.value(error);
+  }
+
+  final RunningProcess? _p;
+  bool _cancelled = false;
+
+  /// null — вход выполнен (процесс завершился кодом 0), иначе текст ошибки.
+  late final Future<String?> result;
+
+  bool get cancelled => _cancelled;
+
+  /// Отмена: убить процесс.
+  Future<void> cancel() async {
+    _cancelled = true;
+    await _p?.kill();
+  }
+
+  Future<String?> _wait(void Function(String) onCode, Duration timeout) async {
+    final p = _p!;
+    final tail = <String>[];
+    var codeSeen = false;
+    Future<void> pump(Stream<String> s) async {
+      try {
+        await for (final l in s) {
+          final line = l.trim();
+          if (line.isEmpty) continue;
+          final c = parseGhCode(line);
+          if (c != null && !codeSeen) {
+            codeSeen = true;
+            onCode(c);
+          }
+          tail.add(line);
+          if (tail.length > 3) tail.removeAt(0);
+        }
+      } catch (_) {
+        // поток оборвался вместе с процессом
+      }
+    }
+
+    final readers = Future.wait([pump(p.stdoutLines), pump(p.stderrLines)]);
+    int code;
+    try {
+      code = await p.exitCode.timeout(timeout);
+    } on TimeoutException {
+      await p.kill();
+      await readers;
+      return 'Вход не завершён за ${timeout.inMinutes} минут.';
+    }
+    await readers;
+    if (_cancelled) return 'Вход отменён.';
+    if (code == 0) return null;
+    final log = tail.join('\n');
+    return 'Вход не удался${log.isEmpty ? '' : ': $log'}';
+  }
+}
+
 class LaunchResult {
   const LaunchResult({this.error, this.plain = false});
 
@@ -170,19 +242,36 @@ class SetupService {
 
   Future<bool> ghAuthOk() async => (await _proc.run('gh', ['auth', 'status'])).ok;
 
-  Future<LaunchResult> launchGhLogin() async {
-    final exe = await _proc.resolveExecutable('gh');
-    if (exe == null) return const LaunchResult(error: 'GitHub CLI не найден.');
-    return _startConsole(exe, const [
-      'auth',
-      'login',
-      '--web',
-      '--git-protocol',
-      'https',
-      '--hostname',
-      'github.com',
-    ]);
+  /// Вход в GitHub без окна консоли. [onCode] вызывается, когда gh напечатал
+  /// одноразовый код. Результат сессии: null — вошли, иначе текст ошибки.
+  Future<GhLoginSession> startGhLogin(void Function(String code) onCode,
+      {Duration timeout = const Duration(minutes: 15)}) async {
+    try {
+      final p = await _proc.start(
+          'gh',
+          const [
+            'auth',
+            'login',
+            '--web',
+            '--git-protocol',
+            'https',
+            '--hostname',
+            'github.com',
+          ],
+          // Браузер открываем сами: у gh он «ничего не делает».
+          environment: const {'GH_BROWSER': 'cmd /c rem'});
+      return GhLoginSession._(p, onCode, timeout);
+    } on ToolNotFound {
+      return GhLoginSession._failed('GitHub CLI не найден.');
+    } catch (e) {
+      return GhLoginSession._failed('Не удалось запустить вход: $e');
+    }
   }
+
+  /// Открыть страницу ввода кода (адрес фиксированный).
+  Future<void> openGithubDevice() => _proc.run(
+      'rundll32', ['url.dll,FileProtocolHandler', githubDeviceUrl],
+      timeout: const Duration(seconds: 30));
 
   Future<ProcResult> ghSetupGit() => _proc.run('gh', ['auth', 'setup-git']);
 

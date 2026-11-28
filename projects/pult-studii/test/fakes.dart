@@ -6,7 +6,8 @@ import 'package:pult_studii/services/app_storage.dart';
 import 'package:pult_studii/services/process_runner.dart';
 
 class FakeRunning implements RunningProcess {
-  FakeRunning(this.lines, {this.code = 0, this.err = '', this.stream});
+  FakeRunning(this.lines,
+      {this.code = 0, this.err = '', this.stream, this.exitGate});
 
   final List<String> lines;
   final int code;
@@ -16,6 +17,9 @@ class FakeRunning implements RunningProcess {
   final StreamController<String>? stream;
   bool killed = false;
 
+  /// Если задан — exitCode ждёт его; kill() завершает кодом 1.
+  final Completer<int>? exitGate;
+
   @override
   Stream<String> get stdoutLines => stream?.stream ?? Stream.fromIterable(lines);
 
@@ -23,12 +27,21 @@ class FakeRunning implements RunningProcess {
   Future<String> get stderrText async => err;
 
   @override
-  Future<int> get exitCode async => code;
+  Stream<String> get stderrLines =>
+      Stream.fromIterable(err.isEmpty ? const <String>[] : err.split('\n'));
+
+  @override
+  Future<int> get exitCode {
+    final g = exitGate;
+    return g != null ? g.future : Future<int>.value(code);
+  }
 
   @override
   Future<void> kill() async {
     killed = true;
     stream?.close();
+    final g = exitGate;
+    if (g != null && !g.isCompleted) g.complete(1);
   }
 }
 
@@ -45,6 +58,7 @@ class FakeProc implements ProcessRunner {
   /// Аргументы всех start().
   final started = <List<String>>[];
   final stdins = <String?>[];
+  final environments = <Map<String, String>?>[];
 
   /// Что вернёт следующий start().
   final queue = <FakeRunning>[];
@@ -63,10 +77,11 @@ class FakeProc implements ProcessRunner {
 
   @override
   Future<RunningProcess> start(String exe, List<String> args,
-      {String? cwd, String? stdin}) async {
+      {String? cwd, String? stdin, Map<String, String>? environment}) async {
     await startGate?.future;
     started.add([exe, ...args]);
     stdins.add(stdin);
+    environments.add(environment);
     return queue.isNotEmpty ? queue.removeAt(0) : FakeRunning(const []);
   }
 

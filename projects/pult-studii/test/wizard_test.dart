@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pult_studii/services/app_storage.dart';
 import 'package:pult_studii/services/direct_install.dart';
@@ -315,26 +317,140 @@ void main() {
   });
 
   group('входы', () {
-    test('GitHub: окно с фиксированными аргументами, проверка и setup-git',
-        () async {
+    test('разбор кода из строк gh', () {
+      expect(parseGhCode('! First copy your one-time code: AB12-CD34'),
+          'AB12-CD34');
+      expect(parseGhCode('Press Enter to open https://github.com/login/device'),
+          isNull);
+      expect(parseGhCode('abcd-1234'), isNull);
+    });
+
+    test('GitHub: код из stderr, копирование, открытие, успех', () async {
+      final env = Env(installed: {'winget', 'git', 'gh'});
+      env.proc.queue.add(FakeRunning(const [],
+          err: '! First copy your one-time code: AB12-CD34\n'
+              'Press Enter to open https://github.com/login/device in your '
+              'browser...\n'));
+      final copied = <String>[];
+      final w = WizardController(
+        service: SetupService(env.proc, env.storage),
+        defaultFolder: _folder,
+        initialFolder: _folder,
+        onFinish: (_) async => true,
+        copyText: copied.add,
+      );
+      await w.refresh();
+      final login = w.startGhLogin(); // первая проверка входа уже сделана
+      env.ghAuth = true; // «пользователь вошёл» к концу процесса
+      await login;
+      expect(env.proc.started.single, [
+        'gh', 'auth', 'login', '--web', '--git-protocol', 'https',
+        '--hostname', 'github.com', //
+      ]);
+      expect(env.proc.environments.single, containsPair('GH_BROWSER', isNotEmpty));
+      expect(copied, ['AB12-CD34']);
+      expect(
+          env.calls,
+          contains('rundll32 url.dll,FileProtocolHandler '
+              'https://github.com/login/device'));
+      expect(w.ghOk, isTrue);
+      expect(w.ghDone, isTrue);
+      expect(w.ghError, isEmpty);
+      expect(env.calls, contains('gh auth setup-git'));
+      expect(w.busy, isFalse);
+      expect(w.ghLoginRunning, isFalse);
+    });
+
+    test('GitHub: код может прийти в stdout', () async {
+      final env = Env(installed: {'winget', 'git', 'gh'});
+      env.proc.queue.add(FakeRunning(const ['code: ZZ99-0AA1']));
+      final copied = <String>[];
+      final w = WizardController(
+        service: SetupService(env.proc, env.storage),
+        defaultFolder: _folder,
+        initialFolder: _folder,
+        onFinish: (_) async => true,
+        copyText: copied.add,
+      );
+      await w.refresh();
+      final f = w.startGhLogin();
+      env.ghAuth = true;
+      await f;
+      expect(copied, ['ZZ99-0AA1']);
+    });
+
+    test('GitHub: ошибка процесса → текст и повторная попытка', () async {
+      final env = Env(installed: {'winget', 'git', 'gh'});
+      env.proc.queue.add(FakeRunning(const [],
+          code: 1, err: '! First copy your one-time code: AB12-CD34\nexpired'));
+      final w = env.wizard();
+      await w.refresh();
+      await w.startGhLogin();
+      expect(w.ghOk, isFalse);
+      expect(w.ghError, contains('Вход не удался'));
+      expect(w.ghError, contains('expired'));
+      expect(w.ghCode, isEmpty);
+      expect(env.calls, isNot(contains('gh auth setup-git')));
+      expect(w.busy, isFalse);
+
+      env.proc.queue.add(FakeRunning(const []));
+      final f = w.startGhLogin();
+      env.ghAuth = true;
+      await f;
+      expect(w.ghError, isEmpty);
+      expect(w.ghDone, isTrue);
+    });
+
+    test('GitHub: процесс завершился, а входа нет → ошибка', () async {
+      final env = Env(installed: {'winget', 'git', 'gh'});
+      env.proc.queue.add(FakeRunning(const []));
+      final w = env.wizard();
+      await w.refresh();
+      await w.startGhLogin();
+      expect(w.ghOk, isFalse);
+      expect(w.ghError, isNotEmpty);
+    });
+
+    test('GitHub: отмена убивает процесс', () async {
+      final env = Env(installed: {'winget', 'git', 'gh'});
+      final gate = Completer<int>();
+      final running = FakeRunning(const [],
+          err: '! First copy your one-time code: AB12-CD34', exitGate: gate);
+      env.proc.queue.add(running);
+      final w = env.wizard();
+      await w.refresh();
+      final f = w.startGhLogin();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(w.ghLoginRunning, isTrue);
+      expect(w.ghCode, 'AB12-CD34');
+      await w.cancelGhLogin();
+      await f;
+      expect(running.killed, isTrue);
+      expect(w.ghError, contains('отменён'));
+      expect(w.ghOk, isFalse);
+      expect(w.ghLoginRunning, isFalse);
+      expect(w.busy, isFalse);
+    });
+
+    test('GitHub: уже вошёл → процесс не запускается, сразу готово', () async {
+      final env = Env(installed: {'winget', 'git', 'gh'})..ghAuth = true;
+      final w = env.wizard();
+      await w.refresh();
+      await w.startGhLogin();
+      expect(env.proc.started, isEmpty);
+      expect(w.ghDone, isTrue);
+      expect(env.calls, contains('gh auth setup-git'));
+    });
+
+    test('GitHub: проверка без запуска (кнопка «Проверить»)', () async {
       final env = Env(installed: {'winget', 'git', 'gh'});
       final w = env.wizard();
       await w.refresh();
-      await w.launchGhLogin();
-      expect(
-          env.calls,
-          contains('cmd /c start  gh auth login --web --git-protocol https '
-              '--hostname github.com'));
-
       await w.checkGh();
       expect(w.ghOk, isFalse);
-      expect(env.calls, isNot(contains('gh auth setup-git')));
-
       env.ghAuth = true;
       await w.checkGh();
-      expect(w.ghOk, isTrue);
       expect(w.ghDone, isTrue);
-      expect(env.calls, contains('gh auth setup-git'));
     });
 
     test('Claude: auth login, а в старой версии просто claude', () async {

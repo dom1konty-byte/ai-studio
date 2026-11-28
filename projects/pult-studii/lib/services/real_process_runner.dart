@@ -138,13 +138,13 @@ class RealProcessRunner implements ProcessRunner {
 
   @override
   Future<RunningProcess> start(String exe, List<String> args,
-      {String? cwd, String? stdin}) async {
+      {String? cwd, String? stdin, Map<String, String>? environment}) async {
     final path = await resolveExecutable(exe);
     if (path == null) throw ToolNotFound(exe);
     final p = await Process.start(path, args,
         workingDirectory: cwd,
         runInShell: _shell(path),
-        environment: _env());
+        environment: {..._env(), ...?environment});
     try {
       if (stdin != null) p.stdin.add(utf8.encode(stdin));
       await p.stdin.close();
@@ -172,13 +172,32 @@ Future<void> _killTree(Process p) async {
 }
 
 class _RealRunning implements RunningProcess {
-  _RealRunning(this._p)
-      : stderrText = _p.stderr.transform(_utf8.decoder).join();
+  _RealRunning(this._p) {
+    final buf = StringBuffer();
+    final done = Completer<String>();
+    final ctl = StreamController<String>();
+    _p.stderr.transform(_utf8.decoder).listen(
+      (s) {
+        buf.write(s);
+        ctl.add(s);
+      },
+      onDone: () {
+        ctl.close();
+        done.complete(buf.toString());
+      },
+      onError: (Object _) {},
+    );
+    stderrText = done.future;
+    stderrLines = ctl.stream.transform(const LineSplitter());
+  }
 
   final Process _p;
 
   @override
-  final Future<String> stderrText;
+  late final Future<String> stderrText;
+
+  @override
+  late final Stream<String> stderrLines;
 
   @override
   Stream<String> get stdoutLines =>
