@@ -66,7 +66,7 @@ void main() {
     tester.view.physicalSize = const Size(1200, 760);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(ChistoApp(controller: c, splash: false));
+    await tester.pumpWidget(ChistoApp(controller: c));
     await tester.pump();
     c.go(Section.computer);
     for (var i = 0; i < 100; i++) {

@@ -30,7 +30,7 @@ Color navPanelColor(BuildContext context, {required bool glass}) {
 /// Живой фон левой панели: медленные волны (период 10 с, прозрачность 5 %).
 /// Стоит под RepaintBoundary; кадры не идут, если окно скрыто/свёрнуто
 /// или в Windows включено «Убрать анимации».
-/// Окно сейчас на экране. Ставят TrayService и WindowAnimator: при скрытии волны
+/// Окно сейчас на экране. Ставит TrayService: при скрытии волны
 /// останавливаются явно, не дожидаясь AppLifecycleState.
 final ValueNotifier<bool> windowShown = ValueNotifier<bool>(true);
 

@@ -283,10 +283,13 @@ class AppController extends ChangeNotifier {
   Completer<void>? _heavyGate;
 
   /// Тяжёлая инициализация (реестр, диск, каталог, первый анализ) ждёт [releaseHeavy].
-  /// Вызывают до runApp на время заставки.
+  /// Вызывают до runApp на время показа первого кадра.
   void holdHeavy() => _heavyGate ??= Completer<void>();
 
-  /// Заставка закончилась — можно начинать тяжёлую работу.
+  /// Тяжёлая работа ещё ждёт запуска.
+  bool get heavyHeld => _heavyGate != null && !_heavyGate!.isCompleted;
+
+  /// Первый кадр показан — можно начинать тяжёлую работу.
   void releaseHeavy() {
     final g = _heavyGate;
     if (g != null && !g.isCompleted) g.complete();

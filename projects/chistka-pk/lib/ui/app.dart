@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
@@ -6,8 +8,6 @@ import 'glass.dart';
 import 'mini_view.dart';
 import 'onboarding.dart';
 import 'shell.dart';
-import 'splash.dart';
-import 'window_fx.dart';
 
 const brandTeal = Color(0xFF0F9D9A);
 const brandTealDark = Color(0xFF0B7C7A);
@@ -39,13 +39,13 @@ ThemeData _theme(Brightness b) {
   );
 }
 
+/// Пауза после первого кадра перед тяжёлой инициализацией.
+const heavyDelay = Duration(milliseconds: 300);
+
 class ChistoApp extends StatefulWidget {
   const ChistoApp(
-      {super.key, required this.controller, this.splash = false, this.onboarding = false});
+      {super.key, required this.controller, this.onboarding = false});
   final AppController controller;
-
-  /// Показать заставку при запуске (в трее/тестах — нет).
-  final bool splash;
 
   /// Подсказки первого запуска (в тестах — нет, если не включены).
   final bool onboarding;
@@ -59,6 +59,20 @@ class _ChistoAppState extends State<ChistoApp> {
   void initState() {
     super.initState();
     widget.controller.init();
+    // Тяжёлая инициализация — после первого кадра + 300 мс, чтобы окно открылось мгновенно.
+    if (widget.controller.heavyHeld) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _heavyTimer = Timer(heavyDelay, widget.controller.releaseHeavy);
+      });
+    }
+  }
+
+  Timer? _heavyTimer;
+
+  @override
+  void dispose() {
+    _heavyTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -73,17 +87,10 @@ class _ChistoAppState extends State<ChistoApp> {
         listenable: Listenable.merge([widget.controller, glassAvailable]),
         builder: (context, _) => GlassScope(
           on: widget.controller.settings.transparentPanel && glassAvailable.value,
-          child: WindowFxHost(
-            child: Onboarding(
-              controller: widget.controller,
-              enabled: widget.onboarding,
-              delay: widget.splash ? const Duration(milliseconds: 2300) : Duration.zero,
-              child: Splash(
-                enabled: widget.splash,
-                onDone: widget.controller.releaseHeavy,
-                child: child ?? const SizedBox(),
-              ),
-            ),
+          child: Onboarding(
+            controller: widget.controller,
+            enabled: widget.onboarding,
+            child: child ?? const SizedBox(),
           ),
         ),
       ),

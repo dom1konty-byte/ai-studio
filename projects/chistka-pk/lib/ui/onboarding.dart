@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
@@ -36,14 +34,10 @@ class Onboarding extends StatefulWidget {
     required this.controller,
     required this.enabled,
     required this.child,
-    this.delay = Duration.zero,
   });
   final AppController controller;
   final bool enabled;
   final Widget child;
-
-  /// Пауза перед первым показом (пока идёт заставка).
-  final Duration delay;
 
   @override
   State<Onboarding> createState() => _OnboardingState();
@@ -51,25 +45,17 @@ class Onboarding extends StatefulWidget {
 
 class _OnboardingState extends State<Onboarding> {
   int _step = 0;
-  late bool _ready = widget.delay == Duration.zero;
-  Timer? _timer;
+  bool _ready = false;
 
   AppController get c => widget.controller;
 
   @override
   void initState() {
     super.initState();
-    if (!_ready) {
-      _timer = Timer(widget.delay, () {
-        if (mounted) setState(() => _ready = true);
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+    // Подсказки — после первого кадра главного экрана.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _ready = true);
+    });
   }
 
   void _next() {
