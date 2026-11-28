@@ -2,7 +2,6 @@ import 'package:chistka_pk/state/app_controller.dart';
 import 'package:chistka_pk/ui/app.dart';
 import 'package:chistka_pk/ui/glass.dart';
 import 'package:chistka_pk/ui/shell.dart';
-import 'package:chistka_pk/ui/window_fx.dart';
 import 'package:chistka_pk/core/catalog.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -55,40 +54,5 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('onboarding')), findsOneWidget);
     expect(find.byType(Shell), findsOneWidget);
-  });
-
-  test('длительности: закрытие 380 мс, открытие 340 мс', () {
-    expect(windowFxHideDuration.inMilliseconds, 380);
-    expect(windowFxShowDuration.inMilliseconds, 340);
-    expect(windowFxHideScale, 0.94);
-    expect(windowFxShowScale, 0.94);
-  });
-
-  testWidgets('закрытие: ещё идёт в 370 мс, готово к 390 мс; открытие — 340 мс', (tester) async {
-    final c = AppController(
-      platform: FakePlatform(),
-      env: const Env({}),
-      downloadsScan: (_) async => [],
-      largeScan: (_, __) async => [],
-    );
-    await _pump(tester, c);
-    await tester.pump();
-    var hidden = false;
-    windowFx.playHide().then((_) => hidden = true);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 370));
-    expect(hidden, isFalse);
-    await tester.pump(const Duration(milliseconds: 20));
-    expect(hidden, isTrue);
-    windowFx.reset();
-    windowFx.prepareShow();
-    await tester.pump();
-    var shown = false;
-    windowFx.playShow().then((_) => shown = true);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 330));
-    expect(shown, isFalse);
-    await tester.pump(const Duration(milliseconds: 20));
-    expect(shown, isTrue);
   });
 }

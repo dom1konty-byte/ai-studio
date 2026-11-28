@@ -6,9 +6,8 @@ import 'package:window_manager/window_manager.dart';
 
 import '../state/app_controller.dart';
 import '../ui/glass.dart' show windowShown;
-import '../ui/window_fx.dart';
 import 'mini_window.dart';
-import 'window_animator.dart';
+import 'window_hide.dart';
 
 /// Значок у часов, меню и «крестик сворачивает в трей».
 class TrayService with TrayListener, WindowListener {
@@ -37,7 +36,6 @@ class TrayService with TrayListener, WindowListener {
     await windowManager.setPreventClose(true);
   }
 
-  final animator = WindowAnimator();
   final _mini = MiniWindow();
   bool _miniBusy = false;
   bool _hidingMini = false;
@@ -63,7 +61,6 @@ class TrayService with TrayListener, WindowListener {
     if (DateTime.now().difference(_miniHiddenAt).inMilliseconds < 400) return;
     _miniBusy = true;
     try {
-      if (_animating) return;
       if (!controller.miniMode) await controller.setMiniMode(true);
       await Future<void>.delayed(const Duration(milliseconds: 60));
       windowShown.value = true;
@@ -99,34 +96,16 @@ class TrayService with TrayListener, WindowListener {
     if (controller.miniMode && !_miniBusy) hideMini();
   }
 
-  bool _animating = false;
-  bool _hiding = false;
-  bool _pendingShow = false;
-
-  /// Плавно спрятать окно: прозрачность окна по кадрам + масштаб содержимого.
-  Future<void> hideAnimated() async {
-    if (_animating) return;
-    _animating = true; // синхронно, до первого await
-    _hiding = true;
-    controller.pauseComputerPolling();
-    try {
-      await _mini.saveBounds();
-      await animator.hide();
-    } catch (_) {
-      try {
-        await windowManager.hide();
-      } catch (_) {}
-    } finally {
-      windowShown.value = false;
-      windowFx.reset();
-      _animating = false;
-      _hiding = false;
-    }
-    if (_pendingShow) {
-      _pendingShow = false;
-      await showWindow();
-    }
-  }
+  /// Спрятать окно сразу, без анимации: волны и опрос останавливаются,
+  /// границы окна запоминаются.
+  Future<void> hideAnimated() => hideWindowNow(
+        pause: () {
+          windowShown.value = false;
+          controller.pauseComputerPolling();
+        },
+        saveBounds: _mini.saveBounds,
+        hide: windowManager.hide,
+      );
 
   Future<void> showWindow() async {
     if (controller.miniMode) {
@@ -137,26 +116,11 @@ class TrayService with TrayListener, WindowListener {
       await windowManager.focus();
       return;
     }
-    if (_animating) {
-      // «Открыть» во время сворачивания — выполним после hideAnimated.
-      if (_hiding) _pendingShow = true;
-      return;
-    }
-    _animating = true; // синхронно, до первого await
+    windowShown.value = true;
     try {
       if (await windowManager.isMinimized()) await windowManager.restore();
-      if (!await windowManager.isVisible()) await animator.show();
-    } catch (_) {
-      try {
-        await windowManager.setOpacity(1);
-      } catch (_) {}
-    } finally {
-      windowFx.reset();
-      _animating = false;
-    }
-    windowShown.value = true;
+    } catch (_) {}
     await windowManager.show();
-    await windowManager.restore();
     await windowManager.focus();
     controller.resumeComputerPolling();
   }

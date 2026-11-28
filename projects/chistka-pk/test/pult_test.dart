@@ -6,7 +6,6 @@ import 'package:chistka_pk/core/models.dart';
 import 'package:chistka_pk/core/scanner.dart';
 import 'package:chistka_pk/state/app_controller.dart';
 import 'package:chistka_pk/ui/app.dart';
-import 'package:chistka_pk/ui/window_fx.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -401,52 +400,5 @@ void main() {
     }
     expect(find.text('Скоро'), findsNothing);
     await tester.pumpWidget(const SizedBox());
-  });
-
-  group('плавное сворачивание (содержимое внутри Flutter)', () {
-    testWidgets('содержимое плавно уменьшается 1 → 0,94 за 380 мс', (tester) async {
-      await _pump(tester, _make(tmp: tmp));
-      expect(windowFx.amount, 0);
-      var done = false;
-      windowFx.playHide().then((_) => done = true);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 190));
-      expect(windowFx.amount, inExclusiveRange(0, 1));
-      expect(done, isFalse);
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(done, isTrue);
-      expect(windowFx.amount, 1);
-      final sc = tester.widget<Transform>(find.descendant(
-          of: find.byType(WindowFxHost), matching: find.byType(Transform)).first);
-      expect(sc.transform.storage[0], closeTo(0.94, 0.001));
-      windowFx.reset();
-      await tester.pump();
-      expect(windowFx.amount, 0);
-    });
-
-    testWidgets('показ: prepareShow прячет содержимое, playShow возвращает', (tester) async {
-      await _pump(tester, _make(tmp: tmp));
-      windowFx.prepareShow();
-      await tester.pump();
-      expect(windowFx.amount, 1);
-      var done = false;
-      windowFx.playShow().then((_) => done = true);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-      expect(done, isTrue);
-      expect(windowFx.amount, 0);
-    });
-
-    testWidgets('«Убрать анимации»: без ожидания', (tester) async {
-      tester.platformDispatcher.accessibilityFeaturesTestValue =
-          const FakeAccessibilityFeatures(disableAnimations: true);
-      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
-      await _pump(tester, _make(tmp: tmp));
-      var done = false;
-      windowFx.playHide().then((_) => done = true);
-      await tester.pump();
-      expect(done, isTrue);
-      windowFx.reset();
-    });
   });
 }

@@ -8,7 +8,6 @@ import 'glass.dart';
 import 'mini_view.dart';
 import 'onboarding.dart';
 import 'shell.dart';
-import 'window_fx.dart';
 
 const brandTeal = Color(0xFF0F9D9A);
 const brandTealDark = Color(0xFF0B7C7A);
@@ -88,12 +87,10 @@ class _ChistoAppState extends State<ChistoApp> {
         listenable: Listenable.merge([widget.controller, glassAvailable]),
         builder: (context, _) => GlassScope(
           on: widget.controller.settings.transparentPanel && glassAvailable.value,
-          child: WindowFxHost(
-            child: Onboarding(
-              controller: widget.controller,
-              enabled: widget.onboarding,
-              child: child ?? const SizedBox(),
-            ),
+          child: Onboarding(
+            controller: widget.controller,
+            enabled: widget.onboarding,
+            child: child ?? const SizedBox(),
           ),
         ),
       ),

@@ -1,6 +1,7 @@
 
 import 'package:chistka_pk/platform/mini_window.dart';
 import 'package:chistka_pk/platform/show_guard.dart';
+import 'package:chistka_pk/platform/window_hide.dart';
 import 'package:chistka_pk/ui/glass.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -77,5 +78,31 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(tester.binding.hasScheduledFrame, isTrue);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  test('скрытие окна мгновенное: волны стоят, границы сохранены, затем hide', () async {
+    final log = <String>[];
+    windowShown.value = true;
+    await hideWindowNow(
+      pause: () {
+        windowShown.value = false;
+        log.add('pause');
+      },
+      saveBounds: () async => log.add('bounds'),
+      hide: () async => log.add('hide'),
+    );
+    expect(log, ['pause', 'bounds', 'hide']);
+    expect(windowShown.value, isFalse);
+    windowShown.value = true;
+  });
+
+  test('скрытие: ошибка сохранения границ не мешает спрятать окно', () async {
+    var hidden = false;
+    await hideWindowNow(
+      pause: () {},
+      saveBounds: () async => throw Exception('x'),
+      hide: () async => hidden = true,
+    );
+    expect(hidden, isTrue);
   });
 }
