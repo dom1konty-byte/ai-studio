@@ -1,78 +1,62 @@
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:flutter/animation.dart' show Curves;
-import 'package:flutter/scheduler.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../ui/glass.dart' show windowShown;
 import '../ui/window_fx.dart';
 
-/// Прозрачность окна в момент [t] (0..1) анимации: показ — easeOutCubic, 0 → 1;
-/// скрытие — easeInCubic, 1 → 0.
-double fadeOpacity(double t, {required bool show}) {
-  final k = t.clamp(0.0, 1.0);
-  return show ? Curves.easeOutCubic.transform(k) : 1 - Curves.easeInCubic.transform(k);
-}
+/// Прозрачность окна на время анимации: ставится один раз, не покадрово.
+const windowMidOpacity = 0.6;
 
-/// Плавный показ и скрытие окна: прозрачность окна по кадрам (Ticker)
-/// + масштаб содержимого. AnimateWindow не используется (чёрный контент Flutter).
+/// Плавный показ и скрытие окна. Главное — анимация содержимого внутри Flutter
+/// (масштаб + затухание, [WindowFx]). Прозрачность самого окна меняется
+/// двумя вызовами за анимацию (середина и конец), а не каждый кадр:
+/// вызовы через канал платформы асинхронны и давали дёрганье.
 class WindowAnimator {
   bool get noAnimations => PlatformDispatcher.instance.accessibilityFeatures.disableAnimations;
 
-  /// Показать окно плавно (окно сейчас скрыто).
+  /// Показать окно плавно (окно сейчас скрыто). Волны фона включит вызывающий после показа.
   Future<void> show() async {
-    windowShown.value = true;
     if (noAnimations) {
+      windowShown.value = true;
       await windowManager.show();
       return;
     }
     windowFx.prepareShow();
     final fx = windowFx.playShow();
     try {
-      await windowManager.setOpacity(0);
+      await windowManager.setOpacity(windowMidOpacity);
       await windowManager.show();
-      await _fade(show: true, ms: windowFxShowDuration.inMilliseconds);
+      // Середина анимации — окно становится непрозрачным (один вызов).
+      unawaited(Future<void>.delayed(windowFxShowDuration ~/ 2).then((_) => _opacity(1)));
+      await fx;
     } finally {
-      await _opaque();
+      await _opacity(1);
     }
-    await fx;
+    windowShown.value = true;
   }
 
-  /// Спрятать окно плавно.
+  /// Спрятать окно плавно. Волны и опрос останавливаются сразу.
   Future<void> hide() async {
+    windowShown.value = false;
     if (!noAnimations) {
       final fx = windowFx.playHide();
+      // Вторая половина: окно слегка прозрачное (один вызов).
+      unawaited(Future<void>.delayed(windowFxHideDuration ~/ 2)
+          .then((_) => _opacity(windowMidOpacity)));
       try {
-        await _fade(show: false, ms: windowFxHideDuration.inMilliseconds);
+        await fx;
       } catch (_) {}
-      await fx;
     }
     await windowManager.hide();
-    windowShown.value = false;
     windowFx.reset();
-    await _opaque();
+    await _opacity(1);
   }
 
-  Future<void> _opaque() async {
+  Future<void> _opacity(double v) async {
     try {
-      await windowManager.setOpacity(1);
+      await windowManager.setOpacity(v);
     } catch (_) {}
-  }
-
-  /// Прозрачность окна по кадрам: один вызов setOpacity за кадр, без ожидания.
-  Future<void> _fade({required bool show, required int ms}) {
-    final done = Completer<void>();
-    late final Ticker ticker;
-    ticker = Ticker((elapsed) {
-      final t = (elapsed.inMicroseconds / (ms * 1000)).clamp(0.0, 1.0);
-      unawaited(windowManager.setOpacity(fadeOpacity(t, show: show)).catchError((Object _) {}));
-      if (t >= 1 && !done.isCompleted) {
-        ticker.stop();
-        done.complete();
-      }
-    });
-    ticker.start();
-    return done.future.whenComplete(ticker.dispose);
   }
 }

@@ -269,11 +269,35 @@ class AppController extends ChangeNotifier {
   /// Повторный вызов ничего не делает (init зовут и main, и экран).
   Future<void> init() => _initFuture ??= _init();
 
-  Future<void> _init() async {
+  /// Только чтение settings.json и статистики: дёшево, нужно до первого кадра.
+  Future<void> loadSettings() => _settingsFuture ??= _loadSettings();
+  Future<void>? _settingsFuture;
+
+  Future<void> _loadSettings() async {
     totalFreedEver = await _stats?.load() ?? 0;
     final store = _settingsStore;
     if (store != null) settings = await store.load();
     settingsLoaded = true;
+  }
+
+  Completer<void>? _heavyGate;
+
+  /// Тяжёлая инициализация (реестр, диск, каталог, первый анализ) ждёт [releaseHeavy].
+  /// Вызывают до runApp на время заставки.
+  void holdHeavy() => _heavyGate ??= Completer<void>();
+
+  /// Заставка закончилась — можно начинать тяжёлую работу.
+  void releaseHeavy() {
+    final g = _heavyGate;
+    if (g != null && !g.isCompleted) g.complete();
+  }
+
+  /// Завершается, когда тяжёлую работу можно начинать (сразу, если [holdHeavy] не звали).
+  Future<void> get heavyReleased => _heavyGate?.future ?? Future<void>.value();
+
+  Future<void> _init() async {
+    await loadSettings();
+    await heavyReleased;
     try {
       adminMode = await platform.isElevated();
     } catch (_) {
