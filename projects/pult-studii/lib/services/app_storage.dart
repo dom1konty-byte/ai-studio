@@ -7,6 +7,9 @@ import 'package:path/path.dart' as p;
 import '../models/models.dart';
 import '../models/safety.dart';
 
+/// Что лежит по пути папки студии.
+enum FolderKind { missing, empty, notEmpty }
+
 /// Хранилище на диске (подменяется в тестах).
 abstract class AppStorage {
   Future<Map<String, dynamic>> loadState();
@@ -17,6 +20,9 @@ abstract class AppStorage {
 
   /// В папке есть .claude/agents и projects/README.md.
   Future<bool> repoLooksValid(String path);
+
+  /// Нет папки / пустая / в ней что-то есть.
+  Future<FolderKind> folderKind(String path);
 }
 
 class FileStorage implements AppStorage {
@@ -114,6 +120,19 @@ class FileStorage implements AppStorage {
     if (path.trim().isEmpty) return false;
     return await Directory(p.join(path, '.claude', 'agents')).exists() &&
         await File(p.join(path, 'projects', 'README.md')).exists();
+  }
+
+  @override
+  Future<FolderKind> folderKind(String path) async {
+    try {
+      final d = Directory(path);
+      if (!await d.exists()) {
+        return await File(path).exists() ? FolderKind.notEmpty : FolderKind.missing;
+      }
+      return await d.list().isEmpty ? FolderKind.empty : FolderKind.notEmpty;
+    } catch (_) {
+      return FolderKind.notEmpty;
+    }
   }
 }
 

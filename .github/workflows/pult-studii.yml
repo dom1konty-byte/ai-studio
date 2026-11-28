@@ -41,6 +41,22 @@ jobs:
           name: pult-studii-windows
           path: projects/pult-studii/build/windows/x64/runner/Release
           retention-days: 30
+      - name: Установщик (Inno Setup)
+        id: installer
+        shell: bash
+        run: |
+          if ! command -v iscc >/dev/null 2>&1 && [ ! -f "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" ]; then
+            choco install innosetup --version=6.4.3 -y --no-progress
+          fi
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -f "$ISCC" ]; then ISCC="iscc"; fi
+          VERSION=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*([0-9.]+).*/\1/')
+          MSYS_NO_PATHCONV=1 "$ISCC" "/DMyAppVersion=$VERSION" installer/setup.iss
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Rubka-setup
+          path: projects/pult-studii/installer/output/Rubka-setup.exe
+          retention-days: 30
       - name: Telegram — программа собрана
         if: ${{ success() && github.event_name != 'pull_request' && github.ref != 'refs/heads/main' && vars.TELEGRAM_BUILDS != 'off' }}
         env:
@@ -60,7 +76,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          python ../../scripts/telegram_notify.py --text "❌ <b>Пульт студии</b>: сборка Windows упала на шаге: ${{ steps.test.outcome == 'failure' && 'flutter test' || steps.build.outcome == 'failure' && 'сборка .exe' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
+          python ../../scripts/telegram_notify.py --text "❌ <b>Пульт студии</b>: сборка Windows упала на шаге: ${{ steps.test.outcome == 'failure' && 'flutter test' || steps.build.outcome == 'failure' && 'сборка .exe' || steps.installer.outcome == 'failure' && 'установщик' || 'другой шаг' }}. Студия чинит сама.\n<a href=\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\">подробности</a>"
 
   board:
     # после сборки — обновить табло студии (ссылка на свежий файл)

@@ -85,6 +85,12 @@ class MemoryStorage implements AppStorage {
   String readme;
   final chats = <String, List<ChatMessage>>{};
 
+  /// Если задан — «студией» считаются только эти пути.
+  Set<String>? validRepos;
+
+  /// Что лежит по пути (нет записи — папки нет).
+  final folderKinds = <String, FolderKind>{};
+
   @override
   Future<Map<String, dynamic>> loadState() async => state;
 
@@ -104,7 +110,12 @@ class MemoryStorage implements AppStorage {
       path.endsWith('README.md') ? readme : null;
 
   @override
-  Future<bool> repoLooksValid(String path) async => path.isNotEmpty;
+  Future<bool> repoLooksValid(String path) async =>
+      validRepos?.contains(path) ?? path.isNotEmpty;
+
+  @override
+  Future<FolderKind> folderKind(String path) async =>
+      folderKinds[path] ?? FolderKind.missing;
 }
 
 const sampleReadme = '''

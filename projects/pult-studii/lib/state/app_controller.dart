@@ -16,6 +16,7 @@ class AppController extends ChangeNotifier {
     required this.proc,
     required this.storage,
     required this.downloadsDir,
+    this.homeDir = '',
     this.autoRefresh = const Duration(minutes: 3),
   })  : state = StateRepo(storage),
         git = GitService(proc, storage),
@@ -26,6 +27,9 @@ class AppController extends ChangeNotifier {
   final ProcessRunner proc;
   final AppStorage storage;
   final String downloadsDir;
+
+  /// Домашняя папка пользователя (для папки студии по умолчанию).
+  final String homeDir;
 
   /// Как часто обновлять доску сама (null — не обновлять; для тестов).
   final Duration? autoRefresh;

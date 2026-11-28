@@ -113,8 +113,9 @@ void main() {
     controller.init();
     await _settle(tester);
 
-    expect(find.text('Нужно поставить, чтобы Рубка работала'), findsOneWidget);
-    expect(find.text('winget install Git.Git'), findsWidgets);
+    expect(find.text('Мастер первого запуска'), findsOneWidget);
+    expect(find.text('Git'), findsOneWidget);
+    expect(find.text('Установить выбранное'), findsOneWidget);
     expect(find.text('Проверить снова'), findsOneWidget);
   });
 }

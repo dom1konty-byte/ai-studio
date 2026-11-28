@@ -48,6 +48,7 @@ Future<void> main() async {
     proc: RealProcessRunner(),
     storage: FileStorage(p.join(appData, 'pult-studii')),
     downloadsDir: p.join(home, 'Downloads'),
+    homeDir: home,
   );
   if (Platform.isWindows) {
     windowManager.addListener(_CloseHandler(controller));

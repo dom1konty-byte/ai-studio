@@ -7,3 +7,4 @@ android/key.properties
 android/local.properties
 android/.gradle/
 *.jks
+installer/output/
