@@ -45,7 +45,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.f5): c.refreshBoard,
-        const SingleActivator(LogicalKeyboardKey.escape): () => c.chat?.stop(),
         const SingleActivator(LogicalKeyboardKey.keyK, control: true):
             _inputFocus.requestFocus,
       },

@@ -12,7 +12,7 @@
 Одно сообщение — один запуск (`Process.start`, cwd = worktree проекта):
 ```
 claude -p "<текст>" --resume <session_id> --output-format stream-json --verbose --include-partial-messages
-       --permission-mode acceptEdits --disallowedTools AskUserQuestion
+       --permission-mode acceptEdits --disallowedTools AskUserQuestion "Bash(rm *)" "Bash(curl *)" ... (полный список — ClaudeRunner.disallowedTools)
        --allowedTools "Bash(git *)" "Bash(gh *)" "Bash(python *)" "Bash(python3 *)" "Bash(flutter *)" "Bash(dart *)" "Bash(npm *)" "Bash(node *)"
 ```
 - Для первого сообщения `--resume` не передаём. `session_id` берём из первого события `system/init` или из итогового `result`.

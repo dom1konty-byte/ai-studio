@@ -8,6 +8,7 @@ class ToolStatus {
     required this.ok,
     required this.detail,
     this.installCommand,
+    this.blocking = true,
   });
 
   final String id;
@@ -15,6 +16,9 @@ class ToolStatus {
   final bool ok;
   final String detail;
   final String? installCommand;
+
+  /// false — только предупреждение, работать можно.
+  final bool blocking;
 }
 
 class ToolsCheck {
@@ -62,16 +66,71 @@ class ToolsCheck {
     );
   }
 
+  /// Пробуем python, python3, py -3. Заглушка WindowsApps = не установлен.
   Future<ToolStatus> _python() async {
-    var r = await _proc.run('python', ['--version']);
-    if (!r.ok) r = await _proc.run('python3', ['--version']);
-    return ToolStatus(
+    const variants = [
+      ['python', <String>['--version']],
+      ['python3', <String>['--version']],
+      ['py', <String>['-3', '--version']],
+    ];
+    for (final v in variants) {
+      final exe = v[0] as String;
+      final path = await _proc.resolveExecutable(exe);
+      if (path == null || path.toLowerCase().contains('windowsapps')) continue;
+      final r = await _proc.run(exe, v[1] as List<String>);
+      final line = _firstLine(r);
+      if (r.ok && line.toLowerCase().startsWith('python')) {
+        return ToolStatus(
+            id: 'python', title: 'Python', ok: true, detail: line, blocking: false);
+      }
+    }
+    return const ToolStatus(
       id: 'python',
-      title: 'Python',
-      ok: r.ok,
-      detail: r.ok ? _firstLine(r) : notFound,
-      installCommand: r.ok ? null : 'winget install Python.Python.3.12',
+      title: 'Python (нужен для скриптов студии; без него Рубка работает)',
+      ok: false,
+      detail: 'не установлен',
+      installCommand: 'winget install Python.Python.3.12',
+      blocking: false,
     );
+  }
+
+  /// Claude Code + вход (`claude auth status`, если команда есть).
+  Future<ToolStatus> _claude() async {
+    const title = 'Claude Code (при первом запуске войди: команда claude)';
+    final v = await _proc.run('claude', ['--version']);
+    if (!v.ok) {
+      return const ToolStatus(
+          id: 'claude',
+          title: title,
+          ok: false,
+          detail: notFound,
+          installCommand: 'npm install -g @anthropic-ai/claude-code');
+    }
+    final a = await _proc.run('claude', ['auth', 'status']);
+    if (a.ok) {
+      return ToolStatus(
+          id: 'claude', title: title, ok: true, detail: '${_firstLine(v)}, вход выполнен');
+    }
+    final text = '${a.stdout}${a.stderr}';
+    final noCommand = a.exitCode < 0 ||
+        RegExp(r'unknown command|unknown option|invalid|too many arguments|'
+                r'not a (valid )?command|did you mean',
+                caseSensitive: false)
+            .hasMatch(text);
+    if (noCommand) {
+      return ToolStatus(
+          id: 'claude',
+          title: title,
+          ok: true,
+          detail: '${_firstLine(v)}; вход не проверен (старая версия). '
+              'Если ответов нет — введи в терминале команду claude и войди.');
+    }
+    return const ToolStatus(
+        id: 'claude',
+        title: title,
+        ok: false,
+        detail: 'нет входа в аккаунт Claude',
+        installCommand: 'claude');
   }
 
   Future<ToolStatus> _folder(String? path) async {
@@ -92,8 +151,7 @@ class ToolsCheck {
     return Future.wait([
       _simple('git', 'Git', 'git', 'winget install Git.Git'),
       _simple('node', 'Node.js', 'node', 'winget install OpenJS.NodeJS.LTS'),
-      _simple('claude', 'Claude Code (при первом запуске войди: команда claude)',
-          'claude', 'npm install -g @anthropic-ai/claude-code'),
+      _claude(),
       _gh(),
       _python(),
       _folder(repoPath),

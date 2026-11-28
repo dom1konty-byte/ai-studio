@@ -9,6 +9,8 @@ import 'package:pult_studii/services/stream_json.dart';
 
 import 'fakes.dart';
 
+const _sid = '11111111-2222-3333-4444-555555555555';
+
 void main() {
   group('stream-json', () {
     test('system/init даёт session_id', () {
@@ -39,7 +41,7 @@ void main() {
       expect(r.isError, isFalse);
       expect(r.costUsd, 0.25);
       expect(r.denials.single.display, 'rm -rf build');
-      expect(r.denials.single.allowRule, 'Bash(rm *)');
+      expect(r.denials.single.decision.canAllow, isFalse);
     });
 
     test('ошибка result и мусор', () {
@@ -62,8 +64,12 @@ void main() {
       expect(first, isNot(contains('--resume')));
       expect(first, containsAllInOrder(['--disallowedTools', 'AskUserQuestion', '--allowedTools', 'Bash(git *)']));
       final next = ClaudeRunner.buildArgs(
-          prompt: 'да', sessionId: 's1', allowedTools: const ['X']);
-      expect(next, containsAllInOrder(['--resume', 's1']));
+          prompt: 'да', sessionId: _sid, allowedTools: const ['X']);
+      expect(next, containsAllInOrder(['--resume', _sid]));
+      expect(
+          ClaudeRunner.buildArgs(
+              prompt: 'x', sessionId: 'bad id', allowedTools: const []),
+          isNot(contains('--resume')));
       expect(next.last, 'X');
     });
   });

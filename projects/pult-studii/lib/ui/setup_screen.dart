@@ -91,6 +91,11 @@ class _SetupScreenState extends State<SetupScreen> {
                           onPressed: c.closeSetup, child: const Text('Закрыть')),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Text(
+                    'Поставил программу, а Рубка её не видит? Перезапусти Рубку: '
+                    'она тогда подхватит новые настройки Windows.',
+                    style: Rubka.body(size: 13, color: Rubka.text2)),
               ],
             ),
             ),
@@ -115,15 +120,23 @@ class _ToolRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(t.ok ? Icons.check_circle : Icons.cancel,
-                  color: t.ok ? Rubka.success : Rubka.error),
+              Icon(
+                  t.ok
+                      ? Icons.check_circle
+                      : (t.blocking ? Icons.cancel : Icons.warning_amber),
+                  color: t.ok
+                      ? Rubka.success
+                      : (t.blocking ? Rubka.error : Rubka.amber)),
               const SizedBox(width: 12),
               Expanded(child: Text(t.title, style: Rubka.head(16))),
             ],
           ),
           Padding(
             padding: const EdgeInsets.only(left: 36, top: 2),
-            child: Text(t.ok ? t.detail : 'не готово: ${t.detail}',
+            child: Text(
+                t.ok
+                    ? t.detail
+                    : '${t.blocking ? 'не готово' : 'предупреждение'}: ${t.detail}',
                 style: Rubka.body(size: 13, color: Rubka.text2)),
           ),
           if (!t.ok && t.installCommand != null)

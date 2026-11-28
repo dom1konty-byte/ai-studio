@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'safety.dart';
+
 enum MsgKind { user, director, action, error, denial, note }
 
 /// Отказ в разрешении из `result.permission_denials`.
@@ -18,17 +20,34 @@ class PermissionDenial {
     return toolName;
   }
 
-  /// Правило для `--allowedTools`.
-  String get allowRule {
-    if (toolName == 'Bash') {
-      final cmd = input['command'];
-      if (cmd is String && cmd.trim().isNotEmpty) {
-        final first = cmd.trim().split(RegExp(r'\s+')).first;
-        return 'Bash($first *)';
-      }
+  /// Можно ли разрешить: точные правила или причина отказа.
+  RuleDecision get decision {
+    if (toolName != 'Bash') {
+      return const RuleDecision.refused(
+          'Рубка разрешает только команды из белого списка, '
+          'это действие разрешить нельзя.');
     }
-    return toolName;
+    final cmd = input['command'];
+    if (cmd is! String || cmd.trim().isEmpty) {
+      return const RuleDecision.refused(notAllowedText);
+    }
+    return decideCommand(cmd);
   }
+}
+
+/// Решение по всем отказам одного сообщения.
+RuleDecision decideDenials(List<PermissionDenial> denials) {
+  final rules = <String>[];
+  for (final d in denials) {
+    final r = d.decision;
+    if (!r.canAllow) return r;
+    for (final x in r.rules) {
+      if (!rules.contains(x)) rules.add(x);
+    }
+  }
+  return rules.isEmpty
+      ? const RuleDecision.refused(notAllowedText)
+      : RuleDecision.allowed(rules);
 }
 
 class ChatMessage {
@@ -49,8 +68,14 @@ class ChatMessage {
       kind == MsgKind.action ||
       kind == MsgKind.note;
 
-  String toJsonLine() =>
-      jsonEncode({'k': kind.name, 't': text, 'ts': time.toIso8601String()});
+  /// Строка для истории: секреты замаскированы, действия обрезаны до 200 символов.
+  String toJsonLine() {
+    var t = maskSecrets(text);
+    if (kind == MsgKind.action && t.length > 200) {
+      t = '${t.substring(0, 199)}…';
+    }
+    return jsonEncode({'k': kind.name, 't': t, 'ts': time.toIso8601String()});
+  }
 
   static ChatMessage? fromJsonLine(String line) {
     try {

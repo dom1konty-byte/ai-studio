@@ -59,7 +59,10 @@ void main() {
     final storage =
         MemoryStorage(state: {'repoPath': 'C:\\ai-studio'}, readme: _alphaReadme);
     final controller = AppController(
-        proc: proc, storage: storage, downloadsDir: 'C:\\Downloads');
+        proc: proc,
+        storage: storage,
+        downloadsDir: 'C:\\Downloads',
+        autoRefresh: null);
 
     await tester.pumpWidget(RubkaApp(controller: controller));
     controller.init();
@@ -103,7 +106,8 @@ void main() {
     final controller = AppController(
         proc: proc,
         storage: MemoryStorage(state: {'repoPath': 'C:\\ai-studio'}),
-        downloadsDir: 'C:\\Downloads');
+        downloadsDir: 'C:\\Downloads',
+        autoRefresh: null);
 
     await tester.pumpWidget(RubkaApp(controller: controller));
     controller.init();

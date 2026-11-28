@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../app/theme.dart';
 import '../models/models.dart';
+import '../models/safety.dart';
 import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
 import '../state/chat_controller.dart';
@@ -30,6 +31,7 @@ class _ChatPanelState extends State<ChatPanel> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   int _lastLen = -1;
+  bool _askingStop = false;
 
   ChatController get chat => widget.chat;
 
@@ -46,6 +48,35 @@ class _ChatPanelState extends State<ChatPanel> {
     if (t.isEmpty) return;
     _input.clear();
     chat.send(t);
+  }
+
+  /// Лента у самого низа (≤50 px) — тогда держим её прокрученной вниз.
+  bool _nearBottom() {
+    if (!_scroll.hasClients) return true;
+    final pos = _scroll.position;
+    return pos.maxScrollExtent - pos.pixels <= 50;
+  }
+
+  /// Esc в чате: спросить и только потом остановить директора.
+  Future<void> _escape() async {
+    if (!chat.working || _askingStop) return;
+    _askingStop = true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Остановить директора?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Нет')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Остановить')),
+        ],
+      ),
+    );
+    _askingStop = false;
+    if (ok == true) await chat.stop();
   }
 
   void _scrollDown() {
@@ -86,13 +117,25 @@ class _ChatPanelState extends State<ChatPanel> {
         final sig = len * 100000 + lastText + (chat.working ? 1 : 0);
         if (sig != _lastLen) {
           _lastLen = sig;
-          _scrollDown();
+          if (_nearBottom()) _scrollDown();
         }
         final showApproval = stageWaitsYes(widget.project.stage) &&
             !chat.approvalHidden &&
             !chat.working &&
             chat.canSend;
-        return Column(
+        return Focus(
+          canRequestFocus: false,
+          skipTraversal: true,
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent &&
+                event.logicalKey == LogicalKeyboardKey.escape &&
+                chat.working) {
+              _escape();
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: Column(
           children: [
             _header(),
             const Divider(height: 1, color: Rubka.border),
@@ -116,7 +159,7 @@ class _ChatPanelState extends State<ChatPanel> {
               ),
             ),
           ],
-        );
+        ));
       },
     );
   }
@@ -368,15 +411,47 @@ class _ChatPanelState extends State<ChatPanel> {
               for (final d in m.denials)
                 SelectableText(d.display, style: Rubka.mono()),
               const SizedBox(height: 8),
-              FilledButton(
-                onPressed:
-                    m.resolved || !chat.canSend ? null : () => chat.allowAndRetry(m),
-                child: Text(m.resolved ? 'Разрешено' : 'Разрешить и повторить'),
-              ),
+              ..._denialActions(m),
             ],
           ),
         );
     }
+  }
+
+  List<Widget> _denialActions(ChatMessage m) {
+    final decision = decideDenials(m.denials);
+    if (!decision.canAllow) {
+      return [
+        Text(decision.refusal ?? notAllowedText,
+            style: Rubka.body(size: 14, color: Rubka.error)),
+      ];
+    }
+    final disabled = m.resolved || !chat.canSend;
+    return [
+      Text('Будет разрешено ровно это:',
+          style: Rubka.body(size: 13, color: Rubka.text2)),
+      for (final r in decision.rules) SelectableText(r, style: Rubka.mono()),
+      const SizedBox(height: 8),
+      if (m.resolved)
+        Text('Разрешено', style: Rubka.body(size: 14, color: Rubka.success))
+      else
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton(
+              onPressed:
+                  disabled ? null : () => chat.allowAndRetry(m, always: false),
+              child: const Text('Разрешить один раз'),
+            ),
+            OutlinedButton(
+              onPressed:
+                  disabled ? null : () => chat.allowAndRetry(m, always: true),
+              child: const Text('Разрешить всегда'),
+            ),
+          ],
+        ),
+    ];
   }
 
   static final _mdStyle = MarkdownStyleSheet(

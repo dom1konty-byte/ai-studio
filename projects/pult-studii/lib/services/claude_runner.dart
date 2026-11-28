@@ -1,3 +1,4 @@
+import '../models/safety.dart';
 import 'process_runner.dart';
 import 'stream_json.dart';
 
@@ -8,7 +9,7 @@ class ClaudeTurn {
   final Stream<ClaudeEvent> events;
   final Future<int> exitCode;
   final Future<String> stderr;
-  final void Function() stop;
+  final Future<void> Function() stop;
 }
 
 class ClaudeRunner {
@@ -27,6 +28,26 @@ class ClaudeRunner {
     'Bash(node *)',
   ];
 
+  /// Всегда запрещено (побеждает любое разрешение).
+  static const disallowedTools = [
+    'AskUserQuestion',
+    'Bash(rm *)',
+    'Bash(del *)',
+    'Bash(rmdir *)',
+    'Bash(Remove-Item*)',
+    'Bash(powershell*)',
+    'Bash(pwsh*)',
+    'Bash(cmd *)',
+    'Bash(curl *)',
+    'Bash(wget *)',
+    'Bash(git push --force*)',
+    'Bash(git push -f*)',
+    'Bash(git push * --force*)',
+    'Bash(gh repo delete*)',
+    'Bash(gh auth *)',
+    'Bash(gh secret *)',
+  ];
+
   /// Аргументы ровно по architecture.md. Каждый — отдельный элемент списка.
   /// [prompt] == null → запрос пойдёт через stdin (для claude.cmd).
   /// Флаги со списками (--disallowedTools, --allowedTools) идут в конце,
@@ -39,7 +60,7 @@ class ClaudeRunner {
     return [
       '-p',
       if (prompt != null) prompt.startsWith('-') ? ' $prompt' : prompt,
-      if (sessionId != null && sessionId.isNotEmpty) ...['--resume', sessionId],
+      if (isValidSessionId(sessionId)) ...['--resume', sessionId!],
       '--output-format',
       'stream-json',
       '--verbose',
@@ -47,7 +68,7 @@ class ClaudeRunner {
       '--permission-mode',
       'acceptEdits',
       '--disallowedTools',
-      'AskUserQuestion',
+      ...disallowedTools,
       '--allowedTools',
       ...allowedTools,
     ];
@@ -60,8 +81,12 @@ class ClaudeRunner {
     List<String> extraTools = const [],
   }) async {
     final exe = await _proc.resolveExecutable('claude');
+    if (exe == null) throw ToolNotFound('claude');
     final viaStdin = isShellScript(exe);
-    final tools = <String>{...defaultAllowedTools, ...extraTools}.toList();
+    final tools = <String>{
+      ...defaultAllowedTools,
+      ...extraTools.where(isSafeRule),
+    }.toList();
     final args = buildArgs(
       prompt: viaStdin ? null : prompt,
       sessionId: sessionId,

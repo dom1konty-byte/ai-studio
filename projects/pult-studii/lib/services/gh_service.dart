@@ -29,9 +29,17 @@ class GhService {
   }
 
   /// Скачать артефакты запуска в `<downloads>\<slug>\<runId>`; вернуть папку.
-  Future<String> download(int runId, String slug, String downloadsDir) async {
+  Future<String> download(
+      RepoRemote r, int runId, String slug, String downloadsDir,
+      {String? cwd}) async {
+    if (!isSafeSlug(slug)) throw GitException('Недопустимое имя проекта: $slug');
+    if (!_repoPartRe.hasMatch(r.owner) || !_repoPartRe.hasMatch(r.repo)) {
+      throw GitException('Недопустимый адрес репозитория.');
+    }
     final dir = p.join(downloadsDir, slug, '$runId');
-    final res = await _proc.run('gh', ['run', 'download', '$runId', '-D', dir]);
+    final res = await _proc.run(
+        'gh', ['run', 'download', '$runId', '-R', '${r.owner}/${r.repo}', '-D', dir],
+        cwd: cwd, timeout: const Duration(minutes: 10));
     if (!res.ok) {
       final t = res.stderr.trim().isNotEmpty ? res.stderr.trim() : res.stdout.trim();
       throw GitException('gh run download: $t');
@@ -41,7 +49,21 @@ class GhService {
 
   Future<void> openFolder(String dir) => _proc.run('explorer', [dir]);
 
-  Future<void> openUrl(String url) => _proc.run('explorer', [url]);
+  /// Открыть https-ссылку в браузере без оболочки (rundll32).
+  Future<void> openUrl(String url) =>
+      _proc.run('rundll32', ['url.dll,FileProtocolHandler', url]);
+}
+
+final _repoPartRe = RegExp(r'^[A-Za-z0-9._-]+$');
+
+/// Домен, если ссылка безопасна для открытия (https, есть host, без
+/// пробелов, кавычек и управляющих символов); иначе null.
+String? safeHttpsHost(String? href) {
+  if (href == null || href.isEmpty) return null;
+  if (RegExp(r'''[\s"'`<>^|\\\x00-\x1f\x7f]''').hasMatch(href)) return null;
+  final u = Uri.tryParse(href);
+  if (u == null || u.scheme != 'https' || u.host.isEmpty) return null;
+  return u.host;
 }
 
 BuildRun parseLatestRun(String json) {

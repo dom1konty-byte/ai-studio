@@ -25,7 +25,7 @@ class FakeRunning implements RunningProcess {
   Future<int> get exitCode async => code;
 
   @override
-  void kill() {
+  Future<void> kill() async {
     killed = true;
     stream?.close();
   }
@@ -48,10 +48,14 @@ class FakeProc implements ProcessRunner {
   /// Что вернёт следующий start().
   final queue = <FakeRunning>[];
 
-  String exeName = 'claude';
+  String? exeName = 'claude';
+
+  /// Если задан — start() ждёт, пока его завершат (для теста «стоп до старта»).
+  Completer<void>? startGate;
 
   @override
-  Future<ProcResult> run(String exe, List<String> args, {String? cwd}) async {
+  Future<ProcResult> run(String exe, List<String> args,
+      {String? cwd, Duration timeout = const Duration(seconds: 120)}) async {
     calls.add([exe, ...args].join(' '));
     return handler(exe, args, cwd);
   }
@@ -59,14 +63,18 @@ class FakeProc implements ProcessRunner {
   @override
   Future<RunningProcess> start(String exe, List<String> args,
       {String? cwd, String? stdin}) async {
+    await startGate?.future;
     started.add([exe, ...args]);
     stdins.add(stdin);
     return queue.isNotEmpty ? queue.removeAt(0) : FakeRunning(const []);
   }
 
   @override
-  Future<String> resolveExecutable(String name) async =>
+  Future<String?> resolveExecutable(String name) async =>
       name == 'claude' ? exeName : name;
+
+  @override
+  Future<void> refreshEnvironment() async {}
 }
 
 class MemoryStorage implements AppStorage {

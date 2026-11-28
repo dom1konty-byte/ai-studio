@@ -16,6 +16,7 @@ class AppController extends ChangeNotifier {
     required this.proc,
     required this.storage,
     required this.downloadsDir,
+    this.autoRefresh = const Duration(minutes: 3),
   })  : state = StateRepo(storage),
         git = GitService(proc, storage),
         gh = GhService(proc),
@@ -25,6 +26,10 @@ class AppController extends ChangeNotifier {
   final ProcessRunner proc;
   final AppStorage storage;
   final String downloadsDir;
+
+  /// Как часто обновлять доску сама (null — не обновлять; для тестов).
+  final Duration? autoRefresh;
+  Timer? _boardTimer;
   final StateRepo state;
   final GitService git;
   final GhService gh;
@@ -38,7 +43,7 @@ class AppController extends ChangeNotifier {
   bool checking = false;
   bool _manualSetup = false;
   List<ToolStatus> setupItems = const [];
-  bool get setupOk => setupItems.isNotEmpty && setupItems.every((t) => t.ok);
+  bool get setupOk => setupItems.isNotEmpty && setupItems.every((t) => t.ok || !t.blocking);
   bool get showSetup => !starting && (!setupOk || _manualSetup);
   String? get repoPath => state.repoPath;
 
@@ -69,6 +74,7 @@ class AppController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _boardTimer?.cancel();
     chat?.dispose();
     _toasts.close();
     super.dispose();
@@ -79,19 +85,45 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    await state.load();
-    git.repoPath = state.repoPath ?? '';
-    await recheck();
-    starting = false;
-    notifyListeners();
+    try {
+      await state.load();
+      await git.setRepoPath(state.repoPath ?? '');
+      await recheck();
+    } catch (e) {
+      toast('Не удалось проверить установку: $e');
+    } finally {
+      starting = false;
+      notifyListeners();
+    }
+    final every = autoRefresh;
+    if (every != null) {
+      _boardTimer?.cancel();
+      _boardTimer = Timer.periodic(every, (_) => _autoRefreshBoard());
+    }
+  }
+
+  void _autoRefreshBoard() {
+    final c = chat;
+    if (_disposed ||
+        boardLoading ||
+        git.repoPath.isEmpty ||
+        !setupOk ||
+        (c != null && (c.working || c.preparing))) {
+      return;
+    }
+    unawaited(refreshBoard());
   }
 
   Future<void> recheck() async {
     checking = true;
     notifyListeners();
-    setupItems = await tools.check(state.repoPath);
-    checking = false;
-    notifyListeners();
+    try {
+      await proc.refreshEnvironment();
+      setupItems = await tools.check(state.repoPath);
+    } finally {
+      checking = false;
+      notifyListeners();
+    }
     if (setupOk && projects.isEmpty && !boardLoading) {
       unawaited(refreshBoard());
     }
@@ -109,12 +141,13 @@ class AppController extends ChangeNotifier {
 
   Future<void> setRepoPath(String path) async {
     final p = path.trim();
-    if (chat?.working ?? false) {
+    final cur = chat;
+    if (cur != null && (cur.working || cur.preparing)) {
       toast('Дождись ответа директора, потом меняй папку.');
       return;
     }
     await state.setRepoPath(p);
-    git.repoPath = p;
+    await git.setRepoPath(p);
     chat?.dispose();
     chat = null;
     projects = const [];
@@ -144,8 +177,9 @@ class AppController extends ChangeNotifier {
         } catch (_) {}
       }
     }
-    final c = chat;
-    if (c != null) await refreshStage(c.slug);
+    try {
+      await refreshStageGuarded(chat?.slug);
+    } catch (_) {}
     boardLoading = false;
     notifyListeners();
     unawaited(_loadBuilds());
@@ -169,6 +203,16 @@ class AppController extends ChangeNotifier {
     }));
   }
 
+  /// Этап из рабочей папки — только если там сейчас ветка этого проекта
+  /// и чат не закрыт (иначе README в папке чужой).
+  Future<void> refreshStageGuarded(String? slug) async {
+    final c = chat;
+    if (slug == null || c == null || c.slug != slug) return;
+    if (c.blockedReason != null || c.preparing) return;
+    if (await git.currentBranch() != slug) return;
+    await refreshStage(slug);
+  }
+
   /// Этап проекта из рабочей папки (свежее, чем origin).
   Future<void> refreshStage(String slug) async {
     final stage = await git.localStage(slug);
@@ -181,9 +225,12 @@ class AppController extends ChangeNotifier {
   String? select(Project p) {
     final cur = chat;
     if (cur != null && cur.slug == p.slug) return null;
-    if (cur != null && cur.working) {
-      return 'Директор ещё работает в «${selected?.name ?? cur.slug}». '
-          'Дождись ответа и потом переключайся.';
+    if (cur != null && (cur.working || cur.preparing)) {
+      return cur.working
+          ? 'Директор ещё работает в «${selected?.name ?? cur.slug}». '
+              'Дождись ответа и потом переключайся.'
+          : 'Ветка «${selected?.name ?? cur.slug}» ещё переключается. '
+              'Подожди пару секунд.';
     }
     cur?.dispose();
     final c = ChatController(
@@ -192,7 +239,7 @@ class AppController extends ChangeNotifier {
       claude: claude,
       state: state,
       storage: storage,
-      onTurnDone: () => refreshStage(p.slug),
+      onTurnDone: () => refreshStageGuarded(p.slug),
     );
     chat = c;
     newMarks.remove(p.slug);
@@ -208,7 +255,10 @@ class AppController extends ChangeNotifier {
     downloading.add(p.slug);
     notifyListeners();
     try {
-      final dir = await gh.download(id, p.slug, downloadsDir);
+      final remote = await git.remote();
+      if (remote == null) throw GitException('не удалось определить репозиторий');
+      final dir = await gh.download(remote, id, p.slug, downloadsDir,
+          cwd: git.repoPath);
       await gh.openFolder(dir);
       toast('Скачано: $dir');
     } catch (e) {
@@ -220,8 +270,12 @@ class AppController extends ChangeNotifier {
   }
 
   void openLink(String? href) {
-    if (href != null && RegExp(r'^https?://').hasMatch(href)) {
-      unawaited(gh.openUrl(href));
+    final host = safeHttpsHost(href);
+    if (host == null) {
+      toast('Ссылка не открыта: разрешены только https-ссылки.');
+      return;
     }
+    toast('Открываю: $host');
+    unawaited(gh.openUrl(href!));
   }
 }
