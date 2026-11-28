@@ -208,6 +208,21 @@ class FakePlatform implements PlatformApi {
     return utf8Output;
   }
 
+  // --- Store ---
+  ({int code, String out, String err})? psResult = (code: 0, out: '[]', err: '');
+  final psCalls = <({String script, Map<String, String> env, Duration timeout})>[];
+  int openAllAppsCalls = 0;
+
+  @override
+  Future<({int code, String out, String err})?> runPowerShell(String script,
+      {Map<String, String> env = const {}, required Duration timeout}) async {
+    psCalls.add((script: script, env: env, timeout: timeout));
+    return psResult;
+  }
+
+  @override
+  Future<void> openAllApps() async => openAllAppsCalls++;
+
   /// Снимки подряд (последний повторяется); пусто — null.
   List<SysSample> samples = [];
   int sampleCalls = 0;

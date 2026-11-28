@@ -21,6 +21,7 @@ import '../core/models.dart';
 import '../core/format.dart';
 import '../core/async_pool.dart';
 import '../core/programs.dart';
+import '../core/store_apps.dart';
 import '../core/scanner.dart';
 import '../core/settings.dart';
 import '../core/speed.dart';
@@ -974,8 +975,127 @@ class AppController extends ChangeNotifier {
   /// true, пока идёт удаление программы (ждём её программу удаления).
   bool uninstallBusy = false;
 
-  List<Program> get visiblePrograms =>
-      filterAndSort(programs, programQuery, programSort, programApprox);
+  /// Переключатель «Обычные / Из Microsoft Store / Все».
+  ProgramKind programKind = ProgramKind.regular;
+  List<Program> storeApps = [];
+  LoadState storeState = LoadState.idle;
+
+  List<Program> get visiblePrograms => filterAndSort(
+      programsOfKind(programs, storeApps, programKind), programQuery, programSort, programApprox);
+
+  void setProgramKind(ProgramKind k) {
+    programKind = k;
+    notifyListeners();
+    if (k != ProgramKind.regular && storeState == LoadState.idle) unawaited(loadStoreApps());
+  }
+
+  /// Список Store-приложений (PowerShell, до 30 с).
+  Future<void> loadStoreApps() async {
+    if (storeState == LoadState.loading) return;
+    storeState = LoadState.loading;
+    notifyListeners();
+    try {
+      final r = await platform.runPowerShell(storeListScript,
+          timeout: const Duration(seconds: 30));
+      if (r == null || (r.code != 0 && r.out.trim().isEmpty)) {
+        storeState = LoadState.error;
+      } else {
+        storeApps = parseStoreApps(r.out);
+        storeState = LoadState.loaded;
+      }
+    } catch (_) {
+      storeState = LoadState.error;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _logStore(String path, String result) async {
+    final lf = logFile;
+    if (lf == null) return;
+    try {
+      final log = CleanLog(lf);
+      await log.add('Microsoft Store', path, 0, result);
+      await log.flush();
+    } catch (_) {}
+  }
+
+  /// Удаление Store-приложения (подтверждение — в UI). Имя пакета — через CD_PKG.
+  Future<void> uninstallStore(Program p) async {
+    final full = p.storeFullName;
+    if (uninstallBusy || full == null || p.locked) return;
+    if (!isValidPackageFullName(full)) {
+      programMessage = 'Некорректное имя пакета «${p.name}». Не удаляю.';
+      notifyListeners();
+      return;
+    }
+    uninstallBusy = true;
+    recheckProgram = null;
+    forceOffer = null;
+    programMessage = 'Удаляю «${p.name}»…';
+    notifyListeners();
+    String result;
+    try {
+      final r = await platform.runPowerShell(storeRemoveScript,
+          env: {'CD_PKG': full}, timeout: const Duration(seconds: 120));
+      if (r == null) {
+        result = 'ошибка: не запустилось или не уложилось в 120 с';
+      } else if (r.code == 0) {
+        result = 'удалено';
+      } else {
+        final e = r.err.trim().split('\n').first.trim();
+        result = 'ошибка: ${e.isEmpty ? 'код ${r.code}' : e}';
+      }
+    } catch (e) {
+      result = 'ошибка: $e';
+    }
+    await _logStore(full, result);
+    uninstallBusy = false;
+    programMessage = result == 'удалено'
+        ? '«${p.name}» удалено.'
+        : 'Не удалось удалить «${p.name}» ($result).';
+    notifyListeners();
+    storeState = LoadState.idle;
+    await loadStoreApps();
+  }
+
+  /// Ярлык на рабочий стол (обычные и Store).
+  Future<void> createDesktopShortcut(Program p) async {
+    String? target, args;
+    var icon = '';
+    if (p.isStore) {
+      args = storeShortcutArgs(p);
+      if (args != null) target = '$_systemRoot\\explorer.exe';
+    } else {
+      target = shortcutTargetOf(p, env: env.vars, fileExists: fileExists);
+      if (target != null) icon = target;
+    }
+    if (target == null) {
+      programMessage = 'Не нашёл, на что вести ярлык «${p.name}».';
+      notifyListeners();
+      return;
+    }
+    final name = shortcutFileName(p.name);
+    String msg;
+    try {
+      final r = await platform.runPowerShell(shortcutScript,
+          env: {
+            'CD_NAME': name,
+            'CD_TARGET': target,
+            'CD_ARGS': args ?? '',
+            'CD_ICON': icon,
+          },
+          timeout: const Duration(seconds: 30));
+      msg = r != null && r.code == 0
+          ? 'Ярлык «$name» создан на рабочем столе.'
+          : 'Не удалось создать ярлык «$name».';
+    } catch (_) {
+      msg = 'Не удалось создать ярлык «$name».';
+    }
+    programMessage = msg;
+    notifyListeners();
+  }
+
+  Future<void> openAllApps() => platform.openAllApps();
 
   /// Размеры программ без EstimatedSize, посчитанные по папке (keyPath → байты).
   /// Показываются как «≈ X».
@@ -1028,11 +1148,24 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  final _storeIconCache = <String, Future<Uint8List?>>{};
   final _iconCache = <IconSource, Future<Uint8List?>>{};
 
   /// PNG значка программы (кэш в памяти; значок извлекается в отдельном Isolate).
   /// null — значка нет: интерфейс показывает общую иконку.
   Future<Uint8List?> programIcon(Program p) {
+    if (p.isStore) {
+      if (p.iconFile.isEmpty) return Future.value(null);
+      return _storeIconCache.putIfAbsent(p.iconFile, () async {
+        try {
+          final f = File(p.iconFile);
+          if (!f.existsSync() || f.lengthSync() > 2 * 1024 * 1024) return null;
+          return await f.readAsBytes();
+        } catch (_) {
+          return null;
+        }
+      });
+    }
     final src = iconSourceOf(p, env: env.vars, fileExists: fileExists);
     if (src == null) return Future.value(null);
     return _iconCache.putIfAbsent(src, () async {
@@ -1060,6 +1193,9 @@ class AppController extends ChangeNotifier {
       programs = buildPrograms(await platform.readUninstallEntries());
       programsState = LoadState.loaded;
       unawaited(_startProgramSizes());
+      if (programKind != ProgramKind.regular && storeState != LoadState.loading) {
+        unawaited(loadStoreApps());
+      }
     } catch (_) {
       programsState = LoadState.error;
     }

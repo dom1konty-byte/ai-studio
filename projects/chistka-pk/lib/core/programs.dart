@@ -33,6 +33,11 @@ class Program {
     required this.quietUninstallString,
     required this.hive,
     required this.keyPath,
+    this.storeFullName,
+    this.storeFamily = '',
+    this.storeAppId = '',
+    this.locked = false,
+    this.iconFile = '',
   });
 
   final String name;
@@ -47,6 +52,19 @@ class Program {
   final String quietUninstallString;
   final String hive;
   final String keyPath;
+
+  /// Приложение из Microsoft Store: PackageFullName (null — обычная программа).
+  final String? storeFullName;
+  final String storeFamily;
+  final String storeAppId;
+
+  /// Часть Windows: удалять нельзя (только для Store).
+  final bool locked;
+
+  /// Файл значка Store-приложения (PNG внутри InstallLocation).
+  final String iconFile;
+
+  bool get isStore => storeFullName != null;
 
   int get sizeBytes => sizeKb * 1024;
   bool get isUserHive => hive == 'HKCU';

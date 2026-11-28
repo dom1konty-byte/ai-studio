@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/format.dart';
 import '../core/programs.dart';
+import '../core/store_apps.dart';
 import '../state/app_controller.dart';
 import 'leftovers_screen.dart';
 import 'anim.dart';
@@ -45,6 +46,15 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
       action: 'Удалить',
     );
     if (ok) await c.uninstall(p);
+  }
+
+  Future<void> _confirmStore(Program p) async {
+    final ok = await _ask(
+      title: 'Удалить «${p.name}»?',
+      text: 'Приложение из Microsoft Store будет удалено для вашей учётной записи.',
+      action: 'Удалить',
+    );
+    if (ok) await c.uninstallStore(p);
   }
 
   Future<void> _confirmForce(Program p) async {
@@ -93,7 +103,17 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Программы', style: screenTitleStyle),
+            Row(
+              children: [
+                const Expanded(child: Text('Программы', style: screenTitleStyle)),
+                OutlinedButton.icon(
+                  key: const Key('all-apps-button'),
+                  onPressed: c.openAllApps,
+                  icon: const Icon(Icons.apps),
+                  label: const Text('Все приложения Windows'),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 16,
@@ -113,6 +133,17 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
                       isDense: true,
                     ),
                   ),
+                ),
+                SegmentedButton<ProgramKind>(
+                  key: const Key('kind-switch'),
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: ProgramKind.regular, label: Text('Обычные')),
+                    ButtonSegment(value: ProgramKind.store, label: Text('Из Microsoft Store')),
+                    ButtonSegment(value: ProgramKind.all, label: Text('Все')),
+                  ],
+                  selected: {c.programKind},
+                  onSelectionChanged: (s) => c.setProgramKind(s.first),
                 ),
                 SegmentedButton<ProgramSort>(
                   showSelectedIcon: false,
@@ -173,6 +204,28 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
   }
 
   Widget _body(List<Program> list, bool busy, ColorScheme cs) {
+    if (c.programKind == ProgramKind.store) {
+      if (c.storeState == LoadState.idle || c.storeState == LoadState.loading) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (c.storeState == LoadState.error) {
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Не удалось получить список приложений Microsoft Store.'),
+              const SizedBox(height: 8),
+              OutlinedButton(onPressed: c.loadStoreApps, child: const Text('Повторить')),
+            ],
+          ),
+        );
+      }
+      if (list.isEmpty) return const Center(child: Text('Ничего не найдено'));
+      return ListView.builder(
+        itemCount: list.length,
+        itemBuilder: (context, i) => _row(list[i], busy, cs),
+      );
+    }
     switch (c.programsState) {
       case LoadState.idle:
       case LoadState.loading:
@@ -198,8 +251,9 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
   }
 
   Widget _row(Program p, bool busy, ColorScheme cs) {
-    final folder = c.installFolder(p);
+    final folder = p.isStore ? null : c.installFolder(p);
     return ListTile(
+      enabled: !p.locked,
       key: ValueKey(p.keyPath),
       leading: _ProgramIcon(controller: c, program: p),
       title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -237,23 +291,39 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
                 textAlign: TextAlign.right),
           ),
           const SizedBox(width: 12),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: cs.error,
-              side: BorderSide(color: cs.error),
-              minimumSize: const Size(96, 40),
+          if (p.locked)
+            const Tooltip(
+              message: 'Часть Windows',
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.lock_outline, size: 18),
+                  SizedBox(width: 6),
+                  Text('Часть Windows'),
+                ]),
+              ),
+            )
+          else
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: cs.error,
+                side: BorderSide(color: cs.error),
+                minimumSize: const Size(96, 40),
+              ),
+              onPressed: busy ? null : () => p.isStore ? _confirmStore(p) : _confirmUninstall(p),
+              child: const Text('Удалить'),
             ),
-            onPressed: busy ? null : () => _confirmUninstall(p),
-            child: const Text('Удалить'),
-          ),
           PopupMenuButton<String>(
             enabled: !busy,
             tooltip: 'Ещё',
             onSelected: (v) {
               if (v == 'force') _confirmForce(p);
+              if (v == 'shortcut') c.createDesktopShortcut(p);
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'force', child: Text('Принудительно удалить…')),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'shortcut', child: Text('Ярлык на рабочий стол')),
+              if (!p.isStore)
+                const PopupMenuItem(value: 'force', child: Text('Принудительно удалить…')),
             ],
           ),
         ],

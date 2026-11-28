@@ -590,6 +590,38 @@ $n.Dispose()
   }
 
   @override
+  Future<({int code, String out, String err})?> runPowerShell(String script,
+      {Map<String, String> env = const {}, required Duration timeout}) async {
+    Process? p;
+    try {
+      p = await Process.start(
+        '$_sysRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
+        environment: env,
+      );
+      final out = p.stdout.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+      final err = p.stderr.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+      final code = await p.exitCode.timeout(timeout);
+      return (
+        code: code,
+        out: utf8.decode(await out, allowMalformed: true),
+        err: utf8.decode(await err, allowMalformed: true),
+      );
+    } catch (_) {
+      p?.kill();
+      return null;
+    }
+  }
+
+  @override
+  Future<void> openAllApps() async {
+    try {
+      await Process.start('$_sysRoot\\explorer.exe', ['shell:AppsFolder'],
+          mode: ProcessStartMode.detached);
+    } catch (_) {}
+  }
+
+  @override
   Future<SysSample?> systemSample() async {
     try {
       return await sampleInWorker();

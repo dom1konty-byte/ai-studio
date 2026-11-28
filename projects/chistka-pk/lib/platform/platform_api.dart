@@ -141,4 +141,15 @@ abstract class PlatformApi {
   /// Тихий звук «плюх» (файл [assetPath] копируется в [dataDir]\drop.wav).
   /// На не-Windows и при любой ошибке — молча ничего.
   Future<void> playDropSound(String assetPath, String dataDir);
+
+  // --- Microsoft Store, ярлыки ---
+
+  /// Запускает PowerShell (полный путь, без окна) с КОНСТАНТНЫМ [script];
+  /// данные — только через [env]. Вывод и ошибки читаются как UTF-8.
+  /// null — не запустился или не уложился в [timeout] (процесс убит).
+  Future<({int code, String out, String err})?> runPowerShell(String script,
+      {Map<String, String> env = const {}, required Duration timeout});
+
+  /// Открывает `explorer.exe shell:AppsFolder` (все приложения Windows).
+  Future<void> openAllApps();
 }
