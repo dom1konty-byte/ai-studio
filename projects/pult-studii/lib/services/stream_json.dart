@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import '../models/models.dart';
+import 'rate_limit.dart';
+import 'usage.dart';
 
 /// События потока `claude -p --output-format stream-json`.
 sealed class ClaudeEvent {
@@ -37,6 +39,7 @@ class ResultEvent extends ClaudeEvent {
     required this.text,
     required this.costUsd,
     required this.denials,
+    this.usage,
   });
 
   final String? sessionId;
@@ -44,10 +47,19 @@ class ResultEvent extends ClaudeEvent {
   final String text;
   final double? costUsd;
   final List<PermissionDenial> denials;
+
+  /// Стоимость и токены хода (если Claude их прислал).
+  final TurnUsage? usage;
+}
+
+/// Claude сообщил о лимите: до [resetsAt] запросы не пройдут.
+class RateLimitEvent extends ClaudeEvent {
+  const RateLimitEvent(this.resetsAt);
+  final DateTime resetsAt;
 }
 
 /// Разбор одной строки потока. Неизвестное и битое — пропускаем (пустой список).
-List<ClaudeEvent> parseStreamLine(String line) {
+List<ClaudeEvent> parseStreamLine(String line, {DateTime? now}) {
   final s = line.trim();
   if (s.isEmpty) return const [];
   final Object? j;
@@ -60,8 +72,16 @@ List<ClaudeEvent> parseStreamLine(String line) {
   // События субагентов не показываем.
   if (j['parent_tool_use_id'] != null) return const [];
 
+  final clock = now ?? DateTime.now();
   switch (j['type']) {
+    case 'rate_limit_event':
+      final until = parseRateLimitEvent(j, clock);
+      return until == null ? const [] : [RateLimitEvent(until)];
     case 'system':
+      if (j.containsKey('rate_limit_info') || j.containsKey('rateLimitInfo')) {
+        final until = parseRateLimitEvent(j, clock);
+        return until == null ? const [] : [RateLimitEvent(until)];
+      }
       final id = j['session_id'];
       if (j['subtype'] == 'init' && id is String && id.isNotEmpty) {
         return [SessionInit(id)];
@@ -109,14 +129,19 @@ List<ClaudeEvent> parseStreamLine(String line) {
       }
       final cost = j['total_cost_usd'];
       final sub = '${j['subtype']}';
+      final isError = j['is_error'] == true || sub.startsWith('error');
+      final text = j['result'] is String ? j['result'] as String : '';
+      final limitUntil = isError ? parseLimitText(text, clock) : null;
       return [
         ResultEvent(
           sessionId: j['session_id'] is String ? j['session_id'] as String : null,
-          isError: j['is_error'] == true || sub.startsWith('error'),
-          text: j['result'] is String ? j['result'] as String : '',
+          isError: isError,
+          text: text,
           costUsd: cost is num ? cost.toDouble() : null,
           denials: denials,
-        )
+          usage: TurnUsage.fromResult(j),
+        ),
+        if (limitUntil != null) RateLimitEvent(limitUntil),
       ];
   }
   return const [];

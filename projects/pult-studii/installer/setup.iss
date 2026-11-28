@@ -1,4 +1,4 @@
-; Inno Setup 6. Версия: iscc /DMyAppVersion=1.0.0 installer\setup.iss
+﻿; Inno Setup 6. Версия: iscc /DMyAppVersion=1.0.0 installer\setup.iss
 ; Запускать из папки проекта (projects/pult-studii). Сначала: flutter build windows --release
 #ifndef MyAppVersion
   #define MyAppVersion "1.0.0"
@@ -6,21 +6,23 @@
 
 [Setup]
 AppId={{3F7A9C52-8D14-4B6E-9A31-5C2E7B0D4F68}
-AppName=Рубка
+AppName=AI Studio
 AppVersion={#MyAppVersion}
-AppPublisher=Рубка
-DefaultDirName={localappdata}\Programs\Rubka
-DefaultGroupName=Рубка
+AppPublisher=AI Studio
+DefaultDirName={localappdata}\Programs\AI Studio
+DefaultGroupName=AI Studio
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=output
-OutputBaseFilename=Rubka-setup
-UninstallDisplayName=Рубка
+OutputBaseFilename=AI-Studio-setup
+SetupIconFile=..\assets\icon\app_icon.ico
+UninstallDisplayName=AI Studio
 UninstallDisplayIcon={app}\pult_studii.exe
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
+RestartApplications=no
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
@@ -33,8 +35,15 @@ Name: "desktopicon"; Description: "Ярлык на рабочем столе"; G
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{userprograms}\Рубка"; Filename: "{app}\pult_studii.exe"
-Name: "{userdesktop}\Рубка"; Filename: "{app}\pult_studii.exe"; Tasks: desktopicon
+Name: "{userprograms}\AI Studio"; Filename: "{app}\pult_studii.exe"
+Name: "{userdesktop}\AI Studio"; Filename: "{app}\pult_studii.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\pult_studii.exe"; Description: "Запустить Рубку"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\pult_studii.exe"; Description: "Запустить AI Studio"; Flags: nowait postinstall skipifsilent
+; тихая установка (автообновление): запустить программу без вопросов
+Filename: "{app}\pult_studii.exe"; Flags: nowait; Check: WizardSilent
+
+[InstallDelete]
+; ярлыки старого названия «Рубка» (после обновления поверх старой версии)
+Type: files; Name: "{userprograms}\Рубка.lnk"
+Type: files; Name: "{userdesktop}\Рубка.lnk"

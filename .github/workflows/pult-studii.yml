@@ -1,4 +1,4 @@
-# Сборка Windows-программы «Пульт студии» (заготовка). Создано /new-project.
+# Сборка Windows-программы «AI Studio» (пульт студии). Создано /new-project.
 name: "pult-studii"
 
 on:
@@ -30,12 +30,15 @@ jobs:
             # flutter create кладёт шаблонный тест — он не наш
             git ls-files --error-unmatch test/widget_test.dart >/dev/null 2>&1 || rm -f test/widget_test.dart
           fi
+      - name: Иконка программы (exe, окно, панель задач)
+        shell: bash
+        run: cp assets/icon/app_icon.ico windows/runner/resources/app_icon.ico
       - run: flutter pub get
       - run: flutter analyze
       - id: test
         run: flutter test
       - id: build
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=BUILD_NUMBER=${{ github.run_number }}
       - uses: actions/upload-artifact@v7
         with:
           name: pult-studii-windows
@@ -51,11 +54,11 @@ jobs:
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           if [ ! -f "$ISCC" ]; then ISCC="iscc"; fi
           VERSION=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*([0-9.]+).*/\1/')
-          MSYS_NO_PATHCONV=1 "$ISCC" "/DMyAppVersion=$VERSION" installer/setup.iss
+          MSYS_NO_PATHCONV=1 "$ISCC" "/DMyAppVersion=$VERSION.${{ github.run_number }}" installer/setup.iss
       - uses: actions/upload-artifact@v7
         with:
-          name: Rubka-setup
-          path: projects/pult-studii/installer/output/Rubka-setup.exe
+          name: AI-Studio-setup
+          path: projects/pult-studii/installer/output/AI-Studio-setup.exe
           retention-days: 30
       - name: Telegram — программа собрана
         if: ${{ success() && github.event_name != 'pull_request' && github.ref != 'refs/heads/main' && vars.TELEGRAM_BUILDS != 'off' }}

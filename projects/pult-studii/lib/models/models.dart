@@ -49,7 +49,7 @@ class PermissionDenial {
   RuleDecision get decision {
     if (toolName != 'Bash') {
       return const RuleDecision.refused(
-          'Рубка разрешает только команды из белого списка, '
+          'AI Studio разрешает только команды из белого списка, '
           'это действие разрешить нельзя.');
     }
     final cmd = input['command'];
@@ -181,3 +181,14 @@ class BuildRun {
   bool isExpired(DateTime now) =>
       updatedAt != null && now.difference(updatedAt!).inDays >= 30;
 }
+
+/// Типы уведомлений Windows (каждый можно выключить в настройках).
+enum NotifyKind { directorReply, waitsYes, buildOk, buildFailed }
+
+/// Подпись переключателя в настройках.
+String notifyKindLabel(NotifyKind k) => switch (k) {
+      NotifyKind.directorReply => 'Директор ответил (если окно не в фокусе)',
+      NotifyKind.waitsYes => 'Проект ждёт «да»',
+      NotifyKind.buildOk => 'Сборка готова',
+      NotifyKind.buildFailed => 'Сборка упала',
+    };

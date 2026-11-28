@@ -10,6 +10,7 @@ import '../services/git_service.dart';
 import '../services/process_runner.dart';
 import '../services/remote_control.dart';
 import '../services/stream_json.dart';
+import '../services/usage.dart';
 
 /// Чат одного проекта или «Офиса» (slug == officeKey).
 class ChatController extends ChangeNotifier {
@@ -22,6 +23,10 @@ class ChatController extends ChangeNotifier {
     required this.state,
     required this.storage,
     required this.onTurnDone,
+    this.onUsage,
+    this.onRateLimit,
+    this.limitUntil,
+    this.onReply,
   });
 
   final String slug;
@@ -36,6 +41,21 @@ class ChatController extends ChangeNotifier {
 
   /// Вызывается после каждого хода (обновить этап проекта).
   final Future<void> Function() onTurnDone;
+
+  /// Расход хода (событие `result`).
+  final void Function(String slug, TurnUsage usage)? onUsage;
+
+  /// Claude сообщил о лимите до этого времени.
+  final void Function(DateTime until)? onRateLimit;
+
+  /// До какого времени действует лимит (null — лимита нет).
+  final DateTime? Function()? limitUntil;
+
+  /// Ход закончился успешно (для уведомления «директор ответил»).
+  final void Function()? onReply;
+
+  /// Отправка заблокирована лимитом Claude.
+  bool get limitBlocked => limitUntil?.call() != null;
 
   static const _maxShown = 300;
 
@@ -203,7 +223,7 @@ class ChatController extends ChangeNotifier {
   Future<void> send(String text,
       {bool approval = false, List<String> onceTools = const []}) async {
     final t = text.trim();
-    if (t.isEmpty || !canSend) return;
+    if (t.isEmpty || !canSend || limitBlocked) return;
     if (approval) approvalHidden = true;
     _add(ChatMessage(MsgKind.user, t));
     _lastRaw = t;
@@ -232,7 +252,7 @@ class ChatController extends ChangeNotifier {
   /// Повторить последний запрос после ошибки.
   Future<void> retry() async {
     final raw = _lastRaw;
-    if (raw == null || !canSend) return;
+    if (raw == null || !canSend || limitBlocked) return;
     messages.removeWhere((m) => m.kind == MsgKind.error);
     await _run(raw, const []);
   }
@@ -281,7 +301,7 @@ class ChatController extends ChangeNotifier {
     rcOpen = true;
     await _safe(() => state.setRcOpen(slug, true));
     _add(ChatMessage(MsgKind.note,
-        'Открыт терминал для телефона — чат в Рубке закрыт, пока он открыт'));
+        'Открыт терминал для телефона — чат в AI Studio закрыт, пока он открыт'));
     return null;
   }
 
@@ -338,6 +358,9 @@ class ChatController extends ChangeNotifier {
       lastTurnOk = ok;
       notifyListeners();
       if (ok) {
+        try {
+          onReply?.call();
+        } catch (_) {}
         // Сводка ушла директору — только теперь двигаем «прочитано».
         _pendingPrefix = null;
         summaryDismissed = true;
@@ -389,7 +412,7 @@ class ChatController extends ChangeNotifier {
       _closeStreaming();
       if (_handleError != null) {
         _add(ChatMessage(MsgKind.error,
-            'Ошибка Рубки при разборе ответа Claude: $_handleError. '
+            'Ошибка AI Studio при разборе ответа Claude: $_handleError. '
             'Ход остановлен — нажми «Повторить».'));
         return false;
       }
@@ -451,9 +474,13 @@ class ChatController extends ChangeNotifier {
       case ToolUse(summary: final sum):
         _closeStreaming();
         _add(ChatMessage(MsgKind.action, 'агент запускает: $sum'));
+      case RateLimitEvent(resetsAt: final until):
+        onRateLimit?.call(until);
       case ResultEvent r:
         _resultSeen = true;
         _closeStreaming();
+        final usage = r.usage;
+        if (usage != null) onUsage?.call(slug, usage);
         final sid = r.sessionId;
         if (sid != null) await _safe(() => state.setSessionId(slug, sid));
         if (r.isError) {

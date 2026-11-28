@@ -8,6 +8,8 @@ import 'package:window_manager/window_manager.dart';
 import 'app/app.dart';
 import 'services/app_storage.dart';
 import 'services/real_process_runner.dart';
+import 'services/updater.dart';
+import 'services/windows_notifier.dart';
 import 'state/app_controller.dart';
 
 /// Закрытие окна во время хода: сначала остановить директора.
@@ -30,7 +32,7 @@ Future<void> main() async {
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();
     const options = WindowOptions(
-      title: 'Рубка',
+      title: 'AI Studio',
       size: Size(1200, 760),
       minimumSize: Size(960, 600),
       center: true,
@@ -44,11 +46,27 @@ Future<void> main() async {
   final env = Platform.environment;
   final appData = env['APPDATA'] ?? env['HOME'] ?? '.';
   final home = env['USERPROFILE'] ?? env['HOME'] ?? '.';
+  final proc = RealProcessRunner();
+  final win = Platform.isWindows;
   final controller = AppController(
-    proc: RealProcessRunner(),
+    proc: proc,
     storage: FileStorage(p.join(appData, 'pult-studii')),
     downloadsDir: p.join(home, 'Downloads'),
     homeDir: home,
+    updater: win ? UpdateService(proc) : null,
+    notifier: win ? WindowsNotifier() : null,
+    isWindowFocused: win ? windowManager.isFocused : null,
+    showWindow: win
+        ? () async {
+            if (await windowManager.isMinimized()) {
+              await windowManager.restore();
+            }
+            await windowManager.show();
+            await windowManager.focus();
+          }
+        : null,
+    // закрыть программу после запуска установщика (процессы уже остановлены)
+    quitApp: win ? windowManager.destroy : null,
   );
   if (Platform.isWindows) {
     windowManager.addListener(_CloseHandler(controller));

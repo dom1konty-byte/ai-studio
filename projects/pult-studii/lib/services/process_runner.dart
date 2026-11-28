@@ -39,6 +39,10 @@ abstract class ProcessRunner {
   Future<RunningProcess> start(String exe, List<String> args,
       {String? cwd, String? stdin, Map<String, String>? environment});
 
+  /// Запустить программу отдельным процессом, не ждать и не читать вывод
+  /// (переживает закрытие AI Studio). Без оболочки, [exe] — полный путь.
+  Future<void> startDetached(String exe, List<String> args);
+
   /// Полный путь к программе (на Windows предпочитаем .exe, потом .cmd/.bat).
   /// Не найдена → null (голое имя не запускаем).
   Future<String?> resolveExecutable(String name);
@@ -53,7 +57,7 @@ class ToolNotFound implements Exception {
   final String name;
 
   String get message => '$name: не найдено. Установи программу и нажми '
-      '«Проверить снова» в настройках (если не помогло — перезапусти Рубку).';
+      '«Проверить снова» в настройках (если не помогло — перезапусти AI Studio).';
 
   @override
   String toString() => message;

@@ -7,6 +7,8 @@ import '../app/theme.dart';
 import '../state/app_controller.dart';
 import 'board_panel.dart';
 import 'chat_panel.dart';
+import 'update_banner.dart';
+import 'usage_panel.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.controller});
@@ -45,6 +47,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.f5): c.refreshBoard,
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (c.usageOpen) c.toggleUsage(false);
+        },
         const SingleActivator(LogicalKeyboardKey.keyK, control: true):
             _inputFocus.requestFocus,
       },
@@ -56,22 +61,43 @@ class _HomeScreenState extends State<HomeScreen> {
             builder: (context, _) {
               final chat = c.chat;
               final project = c.selected;
-              return Row(
+              return Column(
                 children: [
-                  SizedBox(width: 300, child: BoardPanel(controller: c)),
-                  const VerticalDivider(width: 1, color: Rubka.border),
+                  UpdateBanner(controller: c),
                   Expanded(
-                    child: chat == null || project == null
-                        ? Center(
-                            child: Text('Выбери проект слева',
-                                style: Rubka.body(color: Rubka.text2)))
-                        : ChatPanel(
-                            key: ValueKey(chat.slug),
-                            app: c,
-                            chat: chat,
-                            project: project,
-                            inputFocus: _inputFocus,
+                    child: Stack(
+                      children: [
+                        Row(
+                          children: [
+                            SizedBox(
+                                width: 300, child: BoardPanel(controller: c)),
+                            const VerticalDivider(
+                                width: 1, color: Rubka.border),
+                            Expanded(
+                              child: chat == null || project == null
+                                  ? Center(
+                                      child: Text('Выбери проект слева',
+                                          style: Rubka.body(
+                                              color: Rubka.text2)))
+                                  : ChatPanel(
+                                      key: ValueKey(chat.slug),
+                                      app: c,
+                                      chat: chat,
+                                      project: project,
+                                      inputFocus: _inputFocus,
+                                    ),
+                            ),
+                          ],
+                        ),
+                        if (c.usageOpen)
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: UsagePanel(controller: c),
                           ),
+                      ],
+                    ),
                   ),
                 ],
               );

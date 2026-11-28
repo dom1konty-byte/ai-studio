@@ -223,9 +223,9 @@ class WizardController extends ChangeNotifier {
       installMessage = 'Не получилось: ${failed.map((t) => t.spec.title).join(', ')}. '
           'Можно нажать «Установить выбранное» ещё раз.';
     } else if (notSeen.isNotEmpty) {
-      installMessage = 'Поставилось, но Рубка пока не видит: '
+      installMessage = 'Поставилось, но AI Studio пока не видит: '
           '${notSeen.map((t) => t.spec.title).join(', ')}. '
-          'Закрой и снова открой Рубку.';
+          'Закрой и снова открой AI Studio.';
     } else {
       installMessage = 'Готово.';
     }
@@ -365,7 +365,7 @@ class WizardController extends ChangeNotifier {
       claudeState = await service.claudeLogin();
       claudeMessage = switch (claudeState) {
         LoginState.yes => 'Вход выполнен.',
-        LoginState.unknown => 'Эта версия не умеет проверять вход. Если Рубка '
+        LoginState.unknown => 'Эта версия не умеет проверять вход. Если AI Studio '
             'потом не отвечает — открой окно с командой claude и войди (/login).',
         LoginState.no => 'Входа пока нет. Закончи вход в окне и нажми «Проверить».',
       };
@@ -459,8 +459,8 @@ class WizardController extends ChangeNotifier {
     try {
       final closed = await onFinish(folder);
       if (!closed) {
-        finishMessage = 'Рубка ещё не видит всё нужное. Закрой и снова '
-            'открой Рубку, потом нажми «Готово».';
+        finishMessage = 'AI Studio ещё не видит всё нужное. Закрой и снова '
+            'открой AI Studio, потом нажми «Готово».';
       }
     } finally {
       busy = false;

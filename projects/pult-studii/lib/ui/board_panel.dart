@@ -22,7 +22,13 @@ class BoardPanel extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
             child: Row(
               children: [
-                Expanded(child: Text('Рубка', style: Rubka.head(22))),
+                Image.asset('assets/icon/app_icon.png',
+                    width: 24,
+                    height: 24,
+                    filterQuality: FilterQuality.medium,
+                    semanticLabel: 'AI Studio'),
+                const SizedBox(width: 8),
+                Expanded(child: Text('AI Studio', style: Rubka.head(22))),
                 IconButton(
                   tooltip: 'Обновить (F5)',
                   onPressed: c.boardLoading ? null : c.refreshBoard,
@@ -65,10 +71,23 @@ class BoardPanel extends StatelessWidget {
           const Divider(height: 1, color: Rubka.border),
           SizedBox(
             height: 48,
-            child: TextButton.icon(
-              onPressed: c.openSetup,
-              icon: const Icon(Icons.settings),
-              label: const Text('Настройка'),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: c.openSetup,
+                    icon: const Icon(Icons.settings),
+                    label: const Text('Настройка'),
+                  ),
+                ),
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: c.toggleUsage,
+                    icon: const Icon(Icons.payments),
+                    label: const Text('Расходы'),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

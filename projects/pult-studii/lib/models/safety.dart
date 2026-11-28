@@ -6,16 +6,16 @@ const allowedCommandWords = {
   'ls', 'dir', 'cat', 'type', 'findstr', 'where',
 };
 
-/// Эти команды Рубка не разрешает никогда (в нижнем регистре).
+/// Эти команды AI Studio не разрешает никогда (в нижнем регистре).
 const forbiddenCommandWords = {
   'rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'powershell', 'pwsh', //
   'cmd', 'curl', 'wget', 'iwr', 'invoke-webrequest', 'reg', 'format',
   'taskkill', 'schtasks', 'icacls', 'takeown',
 };
 
-const dangerousText = 'Это опасная команда — Рубка её не разрешает';
+const dangerousText = 'Это опасная команда — AI Studio её не разрешает';
 const notAllowedText =
-    'Рубка не может разрешить такую команду: её нет в белом списке '
+    'AI Studio не может разрешить такую команду: её нет в белом списке '
     'или в ней есть кавычки, перенаправление или другие спецсимволы.';
 
 final _ruleRe = RegExp(r'^Bash\([A-Za-z0-9._-]+( [A-Za-z0-9._:/\\ *-]*)?\)$');

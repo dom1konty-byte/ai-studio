@@ -8,10 +8,16 @@ import '../services/app_storage.dart';
 import '../services/claude_runner.dart';
 import '../services/gh_service.dart';
 import '../services/git_service.dart';
+import '../services/notifications.dart';
 import '../services/process_runner.dart';
 import '../services/remote_control.dart';
 import '../services/tools_check.dart';
+import '../services/updater.dart';
+import '../services/usage.dart';
 import 'chat_controller.dart';
+
+/// Состояние автообновления.
+enum UpdateStatus { none, downloading, installing, error }
 
 class AppController extends ChangeNotifier {
   AppController({
@@ -22,7 +28,17 @@ class AppController extends ChangeNotifier {
     this.autoRefresh = const Duration(minutes: 3),
     RemoteControl? remote,
     Future<void> Function(String text)? copyText,
+    this.updater,
+    this.updateEvery = const Duration(hours: 6),
+    this.build = buildNumber,
+    this.notifier,
+    this.isWindowFocused,
+    this.showWindow,
+    this.quitApp,
+    DateTime Function()? clock,
   })  : state = StateRepo(storage),
+        usage = UsageRepo(storage),
+        _now = clock ?? DateTime.now,
         rc = remote ?? RemoteControl(proc),
         _copy = copyText ?? _systemCopy,
         git = GitService(proc, storage),
@@ -38,6 +54,24 @@ class AppController extends ChangeNotifier {
 
   final ProcessRunner proc;
   final AppStorage storage;
+
+  /// Автообновление (null — выключено, например в тестах).
+  final UpdateService? updater;
+  final Duration? updateEvery;
+
+  /// Номер этой сборки (0 — dev, обновление не предлагаем).
+  final int build;
+
+  /// Уведомления Windows (null — выключены).
+  final AppNotifier? notifier;
+  final Future<bool> Function()? isWindowFocused;
+  final Future<void> Function()? showWindow;
+
+  /// Закрыть программу после запуска установщика (stopAll уже сделан).
+  final Future<void> Function()? quitApp;
+  final DateTime Function() _now;
+  final UsageRepo usage;
+  final NotifyTracker _tracker = NotifyTracker();
   final String downloadsDir;
 
   /// Домашняя папка пользователя (для папки студии по умолчанию).
@@ -122,6 +156,8 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _boardTimer?.cancel();
+    _updateTimer?.cancel();
+    _limitTimer?.cancel();
     for (final c in chats.values) {
       c.dispose();
     }
@@ -136,6 +172,12 @@ class AppController extends ChangeNotifier {
   Future<void> init() async {
     try {
       await state.load();
+      try {
+        await usage.load();
+      } catch (_) {}
+      try {
+        await notifier?.init(openFromNotification);
+      } catch (_) {}
       await git.setRepoPath(state.repoPath ?? '');
       await recheck();
     } catch (e) {
@@ -149,6 +191,198 @@ class AppController extends ChangeNotifier {
       _boardTimer?.cancel();
       _boardTimer = Timer.periodic(every, (_) => _autoRefreshBoard());
     }
+    final upd = updateEvery;
+    if (updater != null && upd != null) {
+      unawaited(checkUpdate());
+      _updateTimer?.cancel();
+      _updateTimer = Timer.periodic(upd, (_) => unawaited(checkUpdate()));
+    }
+  }
+
+  // ---------- Автообновление ----------
+
+  Timer? _updateTimer;
+  UpdateInfo? update;
+  UpdateStatus updateStatus = UpdateStatus.none;
+  String? updateError;
+  bool updateDismissed = false;
+
+  /// Показывать ли плашку «Есть новая версия».
+  bool get updateVisible =>
+      update != null && (!updateDismissed || updateBusy || updateError != null);
+
+  bool get updateBusy =>
+      updateStatus == UpdateStatus.downloading ||
+      updateStatus == UpdateStatus.installing;
+
+  /// Спросить GitHub про свежую сборку (при запуске и раз в 6 ч).
+  Future<void> checkUpdate() async {
+    final u = updater;
+    if (u == null || _disposed || build <= 0 || updateBusy) return;
+    RepoRemote? remote;
+    try {
+      remote = await git.remote();
+    } catch (_) {}
+    if (remote == null) return;
+    final info = await u.check(remote, build, cwd: git.repoPath);
+    if (info == null || _disposed || updateBusy) return;
+    update = info;
+    updateDismissed = false;
+    if (updateStatus == UpdateStatus.error) updateStatus = UpdateStatus.none;
+    notifyListeners();
+  }
+
+  void dismissUpdate() {
+    updateDismissed = true;
+    updateError = null;
+    if (updateStatus == UpdateStatus.error) updateStatus = UpdateStatus.none;
+    notifyListeners();
+  }
+
+  /// «Обновить»: скачать установщик, запустить тихую установку, закрыться.
+  Future<void> applyUpdate() async {
+    final info = update;
+    final u = updater;
+    if (info == null || u == null || updateBusy) return;
+    if (anyBusy) {
+      updateStatus = UpdateStatus.error;
+      updateError = 'Директор ещё работает. Дождись конца хода и повтори.';
+      notifyListeners();
+      return;
+    }
+    updateStatus = UpdateStatus.downloading;
+    updateError = null;
+    notifyListeners();
+    try {
+      final remote = await git.remote();
+      if (remote == null) {
+        throw UpdateException('не удалось определить репозиторий');
+      }
+      final exe = await u.download(remote, info, cwd: git.repoPath);
+      updateStatus = UpdateStatus.installing;
+      notifyListeners();
+      await u.install(exe);
+      await stopAll();
+      await quitApp?.call();
+    } catch (e) {
+      updateStatus = UpdateStatus.error;
+      updateError = '$e';
+      notifyListeners();
+    }
+  }
+
+  // ---------- Расходы и лимит ----------
+
+  bool usageOpen = false;
+
+  void toggleUsage([bool? open]) {
+    usageOpen = open ?? !usageOpen;
+    notifyListeners();
+  }
+
+  UsageSummary get usageSummary => usage.summary(_now());
+
+  DateTime? limitUntil;
+  Timer? _limitTimer;
+
+  bool get limited {
+    final u = limitUntil;
+    return u != null && _now().isBefore(u);
+  }
+
+  /// Лимит, если он ещё действует.
+  DateTime? get activeLimit => limited ? limitUntil : null;
+
+  void setLimit(DateTime until) {
+    final now = _now();
+    if (!until.isAfter(now)) return;
+    limitUntil = until;
+    _limitTimer?.cancel();
+    _limitTimer = Timer(until.difference(now) + const Duration(seconds: 1), () {
+      limitUntil = null;
+      notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  /// «Всё равно отправить»: снять ожидание (если лимит ещё есть, Claude ответит снова).
+  void clearLimit() {
+    limitUntil = null;
+    _limitTimer?.cancel();
+    notifyListeners();
+  }
+
+  void _recordUsage(String key, TurnUsage u) {
+    unawaited(usage.record(key, u, _now()).catchError((Object _) {}));
+    notifyListeners();
+  }
+
+  // ---------- Уведомления ----------
+
+  Future<void> _emit(NotifyKind kind, String slug, {String stage = ''}) async {
+    final n = notifier;
+    if (n == null || _disposed || !state.notifyEnabled(kind)) return;
+    if (kind == NotifyKind.directorReply) {
+      var focused = false;
+      try {
+        focused = await (isWindowFocused?.call() ?? Future.value(false));
+      } catch (_) {}
+      if (focused) return;
+    }
+    var name = slug;
+    if (slug == officeKey) {
+      name = officeProject.name;
+    } else {
+      for (final p in projects) {
+        if (p.slug == slug) name = p.name;
+      }
+    }
+    try {
+      await n.show(
+          title: notifyTitle,
+          body: notifyBody(kind, name, stage: stage),
+          key: slug);
+    } catch (_) {}
+  }
+
+  void _checkWaits() {
+    for (final p in _tracker.newlyWaiting(projects)) {
+      unawaited(_emit(NotifyKind.waitsYes, p.slug, stage: p.stage));
+    }
+  }
+
+  void _checkBuild(String slug, BuildRun run) {
+    final s = _tracker.buildChanged(slug, run);
+    if (s == BuildState.success) {
+      unawaited(_emit(NotifyKind.buildOk, slug));
+    } else if (s == BuildState.failed) {
+      unawaited(_emit(NotifyKind.buildFailed, slug));
+    }
+  }
+
+  /// Клик по уведомлению: показать окно и открыть чат.
+  Future<void> openFromNotification(String key) async {
+    try {
+      await showWindow?.call();
+    } catch (_) {}
+    if (_disposed) return;
+    if (key == officeKey) {
+      openOffice();
+      return;
+    }
+    for (final p in projects) {
+      if (p.slug == key) {
+        select(p);
+        return;
+      }
+    }
+  }
+
+  Future<void> setNotifyEnabled(NotifyKind k, bool on) async {
+    try {
+      await state.setNotifyEnabled(k, on);
+    } catch (_) {}
+    notifyListeners();
   }
 
   void _autoRefreshBoard() {
@@ -210,6 +444,7 @@ class AppController extends ChangeNotifier {
     projects = const [];
     builds.clear();
     newCounts.clear();
+    _tracker.reset();
     await recheck();
   }
 
@@ -252,6 +487,7 @@ class AppController extends ChangeNotifier {
         await refreshStageGuarded(k);
       } catch (_) {}
     }
+    _checkWaits();
     boardLoading = false;
     notifyListeners();
     unawaited(_loadBuilds());
@@ -270,7 +506,9 @@ class AppController extends ChangeNotifier {
     if (remote == null) return;
     final r = remote;
     await Future.wait(list.map((p) async {
-      builds[p.slug] = await gh.latestRun(r, p.slug);
+      final run = await gh.latestRun(r, p.slug);
+      builds[p.slug] = run;
+      _checkBuild(p.slug, run);
       notifyListeners();
     }));
   }
@@ -291,6 +529,7 @@ class AppController extends ChangeNotifier {
     final stage = await git.localStage(slug, dir: dir);
     if (stage == null) return;
     projects = [for (final p in projects) p.slug == slug ? p.withStage(stage) : p];
+    if (!boardLoading) _checkWaits();
     notifyListeners();
   }
 
@@ -304,6 +543,10 @@ class AppController extends ChangeNotifier {
       state: state,
       storage: storage,
       onTurnDone: () => refreshStageGuarded(key),
+      onUsage: _recordUsage,
+      onRateLimit: setLimit,
+      limitUntil: () => activeLimit,
+      onReply: () => unawaited(_emit(NotifyKind.directorReply, key)),
     );
     int sig() =>
         (c.working ? 1 : 0) + (c.preparing ? 2 : 0) + (c.rcOpen ? 4 : 0);
@@ -404,7 +647,7 @@ class AppController extends ChangeNotifier {
       office.lastTurnOk = false;
       await office.send('Новый проект: $n, тип: $type ($label). Идея: $i. '
           'Создай через /new-project, сессию проекта не запускай — '
-          'Рубка откроет его сама. Потом запушь ветку $expected '
+          'AI Studio откроет его. Потом запушь ветку $expected '
           '(git push -u origin $expected).');
       if (!office.lastTurnOk) {
         toast('Офис не закончил ход — проект не открываю. '

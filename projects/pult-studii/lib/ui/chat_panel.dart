@@ -8,6 +8,7 @@ import '../models/safety.dart';
 import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
 import '../state/chat_controller.dart';
+import 'limit_banner.dart';
 
 class ChatPanel extends StatefulWidget {
   const ChatPanel({
@@ -50,7 +51,7 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   void _submit() {
-    if (!chat.canSend) return;
+    if (!chat.canSend || chat.limitBlocked) return;
     final t = _input.text.trim();
     if (t.isEmpty) return;
     _input.clear();
@@ -153,7 +154,7 @@ class _ChatPanelState extends State<ChatPanel> {
       builder: (ctx) => AlertDialog(
         title: const Text('Открыть для телефона?'),
         content: const Text(
-            'Чат в Рубке будет заблокирован, пока открыт терминал. '
+            'Чат в AI Studio будет заблокирован, пока открыт терминал. '
             'Откроется окно терминала с этим же разговором; его видно '
             'в приложении Claude на телефоне. Закончишь — закрой терминал '
             'и нажми «Я закрыл терминал — вернуться».'),
@@ -213,6 +214,7 @@ class _ChatPanelState extends State<ChatPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      LimitBanner(controller: widget.app),
                       if (showApproval) ...[
                         _ApprovalPanel(chat: chat),
                         const SizedBox(height: 8),
@@ -630,7 +632,8 @@ class _ChatPanelState extends State<ChatPanel> {
         chat.working
             ? OutlinedButton(onPressed: chat.stop, child: const Text('Стоп'))
             : FilledButton(
-                onPressed: chat.canSend ? _submit : null,
+                onPressed:
+                    chat.canSend && !chat.limitBlocked ? _submit : null,
                 child: const Text('Отправить')),
       ],
     );

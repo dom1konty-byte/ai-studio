@@ -580,7 +580,7 @@ void main() {
           office,
           contains('Новый проект: Гамма, тип: site (Сайт). Идея: сайт кофейни. '
               'Создай через /new-project, сессию проекта не запускай — '
-              'Рубка откроет его сама. Потом запушь ветку gamma '
+              'AI Studio откроет его. Потом запушь ветку gamma '
               '(git push -u origin gamma).'));
       expect(app.activeKey, 'gamma');
       expect(proc.calls.where((c) => c.startsWith('git worktree add -b gamma ')),
@@ -833,7 +833,7 @@ void main() {
       expect(c.rcOpen, isFalse);
       expect(c.canSend, isTrue);
       expect(app.state.rcOpen('alpha'), isFalse);
-      await c.send('снова в Рубке');
+      await c.send('снова в AI Studio');
       expect(proc.started.length, before + 1);
       app.dispose();
     });

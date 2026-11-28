@@ -14,6 +14,10 @@ enum FolderKind { missing, empty, notEmpty }
 abstract class AppStorage {
   Future<Map<String, dynamic>> loadState();
   Future<void> saveState(Map<String, dynamic> state);
+
+  /// usage.json: расходы по чатам и дням.
+  Future<Map<String, dynamic>> loadUsage();
+  Future<void> saveUsage(Map<String, dynamic> usage);
   Future<List<ChatMessage>> loadChat(String slug);
   Future<void> appendChat(String slug, ChatMessage message);
   Future<String?> readText(String path);
@@ -51,6 +55,7 @@ class FileStorage implements AppStorage {
   }
 
   File get _stateFile => File(p.join(dir, 'state.json'));
+  File get _usageFile => File(p.join(dir, 'usage.json'));
 
   File _chatFile(String slug) => File(p.join(
       dir, 'chats', '${slug.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')}.jsonl'));
@@ -82,15 +87,18 @@ class FileStorage implements AppStorage {
   }
 
   @override
-  Future<void> saveState(Map<String, dynamic> state) {
-    final text = jsonEncode(state);
+  Future<void> saveState(Map<String, dynamic> state) =>
+      _writeJson(_stateFile, jsonEncode(state));
+
+  /// Запись через временный файл и переименование (одна очередь на всё).
+  Future<void> _writeJson(File target, String text) {
     return _enqueue(() async {
       await Directory(dir).create(recursive: true);
       final tmp = File(
-          '${_stateFile.path}.${pid}_${_tmpCounter++}_${DateTime.now().microsecondsSinceEpoch}.tmp');
+          '${target.path}.${pid}_${_tmpCounter++}_${DateTime.now().microsecondsSinceEpoch}.tmp');
       try {
         await tmp.writeAsString(text, flush: true);
-        await tmp.rename(_stateFile.path);
+        await tmp.rename(target.path);
       } catch (_) {
         try {
           if (await tmp.exists()) await tmp.delete();
@@ -99,6 +107,21 @@ class FileStorage implements AppStorage {
       }
     });
   }
+
+  @override
+  Future<Map<String, dynamic>> loadUsage() async {
+    try {
+      if (!await _usageFile.exists()) return {};
+      final j = jsonDecode(await _usageFile.readAsString());
+      return j is Map ? Map<String, dynamic>.from(j) : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  @override
+  Future<void> saveUsage(Map<String, dynamic> usage) =>
+      _writeJson(_usageFile, jsonEncode(usage));
 
   @override
   Future<List<ChatMessage>> loadChat(String slug) async {
@@ -267,6 +290,20 @@ class StateRepo {
   Future<void> addAllowedTools(String slug, Iterable<String> rules) {
     final set = allowedTools(slug).toSet()..addAll(rules.where(isSafeRule));
     _proj(slug)['allowedTools'] = set.toList();
+    return _save();
+  }
+
+  /// Уведомления Windows: по умолчанию все включены.
+  bool notifyEnabled(NotifyKind k) {
+    final v = _data['notify'];
+    return v is Map ? v[k.name] != false : true;
+  }
+
+  Future<void> setNotifyEnabled(NotifyKind k, bool on) {
+    final v = _data['notify'];
+    final m = v is Map ? Map<String, dynamic>.from(v) : <String, dynamic>{};
+    m[k.name] = on;
+    _data['notify'] = m;
     return _save();
   }
 

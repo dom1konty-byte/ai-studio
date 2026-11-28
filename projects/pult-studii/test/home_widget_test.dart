@@ -68,7 +68,7 @@ void main() {
     controller.init();
     await _settle(tester);
 
-    expect(find.text('Рубка'), findsOneWidget);
+    expect(find.text('AI Studio'), findsOneWidget);
     expect(find.text('Альфа'), findsOneWidget);
     expect(find.text('Бета'), findsOneWidget);
     expect(find.text('ждёт да'), findsOneWidget);

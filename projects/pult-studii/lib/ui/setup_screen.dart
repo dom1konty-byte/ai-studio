@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import '../app/theme.dart';
+import '../models/models.dart';
 import '../services/setup_service.dart';
 import '../state/app_controller.dart';
 import '../state/wizard_controller.dart';
@@ -78,7 +79,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   Text('Мастер первого запуска', style: Rubka.head(24)),
                   const SizedBox(height: 4),
                   Text(
-                      'Рубка сама поставит всё нужное. Иди по шагам слева направо.',
+                      'Программа сама поставит всё нужное. Иди по шагам слева направо.',
                       style: Rubka.body(color: Rubka.text2)),
                   const SizedBox(height: 16),
                   Expanded(
@@ -216,7 +217,7 @@ class _SetupScreenState extends State<SetupScreen> {
             decoration: BoxDecoration(
                 color: Rubka.summaryBg, borderRadius: BorderRadius.circular(8)),
             child: Text(
-                'Установщика winget нет — это нормально. Рубка скачает '
+                'Установщика winget нет — это нормально. AI Studio скачает '
                 'программы с официальных сайтов сама. Microsoft Store не нужен.',
                 style: Rubka.body(size: 14)),
           ),
@@ -242,10 +243,34 @@ class _SetupScreenState extends State<SetupScreen> {
           _statusLine(_w.programsDone, _w.installMessage),
         const SizedBox(height: 8),
         Text(
-            'Поставил, а Рубка не видит? Закрой и снова открой Рубку — она '
+            'Поставил, а AI Studio не видит? Закрой и снова открой AI Studio — он '
             'подхватит новые настройки Windows.',
             style: Rubka.body(size: 13, color: Rubka.text2)),
+        const SizedBox(height: 16),
+        const Divider(color: Rubka.border),
+        _notifications(),
       ],
+    );
+  }
+
+  /// Четыре переключателя уведомлений Windows (хранятся в state.json).
+  Widget _notifications() {
+    final c = widget.controller;
+    return ListenableBuilder(
+      listenable: c,
+      builder: (context, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Уведомления', style: Rubka.head(20)),
+          for (final k in NotifyKind.values)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(notifyKindLabel(k), style: Rubka.body(size: 14)),
+              value: c.state.notifyEnabled(k),
+              onChanged: (v) => c.setNotifyEnabled(k, v),
+            ),
+        ],
+      ),
     );
   }
 
@@ -365,7 +390,7 @@ class _SetupScreenState extends State<SetupScreen> {
                     '1. Код уже скопирован.\n'
                     '2. На открывшейся странице GitHub войди в аккаунт и '
                     'вставь код (Ctrl+V).\n'
-                    '3. Нажми Authorize. Рубка сама увидит вход.',
+                    '3. Нажми Authorize. Программа сама увидит вход.',
                     style: Rubka.body(size: 14)),
                 const SizedBox(height: 8),
                 Wrap(
@@ -445,7 +470,7 @@ class _SetupScreenState extends State<SetupScreen> {
         Text('Папка студии', style: Rubka.head(20)),
         const SizedBox(height: 4),
         Text(
-            'Здесь на компьютере будут лежать файлы студии. Рубка скачает их '
+            'Здесь на компьютере будут лежать файлы студии. Программа скачает их '
             'сама, если их ещё нет.',
             style: Rubka.body(color: Rubka.text2)),
         const SizedBox(height: 12),

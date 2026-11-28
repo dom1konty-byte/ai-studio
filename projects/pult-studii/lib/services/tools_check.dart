@@ -86,7 +86,7 @@ class ToolsCheck {
     }
     return const ToolStatus(
       id: 'python',
-      title: 'Python (нужен для скриптов студии; без него Рубка работает)',
+      title: 'Python (нужен для скриптов студии; без него AI Studio работает)',
       ok: false,
       detail: 'не установлен',
       installCommand: 'winget install Python.Python.3.12',

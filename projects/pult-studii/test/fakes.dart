@@ -99,6 +99,14 @@ class FakeProc implements ProcessRunner {
     return handler(exe, a, cwd);
   }
 
+  /// Все startDetached(): [exe, ...args].
+  final detached = <List<String>>[];
+
+  @override
+  Future<void> startDetached(String exe, List<String> args) async {
+    detached.add([exe, ...args]);
+  }
+
   @override
   Future<RunningProcess> start(String exe, List<String> args,
       {String? cwd, String? stdin, Map<String, String>? environment}) async {
@@ -138,6 +146,14 @@ class MemoryStorage implements AppStorage {
 
   @override
   Future<void> saveState(Map<String, dynamic> s) async => state = s;
+
+  Map<String, dynamic> usage = {};
+
+  @override
+  Future<Map<String, dynamic>> loadUsage() async => usage;
+
+  @override
+  Future<void> saveUsage(Map<String, dynamic> u) async => usage = u;
 
   @override
   Future<List<ChatMessage>> loadChat(String slug) async =>

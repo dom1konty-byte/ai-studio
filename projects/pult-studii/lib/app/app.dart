@@ -13,7 +13,7 @@ class RubkaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Рубка',
+      title: 'AI Studio',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       home: ListenableBuilder(

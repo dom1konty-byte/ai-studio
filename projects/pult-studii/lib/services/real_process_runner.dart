@@ -137,6 +137,11 @@ class RealProcessRunner implements ProcessRunner {
   }
 
   @override
+  Future<void> startDetached(String exe, List<String> args) async {
+    await Process.start(exe, args, mode: ProcessStartMode.detached);
+  }
+
+  @override
   Future<RunningProcess> start(String exe, List<String> args,
       {String? cwd, String? stdin, Map<String, String>? environment}) async {
     final path = await resolveExecutable(exe);
