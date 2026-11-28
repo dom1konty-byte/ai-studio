@@ -137,9 +137,9 @@ class ApkServer {
         ..set('Content-Disposition', 'attachment; filename=$slug.apk')
         ..set('Cache-Control', 'no-store');
       res.contentLength = len;
+      served++; // считаем начатую выдачу (клиент может дочитать раньше close)
       await res.addStream(f.openRead());
       await res.close();
-      served++;
     } catch (_) {
       try {
         await res.close();
