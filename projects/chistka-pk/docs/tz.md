@@ -104,3 +104,6 @@
 48. Мини-окно: щелчок по значку у часов (двойной tray_manager не отдаёт) → маленькое окно 360×480 у часов (свободное место, «Быстрая очистка», последний замер скорости + «Замерить», «Открыть ЧистоДиск»); закрывается при потере фокуса.
 
 Макет 1.4 (mockup-1.4) одобрен Дамиром 2026-11-28.
+
+## Версия 1.4.1 (Дамир, 2026-11-28, одобрено)
+49. Программы: переключатель «Обычные / Из Microsoft Store / Все». Приложения Store (Get-AppxPackage текущего пользователя): иконка, издатель, размер, дата; удаление (Remove-AppxPackage, без админа) с подтверждением; системные/неудаляемые (NonRemovable, Framework, SignatureKind System, ключевые: Store, Settings/ImmersiveControlPanel, SecHealthUI, ShellExperienceHost, StartMenuExperienceHost, VCLibs, .NET, UI.Xaml, DesktopAppInstaller) — серые с замком. Пункт меню «Ярлык на рабочий стол» (обычные и Store). Кнопка «Все приложения Windows» → explorer shell:AppsFolder.
