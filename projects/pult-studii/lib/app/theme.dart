@@ -21,6 +21,15 @@ class Rubka {
   static const disabledBg = Color(0xFFE3DCCB);
   static const disabledFg = Color(0xFF76706A);
 
+  // Версия 1.2 «Минимал».
+  static const side = Color(0xFFFAFAF7);
+  static const sideSelected = Color(0xFFE9EFEF);
+  static const line = Color(0xFFECE8E0);
+  static const field = Color(0xFFF3F1EC);
+  static const mute = Color(0xFF8A8F92);
+  static const dotGray = Color(0xFFC9C4BA);
+  static const askBg = Color(0xFFFFFBF0);
+
   static const headFont = 'Bahnschrift';
   static const bodyFont = 'Segoe UI Variable';
   static const monoFont = 'Cascadia Mono';

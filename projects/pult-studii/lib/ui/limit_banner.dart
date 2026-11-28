@@ -18,22 +18,27 @@ class LimitBanner extends StatelessWidget {
         final until = controller.activeLimit;
         if (until == null) return const SizedBox.shrink();
         return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
-          decoration: BoxDecoration(
+          key: const Key('limit-banner'),
+          height: 32,
+          padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+          decoration: const BoxDecoration(
             color: Rubka.summaryBg,
-            border: Border.all(color: Rubka.amber),
-            borderRadius: BorderRadius.circular(8),
+            border: Border(bottom: BorderSide(color: Rubka.amber)),
           ),
           child: Row(
             children: [
-              const Icon(Icons.hourglass_top, size: 18, color: Rubka.onAmber),
+              const Icon(Icons.hourglass_top, size: 16, color: Rubka.onAmber),
               const SizedBox(width: 8),
               Expanded(
                 child: Text('Лимит до ${hhmm(until)}. Чаты ждут',
-                    style: Rubka.body(size: 14, color: Rubka.onAmber)),
+                    style: Rubka.body(size: 13, color: Rubka.onAmber)),
               ),
               TextButton(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 28),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                   onPressed: controller.clearLimit,
                   child: const Text('Всё равно отправить')),
             ],

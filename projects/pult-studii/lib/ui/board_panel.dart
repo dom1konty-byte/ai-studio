@@ -4,7 +4,32 @@ import '../app/theme.dart';
 import '../models/models.dart';
 import '../state/app_controller.dart';
 import '../services/readme_parser.dart';
-import 'phone_share_dialog.dart';
+
+/// Цвет точки проекта: янтарь — ждёт «да», красный — сборка упала,
+/// зелёный — сборка ок, серый — в работе или сборки нет.
+Color projectDotColor(Project p, BuildRun build) {
+  if (stageWaitsYes(p.stage)) return Rubka.amber;
+  switch (build.state) {
+    case BuildState.failed:
+      return Rubka.error;
+    case BuildState.success:
+      return Rubka.success;
+    case BuildState.loading:
+    case BuildState.running:
+    case BuildState.unknown:
+    case BuildState.none:
+      return Rubka.dotGray;
+  }
+}
+
+String _dotHint(Color c) {
+  if (c == Rubka.amber) {
+    return 'Жёлтая точка — проект ждёт твоего «да». Нажми, чтобы ответить.';
+  }
+  if (c == Rubka.error) return 'Красная точка — последняя сборка упала.';
+  if (c == Rubka.success) return 'Зелёная точка — последняя сборка прошла.';
+  return 'Серая точка — проект в работе или сборки ещё нет.';
+}
 
 class BoardPanel extends StatelessWidget {
   const BoardPanel({super.key, required this.controller});
@@ -15,46 +40,16 @@ class BoardPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = controller;
     return Container(
-      color: Rubka.panel,
+      color: Rubka.side,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-            child: Row(
-              children: [
-                Image.asset('assets/icon/app_icon.png',
-                    width: 24,
-                    height: 24,
-                    filterQuality: FilterQuality.medium,
-                    semanticLabel: 'AI Studio'),
-                const SizedBox(width: 8),
-                Expanded(child: Text('AI Studio', style: Rubka.head(22))),
-                IconButton(
-                  tooltip: 'Обновить (F5)',
-                  onPressed: c.boardLoading ? null : c.refreshBoard,
-                  icon: c.boardLoading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.refresh),
-                ),
-              ],
-            ),
-          ),
           _OfficeTile(controller: c),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-            child: OutlinedButton.icon(
-              onPressed: () => _newProject(context),
-              icon: const Icon(Icons.add),
-              label: const Text('Новый проект'),
-            ),
-          ),
+          const _Sep(),
           if (c.boardError != null)
             Container(
-              margin: const EdgeInsets.symmetric(horizontal: 8),
+              margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                   color: Rubka.errorBg, borderRadius: BorderRadius.circular(8)),
@@ -69,27 +64,49 @@ class BoardPanel extends StatelessWidget {
               ),
             ),
           Expanded(child: _list(c)),
-          const Divider(height: 1, color: Rubka.border),
-          SizedBox(
-            height: 48,
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: c.openSetup,
-                    icon: const Icon(Icons.settings),
-                    label: const Text('Настройка'),
-                  ),
-                ),
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: c.toggleUsage,
-                    icon: const Icon(Icons.payments),
-                    label: const Text('Расходы'),
-                  ),
-                ),
-              ],
+          const _Sep(),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              key: const Key('new-project'),
+              style: TextButton.styleFrom(
+                foregroundColor: Rubka.primary,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              onPressed: () => _newProject(context),
+              child: Text('＋ Новый проект',
+                  style: Rubka.head(15, color: Rubka.primary)),
             ),
+          ),
+          const _Legend(),
+          Row(
+            children: [
+              IconButton(
+                key: const Key('btn-setup'),
+                tooltip: 'Настройка: проверка Git, Node, Claude Code и папки',
+                onPressed: c.openSetup,
+                icon: const Icon(Icons.settings, size: 24),
+              ),
+              IconButton(
+                key: const Key('btn-usage'),
+                tooltip: 'Расходы: сколько потрачено на директора',
+                onPressed: c.toggleUsage,
+                icon: const Icon(Icons.payments, size: 24),
+              ),
+              const Spacer(),
+              IconButton(
+                key: const Key('btn-refresh'),
+                tooltip: 'Обновить список (F5)',
+                onPressed: c.boardLoading ? null : c.refreshBoard,
+                icon: c.boardLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh, size: 24),
+              ),
+            ],
           ),
         ],
       ),
@@ -109,21 +126,20 @@ class BoardPanel extends StatelessWidget {
     if (c.projects.isEmpty) {
       if (c.boardLoading) {
         return ListView(
-          padding: const EdgeInsets.all(8),
           children: List.generate(
             3,
             (_) => Container(
-              height: 72,
+              height: 44,
               margin: const EdgeInsets.symmetric(vertical: 4),
               decoration: BoxDecoration(
                   color: Rubka.disabledBg,
-                  borderRadius: BorderRadius.circular(8)),
+                  borderRadius: BorderRadius.circular(10)),
             ),
           ),
         );
       }
       return Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -138,14 +154,89 @@ class BoardPanel extends StatelessWidget {
     }
     return ListView(
       children: [
-        for (final p in c.projects) _ProjectCard(controller: c, project: p),
+        for (final p in c.projects) _ProjectTile(controller: c, project: p),
       ],
     );
   }
 }
 
-class _ProjectCard extends StatelessWidget {
-  const _ProjectCard({required this.controller, required this.project});
+class _Sep extends StatelessWidget {
+  const _Sep();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 1,
+        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        color: Rubka.line,
+      );
+}
+
+class _Dot extends StatelessWidget {
+  const _Dot({super.key, required this.color, required this.message});
+
+  final Color color;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: message,
+        child: Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+      );
+}
+
+class _Legend extends StatelessWidget {
+  const _Legend();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget item(Color c, String t) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 6),
+            Text(t, style: Rubka.body(size: 12, color: Rubka.mute)),
+          ],
+        );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 4,
+        children: [
+          item(Rubka.amber, 'ждёт тебя'),
+          item(Rubka.success, 'всё ок'),
+          item(Rubka.error, 'сборка упала'),
+          item(Rubka.dotGray, 'в работе'),
+        ],
+      ),
+    );
+  }
+}
+
+class _Spinner extends StatelessWidget {
+  const _Spinner();
+
+  @override
+  Widget build(BuildContext context) => const Tooltip(
+        message: 'Директор работает',
+        child: SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: Rubka.working)),
+      );
+}
+
+class _ProjectTile extends StatelessWidget {
+  const _ProjectTile({required this.controller, required this.project});
 
   final AppController controller;
   final Project project;
@@ -155,213 +246,61 @@ class _ProjectCard extends StatelessWidget {
     final c = controller;
     final p = project;
     final selected = c.activeKey == p.slug;
-    final waits = stageWaitsYes(p.stage);
     final build = c.builds[p.slug] ?? BuildRun.loading;
+    final color = projectDotColor(p, build);
+    final fresh = (c.newCounts[p.slug] ?? 0) > 0;
     return Material(
-      color: selected ? Rubka.selected : Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          final msg = c.select(p);
-          if (msg != null) c.toast(msg);
-        },
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 72),
-          decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(
-                  color: selected ? Rubka.primary : Colors.transparent,
-                  width: 4),
+        color: selected ? Rubka.sideSelected : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          key: Key('project-${p.slug}'),
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            final msg = c.select(p);
+            if (msg != null) c.toast(msg);
+          },
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                _Dot(
+                    key: Key('dot-${p.slug}'),
+                    color: color,
+                    message: '${_dotHint(color)}\nЭтап: ${p.stage}'),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(p.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: Rubka.body(
+                          weight: selected || fresh
+                              ? FontWeight.w700
+                              : FontWeight.w400)),
+                ),
+                if (fresh)
+                  Tooltip(
+                    message: 'Есть коммиты с телефона',
+                    child: Container(
+                      key: Key('new-${p.slug}'),
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                          color: Rubka.primary, shape: BoxShape.circle),
+                    ),
+                  ),
+                if (c.isWorking(p.slug)) ...[
+                  const SizedBox(width: 8),
+                  const _Spinner(),
+                ],
+              ],
             ),
           ),
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(p.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: Rubka.head(16)),
-                  ),
-                  if ((c.newCounts[p.slug] ?? 0) > 0)
-                    _NewBadge(c.newCounts[p.slug]!),
-                  if (waits)
-                    Container(
-                      margin: const EdgeInsets.only(left: 6),
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: Rubka.amber,
-                          borderRadius: BorderRadius.circular(8)),
-                      child: Text('ждёт да',
-                          style: Rubka.head(12, color: Rubka.onAmber)),
-                    ),
-                ],
-              ),
-              Text(p.stage,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Rubka.body(size: 13, color: Rubka.text2)),
-              if (c.isWorking(p.slug)) const _WorkingLine(),
-              Row(
-                children: [
-                  Expanded(child: _BuildLine(build)),
-                  if (build.state == BuildState.success && build.id != null)
-                    _downloadButton(build),
-                ],
-              ),
-              if (isAppType(p.type) &&
-                  build.state == BuildState.success &&
-                  build.id != null)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _phoneButton(context, build),
-                ),
-            ],
-          ),
         ),
-      ),
-    );
-  }
-
-  Widget _phoneButton(BuildContext context, BuildRun build) {
-    final expired = build.isExpired(DateTime.now());
-    final button = FilledButton.tonal(
-      style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-      onPressed: expired
-          ? null
-          : () {
-              final share = controller.startPhoneShare(project);
-              if (share == null) return;
-              showDialog<void>(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (_) => PhoneShareDialog(share: share));
-            },
-      child: const Text('На телефон'),
-    );
-    return expired
-        ? Tooltip(message: 'Артефакт старше 30 дней', child: button)
-        : button;
-  }
-
-  Widget _downloadButton(BuildRun build) {
-    final c = controller;
-    final busy = c.downloading.contains(project.slug);
-    final expired = build.isExpired(DateTime.now());
-    final button = TextButton(
-      onPressed: busy || expired ? null : () => c.download(project),
-      child: busy
-          ? const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2))
-          : const Text('Скачать'),
-    );
-    return expired
-        ? Tooltip(message: 'Артефакт старше 30 дней', child: button)
-        : button;
-  }
-}
-
-class _BuildLine extends StatelessWidget {
-  const _BuildLine(this.run);
-
-  final BuildRun run;
-
-  @override
-  Widget build(BuildContext context) {
-    final Widget icon;
-    final String word;
-    final Color color;
-    switch (run.state) {
-      case BuildState.loading:
-        icon = const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2));
-        word = 'проверяю';
-        color = Rubka.text2;
-      case BuildState.running:
-        icon = const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: Rubka.working));
-        word = 'идёт';
-        color = Rubka.working;
-      case BuildState.success:
-        icon = const Icon(Icons.check, size: 14, color: Rubka.success);
-        word = 'успех';
-        color = Rubka.success;
-      case BuildState.failed:
-        icon = const Icon(Icons.close, size: 14, color: Rubka.error);
-        word = 'ошибка';
-        color = Rubka.error;
-      case BuildState.unknown:
-        icon = const Icon(Icons.help_outline, size: 14, color: Rubka.text2);
-        word = 'нет данных';
-        color = Rubka.text2;
-      case BuildState.none:
-        icon = const Icon(Icons.remove, size: 14, color: Rubka.text2);
-        word = 'нет сборки';
-        color = Rubka.text2;
-    }
-    return Row(
-      children: [
-        icon,
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text('сборка: $word',
-              overflow: TextOverflow.ellipsis,
-              style: Rubka.body(size: 13, color: color)),
-        ),
-      ],
     );
   }
 }
 
-/// Значок «новое N»: коммиты с телефона.
-class _NewBadge extends StatelessWidget {
-  const _NewBadge(this.count);
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) => Tooltip(
-        message: 'Есть коммиты с телефона',
-        child: Container(
-          margin: const EdgeInsets.only(left: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-              color: Rubka.primary, borderRadius: BorderRadius.circular(8)),
-          child: Text('новое $count',
-              style: Rubka.head(12, color: Colors.white)),
-        ),
-      );
-}
-
-/// «Директор работает» на карточке.
-class _WorkingLine extends StatelessWidget {
-  const _WorkingLine();
-
-  @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: Rubka.working)),
-          const SizedBox(width: 6),
-          Text('директор работает',
-              style: Rubka.body(size: 13, color: Rubka.working)),
-        ],
-      );
-}
-
-/// Вкладка «Офис» над списком проектов.
+/// «Офис» над списком проектов.
 class _OfficeTile extends StatelessWidget {
   const _OfficeTile({required this.controller});
 
@@ -371,35 +310,33 @@ class _OfficeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = controller;
     final selected = c.activeKey == officeKey;
-    final n = c.newCounts[officeKey] ?? 0;
-    return Material(
-      color: selected ? Rubka.selected : Colors.transparent,
-      child: InkWell(
-        onTap: c.openOffice,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 56),
-          decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(
-                  color: selected ? Rubka.primary : Colors.transparent,
-                  width: 4),
+    final fresh = (c.newCounts[officeKey] ?? 0) > 0;
+    return Tooltip(
+      message: 'Офис студии: общие вопросы, новые проекты',
+      child: Material(
+        color: selected ? Rubka.sideSelected : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          key: const Key('office-tile'),
+          borderRadius: BorderRadius.circular(10),
+          onTap: c.openOffice,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.apartment, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Офис',
+                      style: Rubka.body(
+                          weight: selected || fresh
+                              ? FontWeight.w700
+                              : FontWeight.w400)),
+                ),
+                if (c.isWorking(officeKey)) const _Spinner(),
+              ],
             ),
-          ),
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.apartment, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text('Офис', style: Rubka.head(16))),
-                  if (n > 0) _NewBadge(n),
-                ],
-              ),
-              if (c.isWorking(officeKey)) const _WorkingLine(),
-            ],
           ),
         ),
       ),

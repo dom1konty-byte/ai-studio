@@ -56,6 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Focus(
         autofocus: true,
         child: Scaffold(
+          backgroundColor: Colors.white,
           body: ListenableBuilder(
             listenable: c,
             builder: (context, _) {
@@ -70,9 +71,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         Row(
                           children: [
                             SizedBox(
-                                width: 300, child: BoardPanel(controller: c)),
+                                width: 240, child: BoardPanel(controller: c)),
                             const VerticalDivider(
-                                width: 1, color: Rubka.border),
+                                width: 1, color: Rubka.line),
                             Expanded(
                               child: chat == null || project == null
                                   ? Center(

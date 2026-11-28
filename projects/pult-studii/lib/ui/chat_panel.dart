@@ -12,12 +12,14 @@ import '../app/theme.dart';
 import '../models/models.dart';
 import '../models/safety.dart';
 import '../services/attachments.dart';
+import '../services/rate_limit.dart';
 import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
 import '../state/chat_controller.dart';
 import 'docs_dialog.dart';
 import 'limit_banner.dart';
 import 'md_style.dart';
+import 'phone_share_dialog.dart';
 
 class ChatPanel extends StatefulWidget {
   const ChatPanel({
@@ -221,15 +223,18 @@ class _ChatPanelState extends State<ChatPanel> {
       builder: (context, _) {
         final len = chat.messages.length;
         final lastText = len == 0 ? 0 : chat.messages.last.text.length;
-        final sig = len * 100000 + lastText + (chat.working ? 1 : 0);
-        if (sig != _lastLen) {
-          _lastLen = sig;
-          if (_nearBottom()) _scrollDown();
-        }
         final showApproval = stageWaitsYes(widget.project.stage) &&
             !chat.approvalHidden &&
             !chat.working &&
             chat.canSend;
+        final sig = len * 100000 +
+            lastText +
+            (chat.working ? 1 : 0) +
+            (showApproval ? 2 : 0);
+        if (sig != _lastLen) {
+          _lastLen = sig;
+          if (_nearBottom()) _scrollDown();
+        }
         final inputEnabled =
             !chat.preparing && chat.blockedReason == null && !chat.rcOpen;
         final page = Focus(
@@ -245,31 +250,22 @@ class _ChatPanelState extends State<ChatPanel> {
             return KeyEventResult.ignored;
           },
           child: Column(
-          children: [
-            _header(),
-            const Divider(height: 1, color: Rubka.border),
-            Expanded(child: _body()),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      LimitBanner(controller: widget.app),
-                      if (showApproval) ...[
-                        _ApprovalPanel(chat: chat),
-                        const SizedBox(height: 8),
-                      ],
-                      _inputRow(),
-                    ],
+            children: [
+              LimitBanner(controller: widget.app),
+              _header(),
+              Expanded(child: _body(showApproval)),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 728),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 22),
+                    child: _inputRow(),
                   ),
                 ),
               ),
-            ),
-          ],
-        ));
+            ],
+          ),
+        );
         if (chat.attachStore == null) return page;
         return DropTarget(
           enable: inputEnabled,
@@ -306,61 +302,89 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Widget _header() {
-    final rcWhy = chat.rcDisabledReason;
-    final phoneReady = !chat.preparing && chat.blockedReason == null;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 56),
+    final p = widget.project;
+    final waits = stageWaitsYes(p.stage);
+    return SizedBox(
+      height: 60,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 28),
         child: Row(
           children: [
             Expanded(
-              flex: 2,
-              child: Text('${widget.project.name} · ${widget.project.stage}',
-                  overflow: TextOverflow.ellipsis, style: Rubka.head(16)),
-            ),
-            Flexible(
-              flex: 3,
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
+              child: Row(
                 children: [
-                  if (!chat.office)
-                    OutlinedButton.icon(
-                      onPressed: _openDocs,
-                      icon: const Icon(Icons.description, size: 18),
-                      label: const Text('Документы'),
-                    ),
-                  OutlinedButton(
-                    onPressed: chat.working ? null : _confirmNewChat,
-                    child: const Text('Новый чат'),
+                  Flexible(
+                    child: Text(p.name,
+                        key: const Key('chat-title'),
+                        overflow: TextOverflow.ellipsis,
+                        style: Rubka.head(18, weight: FontWeight.w700)),
                   ),
-                  Tooltip(
-                    message:
-                        'Скопировать стартовый текст для новой сессии на телефоне',
-                    child: OutlinedButton(
-                      onPressed: phoneReady ? _continuePhone : null,
-                      child: const Text('Продолжить на телефоне'),
-                    ),
-                  ),
-                  Tooltip(
-                    message: rcWhy ??
-                        'Открыть этот разговор в терминале (Remote Control) — '
-                            'его будет видно в приложении Claude',
-                    child: OutlinedButton(
-                      onPressed: rcWhy == null ? _openRemote : null,
-                      child: const Text('Открыть для телефона'),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Container(
+                      key: const Key('stage-pill'),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                          color: waits ? Rubka.summaryBg : Rubka.field,
+                          borderRadius: BorderRadius.circular(20)),
+                      child: Text(p.stage,
+                          overflow: TextOverflow.ellipsis,
+                          style: Rubka.body(
+                              size: 13,
+                              color: waits ? Rubka.working : Rubka.text2)),
                     ),
                   ),
-                  if (chat.working)
-                    FilledButton(
-                      style:
-                          FilledButton.styleFrom(backgroundColor: Rubka.error),
-                      onPressed: chat.stop,
-                      child: const Text('Стоп'),
-                    ),
+                ],
+              ),
+            ),
+            _menu(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
+
+  static String _builtAt(DateTime? t, DateTime now) {
+    if (t == null) return 'сборка готова';
+    final l = t.toLocal();
+    final same = l.year == now.year && l.month == now.month && l.day == now.day;
+    return same
+        ? 'готова сегодня в ${hhmm(l)}'
+        : 'готова ${_two(l.day)}.${_two(l.month)} в ${hhmm(l)}';
+  }
+
+  static String _money(double v) => '\$${v.toStringAsFixed(v < 10 ? 2 : 1)}';
+
+  PopupMenuItem<String> _item(
+      String value, IconData icon, String title, String sub, String tip,
+      {bool enabled = true}) {
+    return PopupMenuItem<String>(
+      key: Key('mi-$value'),
+      value: value,
+      enabled: enabled,
+      height: 56,
+      child: Tooltip(
+        message: tip,
+        child: Row(
+          children: [
+            Icon(icon,
+                size: 20, color: enabled ? Rubka.text2 : Rubka.disabledFg),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: Rubka.body(
+                          size: 14,
+                          color: enabled ? Rubka.text : Rubka.disabledFg)),
+                  Text(sub,
+                      overflow: TextOverflow.ellipsis,
+                      style: Rubka.body(size: 12, color: Rubka.mute)),
                 ],
               ),
             ),
@@ -368,6 +392,135 @@ class _ChatPanelState extends State<ChatPanel> {
         ),
       ),
     );
+  }
+
+  Widget _menu() {
+    final p = widget.project;
+    final app = widget.app;
+    final now = DateTime.now();
+    final build = app.builds[p.slug] ?? BuildRun.loading;
+    final hasBuild = build.state == BuildState.success && build.id != null;
+    final expired = hasBuild && build.isExpired(now);
+    final busy = app.downloading.contains(p.slug);
+    final String? dlWhy;
+    if (!hasBuild) {
+      dlWhy = build.state == BuildState.running
+          ? 'сборка ещё идёт'
+          : build.state == BuildState.failed
+              ? 'последняя сборка упала'
+              : 'сборки пока нет';
+    } else if (expired) {
+      dlWhy = 'артефакт старше 30 дней';
+    } else if (busy) {
+      dlWhy = 'скачиваю…';
+    } else {
+      dlWhy = null;
+    }
+    final phoneReady = !chat.preparing && chat.blockedReason == null;
+    final rcWhy = chat.rcDisabledReason;
+    final today = app.usageSummary.total.today.cost;
+    final office = chat.office;
+    return PopupMenuButton<String>(
+      key: const Key('chat-menu'),
+      tooltip: 'Меню: документы, сборка, телефон, расходы',
+      offset: const Offset(0, 44),
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      constraints: const BoxConstraints(minWidth: 300, maxWidth: 340),
+      onSelected: _onMenu,
+      itemBuilder: (_) => [
+        if (!office)
+          _item('docs', Icons.description, 'Документы',
+              'ТЗ, дизайн, отчёт проекта', 'Открыть документы проекта'),
+        if (!office)
+          _item(
+              'download',
+              Icons.download,
+              'Скачать сборку',
+              dlWhy ?? _builtAt(build.updatedAt, now),
+              dlWhy == null
+                  ? 'Скачать последнюю сборку в папку «Загрузки»'
+                  : 'Недоступно: $dlWhy',
+              enabled: dlWhy == null),
+        if (!office && isAppType(p.type))
+          _item(
+              'qr',
+              Icons.qr_code_2,
+              'На телефон',
+              expired
+                  ? 'артефакт старше 30 дней'
+                  : hasBuild
+                      ? 'QR-код: поставить APK по Wi-Fi'
+                      : 'нужна успешная сборка',
+              'Показать QR-код, чтобы поставить APK на телефон по Wi-Fi',
+              enabled: hasBuild && !expired),
+        _item(
+            'continue',
+            Icons.phone_android,
+            'Продолжить на телефоне',
+            phoneReady ? 'скопирует текст для Claude' : 'чат ещё не готов',
+            'Скопировать стартовый текст для новой сессии на телефоне',
+            enabled: phoneReady),
+        _item(
+            'remote',
+            Icons.cast_connected,
+            'Открыть для телефона',
+            rcWhy ?? 'терминал с Remote Control',
+            rcWhy ??
+                'Открыть этот разговор в терминале (Remote Control) — '
+                    'его будет видно в приложении Claude',
+            enabled: rcWhy == null),
+        _item('usage', Icons.payments, 'Расходы', 'сегодня ${_money(today)}',
+            'Открыть панель расходов'),
+        _item(
+            'newchat',
+            Icons.cleaning_services,
+            'Новый чат',
+            chat.working
+                ? 'директор ещё работает'
+                : 'директор начнёт с чистого листа',
+            chat.working
+                ? 'Недоступно: директор ещё работает'
+                : 'Директор забудет разговор; файлы и git не меняются',
+            enabled: !chat.working),
+      ],
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+            color: Rubka.field, borderRadius: BorderRadius.circular(10)),
+        child: const Icon(Icons.more_horiz, color: Rubka.text2),
+      ),
+    );
+  }
+
+  void _onMenu(String v) {
+    switch (v) {
+      case 'docs':
+        _openDocs();
+      case 'download':
+        unawaited(widget.app.download(widget.project));
+      case 'qr':
+        _phoneShare();
+      case 'continue':
+        unawaited(_continuePhone());
+      case 'remote':
+        unawaited(_openRemote());
+      case 'usage':
+        widget.app.toggleUsage();
+      case 'newchat':
+        unawaited(_confirmNewChat());
+    }
+  }
+
+  void _phoneShare() {
+    final share = widget.app.startPhoneShare(widget.project);
+    if (share == null) return;
+    showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => PhoneShareDialog(share: share));
   }
 
   Widget _rcBanner() => Container(
@@ -397,7 +550,26 @@ class _ChatPanelState extends State<ChatPanel> {
         ),
       );
 
-  Widget _body() {
+  /// Вопрос в карточке решения: последняя строка директора или этап.
+  String _question() {
+    final msgs = chat.messages;
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].kind != MsgKind.director) continue;
+      final lines = msgs[i]
+          .text
+          .split('\n')
+          .map((l) => l.replaceAll(RegExp(r'[*_`#>]'), '').trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+      if (lines.isNotEmpty) {
+        final t = lines.last;
+        return t.length > 300 ? '${t.substring(0, 300)}…' : t;
+      }
+    }
+    return widget.project.stage;
+  }
+
+  Widget _body(bool showApproval) {
     if (chat.preparing && chat.messages.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -411,8 +583,18 @@ class _ChatPanelState extends State<ChatPanel> {
       if (chat.rcOpen) _rcBanner(),
       if (chat.warning != null)
         _notice(chat.warning!, Rubka.summaryBg, Rubka.onAmber),
-      if (hasSummary) _summaryCard(),
+      if (hasSummary)
+        _SummaryLine(
+            key: const Key('summary-line'),
+            lines: chat.summary,
+            onDismiss: chat.dismissSummary),
     ];
+    final approval = showApproval
+        ? _ApprovalCard(
+            key: const Key('approval-card'),
+            chat: chat,
+            question: _question())
+        : null;
     if (msgs.isEmpty && !chat.preparing && chat.blockedReason == null) {
       return ListView(
         padding: const EdgeInsets.all(24),
@@ -440,29 +622,52 @@ class _ChatPanelState extends State<ChatPanel> {
                   child: const Text('Продолжай')),
             ],
           ),
+          if (approval != null) ...[
+            const SizedBox(height: 24),
+            Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 680),
+                    child: approval)),
+          ],
         ],
       );
     }
-    final total = top.length + msgs.length + (chat.working ? 1 : 0);
+    // Подряд идущие действия агента сворачиваем в одну строку.
+    final items = <Widget>[...top];
+    var i = 0;
+    while (i < msgs.length) {
+      if (msgs[i].kind == MsgKind.action) {
+        final start = i;
+        final group = <ChatMessage>[];
+        while (i < msgs.length && msgs[i].kind == MsgKind.action) {
+          group.add(msgs[i]);
+          i++;
+        }
+        items.add(Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: _ActionsGroup(
+              key: ValueKey('actions-$start'),
+              actions: [for (final m in group) m.text]),
+        ));
+      } else {
+        items.add(Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: _message(msgs[i]),
+        ));
+        i++;
+      }
+    }
+    if (chat.working) items.add(const _WorkingIndicator());
+    if (approval != null) items.add(approval);
     return SelectionArea(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760 + 48),
+          constraints: const BoxConstraints(maxWidth: 680 + 48),
           child: ListView.builder(
             controller: _scroll,
-            padding: const EdgeInsets.all(24),
-            itemCount: total,
-            itemBuilder: (context, i) {
-              if (i < top.length) return top[i];
-              final j = i - top.length;
-              if (j < msgs.length) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _message(msgs[j]),
-                );
-              }
-              return const _WorkingIndicator();
-            },
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            itemCount: items.length,
+            itemBuilder: (context, idx) => items[idx],
           ),
         ),
       ),
@@ -497,50 +702,17 @@ class _ChatPanelState extends State<ChatPanel> {
         ),
       );
 
-  Widget _summaryCard() => Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-        decoration: BoxDecoration(
-            color: Rubka.summaryBg, borderRadius: BorderRadius.circular(12)),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Пока ПК был выключен, с телефона сделано:',
-                      style: Rubka.head(14, color: Rubka.onAmber)),
-                  const SizedBox(height: 4),
-                  for (final line in chat.summary)
-                    Text(line, style: Rubka.mono(color: Rubka.onAmber)),
-                ],
-              ),
-            ),
-            IconButton(
-                tooltip: 'Закрыть',
-                onPressed: chat.dismissSummary,
-                icon: const Icon(Icons.close)),
-          ],
-        ),
-      );
-
   Widget _message(ChatMessage m) {
     switch (m.kind) {
       case MsgKind.user:
         return Align(
           alignment: Alignment.centerRight,
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 560),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: const BoxDecoration(
+            constraints: const BoxConstraints(maxWidth: 480),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
               color: Rubka.primary,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(4),
-              ),
+              borderRadius: BorderRadius.circular(18),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -559,22 +731,20 @@ class _ChatPanelState extends State<ChatPanel> {
       case MsgKind.director:
         return Align(
           alignment: Alignment.centerLeft,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: const BoxDecoration(
-              color: Rubka.surface,
-              border: Border.fromBorderSide(BorderSide(color: Rubka.border)),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-                bottomLeft: Radius.circular(4),
-                bottomRight: Radius.circular(16),
-              ),
-            ),
-            child: MarkdownBody(
-              data: m.text,
-              styleSheet: _mdStyle,
-              onTapLink: (text, href, title) => widget.app.openLink(href),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Директор',
+                    style: Rubka.body(size: 12, color: Rubka.mute)),
+                const SizedBox(height: 2),
+                MarkdownBody(
+                  data: m.text,
+                  styleSheet: _mdStyle,
+                  onTapLink: (text, href, title) => widget.app.openLink(href),
+                ),
+              ],
             ),
           ),
         );
@@ -779,6 +949,7 @@ class _ChatPanelState extends State<ChatPanel> {
     final enabled =
         !chat.preparing && chat.blockedReason == null && !chat.rcOpen;
     final canAttach = chat.attachStore != null;
+    final canSend = chat.canSend && !chat.limitBlocked && !chat.copying;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -786,33 +957,60 @@ class _ChatPanelState extends State<ChatPanel> {
           _chips(),
           const SizedBox(height: 8),
         ],
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (canAttach)
-              IconButton(
-                tooltip: 'Прикрепить файл (или перетащи, или Ctrl+V)',
-                iconSize: 24,
-                constraints:
-                    const BoxConstraints(minWidth: 48, minHeight: 48),
-                onPressed: enabled ? _pickFiles : null,
-                icon: const Icon(Icons.attach_file),
-              ),
-            Expanded(
-              child: _inputField(enabled, canAttach),
-            ),
-            const SizedBox(width: 8),
-            chat.working
-                ? OutlinedButton(
-                    onPressed: chat.stop, child: const Text('Стоп'))
-                : FilledButton(
-                    onPressed: chat.canSend &&
-                            !chat.limitBlocked &&
-                            !chat.copying
-                        ? _submit
-                        : null,
-                    child: const Text('Отправить')),
-          ],
+        Container(
+          key: const Key('input-box'),
+          padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
+          decoration: BoxDecoration(
+              color: Rubka.field, borderRadius: BorderRadius.circular(16)),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (canAttach)
+                IconButton(
+                  key: const Key('attach-button'),
+                  tooltip: 'Прикрепить файл (или перетащи, или Ctrl+V)',
+                  iconSize: 22,
+                  constraints:
+                      const BoxConstraints(minWidth: 40, minHeight: 40),
+                  onPressed: enabled ? _pickFiles : null,
+                  icon: const Icon(Icons.attach_file),
+                )
+              else
+                const SizedBox(width: 10),
+              Expanded(child: _inputField(enabled, canAttach)),
+              const SizedBox(width: 8),
+              if (chat.working)
+                IconButton.filled(
+                  key: const Key('stop-button'),
+                  tooltip: 'Стоп (Esc): остановить директора',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Rubka.error,
+                    foregroundColor: Colors.white,
+                    fixedSize: const Size(36, 36),
+                    minimumSize: const Size(36, 36),
+                    padding: EdgeInsets.zero,
+                  ),
+                  onPressed: chat.stop,
+                  icon: const Icon(Icons.stop, size: 20),
+                )
+              else
+                IconButton.filled(
+                  key: const Key('send-button'),
+                  tooltip: 'Отправить (Enter)',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Rubka.primary,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Rubka.disabledBg,
+                    disabledForegroundColor: Rubka.disabledFg,
+                    fixedSize: const Size(36, 36),
+                    minimumSize: const Size(36, 36),
+                    padding: EdgeInsets.zero,
+                  ),
+                  onPressed: canSend ? _submit : null,
+                  icon: const Icon(Icons.arrow_upward, size: 20),
+                ),
+            ],
+          ),
         ),
       ],
     );
@@ -844,28 +1042,28 @@ class _ChatPanelState extends State<ChatPanel> {
               minLines: 1,
               maxLines: 6,
               style: Rubka.body(),
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Напиши директору…',
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
               ),
             ),
     );
   }
 }
 
-class _ApprovalPanel extends StatefulWidget {
-  const _ApprovalPanel({required this.chat});
+class _ApprovalCard extends StatefulWidget {
+  const _ApprovalCard({super.key, required this.chat, required this.question});
 
   final ChatController chat;
+  final String question;
 
   @override
-  State<_ApprovalPanel> createState() => _ApprovalPanelState();
+  State<_ApprovalCard> createState() => _ApprovalCardState();
 }
 
-class _ApprovalPanelState extends State<_ApprovalPanel> {
+class _ApprovalCardState extends State<_ApprovalCard> {
   bool _editing = false;
   final _text = TextEditingController();
 
@@ -878,28 +1076,45 @@ class _ApprovalPanelState extends State<_ApprovalPanel> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       decoration: BoxDecoration(
-          color: Rubka.surface,
-          border: Border.all(color: Rubka.border),
-          borderRadius: BorderRadius.circular(12)),
+          color: Rubka.askBg,
+          border: Border.all(color: Rubka.amber, width: 1.5),
+          borderRadius: BorderRadius.circular(16)),
       child: _editing ? _edit() : _buttons(),
     );
   }
 
-  Widget _buttons() => Row(
+  Widget _buttons() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Директор ждёт ответа:', style: Rubka.body(size: 14)),
-          const Spacer(),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Rubka.success),
-            onPressed: widget.chat.sendYes,
-            child: const Text('Да'),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            onPressed: () => setState(() => _editing = true),
-            child: const Text('Поправить'),
+          Text('Нужно твоё решение',
+              style: Rubka.head(13, color: Rubka.working)),
+          const SizedBox(height: 4),
+          Text(widget.question, style: Rubka.body()),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              FilledButton(
+                key: const Key('approve-yes'),
+                style: FilledButton.styleFrom(
+                    backgroundColor: Rubka.success,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: widget.chat.sendYes,
+                child: const Text('Да'),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton(
+                key: const Key('approve-fix'),
+                style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: () => setState(() => _editing = true),
+                child: const Text('Поправить'),
+              ),
+            ],
           ),
         ],
       );
@@ -981,6 +1196,119 @@ class _WorkingIndicatorState extends State<_WorkingIndicator>
         const SizedBox(width: 8),
         Text('Директор работает…',
             style: Rubka.body(size: 14, color: Rubka.working)),
+      ],
+    );
+  }
+}
+
+String _plural(int n, String one, String few, String many) {
+  final m100 = n % 100;
+  final m10 = n % 10;
+  if (m100 >= 11 && m100 <= 14) return many;
+  if (m10 == 1) return one;
+  if (m10 >= 2 && m10 <= 4) return few;
+  return many;
+}
+
+/// «С телефона сделано N изменений · показать» (раскрывается).
+class _SummaryLine extends StatefulWidget {
+  const _SummaryLine({super.key, required this.lines, required this.onDismiss});
+
+  final List<String> lines;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_SummaryLine> createState() => _SummaryLineState();
+}
+
+class _SummaryLineState extends State<_SummaryLine> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = widget.lines.length;
+    final small = Rubka.body(size: 13, color: Rubka.mute);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        children: [
+          Tooltip(
+            message: 'Коммиты, сделанные с телефона, пока ПК был выключен',
+            child: InkWell(
+              onTap: () => setState(() => _open = !_open),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text.rich(
+                  TextSpan(
+                    style: small,
+                    children: [
+                      TextSpan(
+                          text: 'С телефона сделано $n '
+                              '${_plural(n, 'изменение', 'изменения', 'изменений')}'
+                              ' · '),
+                      TextSpan(
+                          text: _open ? 'скрыть' : 'показать',
+                          style: const TextStyle(
+                              decoration: TextDecoration.underline)),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+          if (_open) ...[
+            for (final line in widget.lines)
+              Text(line, style: Rubka.mono(size: 12, color: Rubka.text2)),
+            TextButton(
+                onPressed: widget.onDismiss, child: const Text('Закрыть')),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// «⚙ N действий» — действия агента одной свёрнутой строкой.
+class _ActionsGroup extends StatefulWidget {
+  const _ActionsGroup({super.key, required this.actions});
+
+  final List<String> actions;
+
+  @override
+  State<_ActionsGroup> createState() => _ActionsGroupState();
+}
+
+class _ActionsGroupState extends State<_ActionsGroup> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = widget.actions.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Tooltip(
+          message: 'Что делал агент: файлы и команды. Нажми, чтобы раскрыть',
+          child: InkWell(
+            onTap: () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.settings, size: 14, color: Rubka.mute),
+                  const SizedBox(width: 6),
+                  Text('$n ${_plural(n, 'действие', 'действия', 'действий')}',
+                      style: Rubka.body(size: 13, color: Rubka.mute)),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (_open)
+          for (final a in widget.actions)
+            Text(a, style: Rubka.mono(size: 12, color: Rubka.text2)),
       ],
     );
   }

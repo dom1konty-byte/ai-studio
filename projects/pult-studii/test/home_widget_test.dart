@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:pult_studii/app/app.dart';
+import 'package:pult_studii/app/theme.dart';
 import 'package:pult_studii/services/process_runner.dart';
 import 'package:pult_studii/state/app_controller.dart';
 
@@ -49,6 +50,14 @@ Future<void> _settle(WidgetTester t) async {
   }
 }
 
+Color? _dotColor(WidgetTester t, String slug) {
+  final box = t.widget<Container>(find
+      .descendant(
+          of: find.byKey(Key('dot-$slug')), matching: find.byType(Container))
+      .first);
+  return (box.decoration as BoxDecoration?)?.color;
+}
+
 void main() {
   testWidgets('доска, метка «ждёт да», чат и кнопка «Да»', (tester) async {
     tester.view.physicalSize = const Size(1200, 800);
@@ -68,32 +77,67 @@ void main() {
     controller.init();
     await _settle(tester);
 
-    expect(find.text('AI Studio'), findsOneWidget);
     expect(find.text('Альфа'), findsOneWidget);
     expect(find.text('Бета'), findsOneWidget);
-    expect(find.text('ждёт да'), findsOneWidget);
+    expect(_dotColor(tester, 'alpha'), Rubka.amber); // ждёт «да»
+    expect(_dotColor(tester, 'beta'), Rubka.dotGray); // сборки нет
     expect(find.text('Выбери проект слева'), findsOneWidget);
-    expect(find.text('Скачать'), findsOneWidget); // у Альфы сборка успешна
-    expect(find.text('сборка: нет сборки'), findsOneWidget); // у Беты нет
+    expect(find.byKey(const Key('btn-usage')), findsOneWidget);
+    expect(find.byKey(const Key('btn-setup')), findsOneWidget);
+    expect(find.byKey(const Key('new-project')), findsOneWidget);
 
-    await tester.tap(find.text('Альфа'));
+    await tester.tap(find.byKey(const Key('project-alpha')));
     await _settle(tester);
 
     expect(find.text('Напиши, что сделать'), findsOneWidget);
-    expect(find.text('Да'), findsOneWidget);
-    expect(find.text('Поправить'), findsOneWidget);
+    expect(find.byKey(const Key('approval-card')), findsOneWidget);
+    expect(find.text('Нужно твоё решение'), findsOneWidget);
+    expect(find.byKey(const Key('approve-yes')), findsOneWidget);
+    expect(find.byKey(const Key('approve-fix')), findsOneWidget);
+    expect(find.byKey(const Key('stage-pill')), findsOneWidget);
 
     proc.queue.add(FakeRunning(const [
       '{"type":"system","subtype":"init","session_id":"s1"}',
       '{"type":"assistant","message":{"content":[{"type":"text","text":"Принято"}]}}',
       '{"type":"result","subtype":"success","is_error":false,"result":"Принято","session_id":"s1"}',
     ]));
-    await tester.tap(find.text('Да'));
+    await tester.tap(find.byKey(const Key('approve-yes')));
     await _settle(tester);
 
     expect(proc.started.single, contains(endsWith('Задача: да')));
     expect(find.textContaining('Принято', findRichText: true), findsWidgets);
     expect(find.text('да'), findsOneWidget); // сообщение Дамира в ленте
+  });
+
+  testWidgets('меню ⋯ содержит пункты', (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    final controller = AppController(
+        proc: FakeProc(_handler),
+        storage: MemoryStorage(
+            state: {'repoPath': 'C:\\ai-studio'}, readme: _alphaReadme),
+        downloadsDir: 'C:\\Downloads',
+        autoRefresh: null);
+
+    await tester.pumpWidget(RubkaApp(controller: controller));
+    controller.init();
+    await _settle(tester);
+    await tester.tap(find.byKey(const Key('project-alpha')));
+    await _settle(tester);
+
+    expect(find.text('Документы'), findsNothing);
+    await tester.tap(find.byKey(const Key('chat-menu')));
+    await _settle(tester);
+
+    expect(find.text('Документы'), findsOneWidget);
+    expect(find.text('Скачать сборку'), findsOneWidget);
+    expect(find.text('Продолжить на телефоне'), findsOneWidget);
+    expect(find.text('Открыть для телефона'), findsOneWidget);
+    expect(find.text('Расходы'), findsOneWidget);
+    expect(find.text('Новый чат'), findsOneWidget);
+    expect(find.text('На телефон'), findsNothing); // «Сайт», не приложение
   });
 
   testWidgets('нет git → экран настройки с командой', (tester) async {
