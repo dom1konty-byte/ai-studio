@@ -14,28 +14,26 @@ AppController _controller([FakePlatform? p]) => AppController(
     );
 
 void main() {
-  testWidgets('Главный экран до анализа: «Очистить» неактивна, Загрузки выключены',
+  testWidgets('Пульт до анализа: размер не показан, Загрузки не запущены, ничего не удалено',
       (tester) async {
     tester.view.physicalSize = const Size(1000, 680);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(ChistoApp(controller: _controller()));
+    final p = FakePlatform();
+    final c = _controller(p);
+    await tester.pumpWidget(ChistoApp(controller: c));
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Очистка'), findsOneWidget);
-    expect(find.text('Нажмите «Анализ»'), findsOneWidget);
-
-    final clean = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Очистить'));
-    expect(clean.onPressed, isNull);
-    final analyze = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Анализ'));
-    expect(analyze.onPressed, isNotNull);
-
-    final tile = find.widgetWithText(CheckboxListTile, 'Загрузки');
-    await tester.scrollUntilVisible(tile, 200);
-    final downloads = tester.widget<CheckboxListTile>(tile);
-    expect(downloads.value, isFalse);
+    expect(find.text('Очистка'), findsWidgets); // панель + заголовок экрана
+    // Анализ стартует сам (в фоне), но ничего не удаляет.
+    expect(c.phase, isNot(Phase.cleaning));
+    expect(c.phase, isNot(Phase.done));
+    expect(c.downloadsSelected, isEmpty);
+    expect(c.downloadsState, LoadState.idle);
+    expect(find.text('Найти'), findsNWidgets(4)); // Загрузки, Большие файлы, Дубликаты, Пустые папки
+    expect(p.binEmptied, isFalse);
+    expect(p.moved, isEmpty);
   });
 
   Future<void> pumpWith(WidgetTester tester, int freeGb) async {

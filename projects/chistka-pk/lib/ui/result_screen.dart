@@ -76,6 +76,8 @@ class ResultScreen extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  TextButton(onPressed: c.closeDetails, child: const Text('Назад')),
+                  const SizedBox(width: 8),
                   OutlinedButton(onPressed: c.openLog, child: const Text('Открыть журнал')),
                   const SizedBox(width: 16),
                   FilledButton(onPressed: c.reset, child: const Text('Готово')),

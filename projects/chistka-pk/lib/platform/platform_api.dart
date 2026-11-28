@@ -1,3 +1,40 @@
+import 'dart:typed_data';
+
+import '../core/procs.dart';
+import '../core/programs.dart';
+
+/// Результат запуска программы удаления.
+class UninstallRun {
+  const UninstallRun({
+    required this.started,
+    this.cancelled = false,
+    this.exitCode,
+    this.error,
+    this.timedOut = false,
+  });
+
+  /// Процесс запущен (и завершился — запуск ждёт окончания).
+  final bool started;
+
+  /// Пользователь отказал в запросе прав администратора (UAC).
+  final bool cancelled;
+  final int? exitCode;
+  final String? error;
+
+  /// Процесс удаления не завершился за отведённое время (10 минут).
+  final bool timedOut;
+}
+
+/// Итог перезапуска программы с другим уровнем прав.
+enum RelaunchResult {
+  /// Новый процесс запущен — текущий должен выйти.
+  started,
+
+  /// Пользователь отказал в окне UAC (код 1223).
+  cancelled,
+  failed,
+}
+
 /// Всё, что зависит от Windows, спрятано за этим интерфейсом (в тестах — фейк).
 abstract class PlatformApi {
   /// Отправляет файлы в Корзину ОДНИМ пакетным вызовом. Файл, который нельзя
@@ -25,4 +62,94 @@ abstract class PlatformApi {
 
   /// Открывает папку в Проводнике.
   Future<void> openFolder(String path);
+
+  /// Записи разделов Uninstall: HKCU, HKLM, HKLM\WOW6432Node (только чтение).
+  Future<List<RawUninstall>> readUninstallEntries();
+
+  /// Имена подключей ключа вида `HKCU\Software` (пусто, если нет ключа/доступа).
+  Future<List<String>> regSubKeys(String key);
+
+  /// Запускает программу удаления через ShellExecute (Windows сама покажет UAC)
+  /// и ждёт её завершения.
+  Future<UninstallRun> runUninstaller(String exe, String args);
+
+  /// `reg.exe export <ключ> <файл> /y`. true — файл создан.
+  Future<bool> exportRegKey(String key, String file);
+
+  /// `reg.exe delete <ключ> /f`. true — ключ удалён.
+  Future<bool> deleteRegKey(String key);
+
+  // --- значения реестра (автозагрузка, автозапуск программы) ---
+
+  /// Все строковые значения ключа `HKCU\…`/`HKLM\…`: имя → данные.
+  Future<Map<String, String>> regStringValues(String key);
+
+  /// Двоичное значение (null — нет).
+  Future<Uint8List?> regReadBinary(String key, String name);
+
+  /// Записывает двоичное значение (ключ создаётся). false — не удалось (например, нет прав).
+  Future<bool> regWriteBinary(String key, String name, Uint8List data);
+
+  /// Записывает строковое значение REG_SZ. false — не удалось.
+  Future<bool> regWriteString(String key, String name, String value);
+
+  /// Удаляет ТОЛЬКО одно значение (ключ остаётся). true — значения больше нет.
+  Future<bool> regDeleteValue(String key, String name);
+
+  /// Можно ли писать в ключ (открытие с KEY_SET_VALUE).
+  Future<bool> regCanWrite(String key);
+
+  // --- трей / уведомления ---
+
+  /// Всплывающее уведомление Windows.
+  Future<void> notify(String title, String text);
+
+  // --- режим администратора ---
+
+  /// Запущена ли программа с повышенными правами (токен процесса, TokenElevation).
+  Future<bool> isElevated();
+
+  /// Перезапускает программу: [elevated] true — с правами администратора (UAC),
+  /// false — обычным пользователем. Перед запуском освобождает мьютекс единственного
+  /// экземпляра; при неудаче берёт его обратно. Вызывающий выходит при `started`.
+  Future<RelaunchResult> relaunch({required bool elevated});
+
+  /// Запускает системную программу напрямую (без оболочки), аргументы списком.
+  /// Возвращает код выхода (null — не запустилась).
+  Future<int?> runTool(String exe, List<String> args);
+
+  /// Как [runTool], но возвращает текст вывода (stdout); null — не запустилась.
+  Future<String?> runToolOutput(String exe, List<String> args);
+
+  // --- значки программ ---
+
+  /// PNG значка: [path] — exe/dll/ico, [index] — номер значка (как в DisplayIcon).
+  /// null — значка нет или не удалось извлечь.
+  Future<Uint8List?> programIcon(String path, int index);
+
+  // --- компьютер: диски, процессы ---
+
+  /// Как [runTool], но stdout читается как UTF-8; [timeout] — убить и вернуть null.
+  Future<String?> runToolUtf8(String exe, List<String> args, {required Duration timeout});
+
+  /// Снимок процессов и загрузки системы (null — не удалось).
+  Future<SysSample?> systemSample();
+
+  /// Завершает процесс (TerminateProcess).
+  Future<KillResult> killProcess(int pid);
+
+  /// Тихий звук «плюх» (файл [assetPath] копируется в [dataDir]\drop.wav).
+  /// На не-Windows и при любой ошибке — молча ничего.
+  Future<void> playDropSound(String assetPath, String dataDir);
+
+  // --- Microsoft Store, ярлыки ---
+
+  /// Запускает PowerShell (полный путь, без окна) с КОНСТАНТНЫМ [script];
+  /// данные — только через [env]. Вывод и ошибки читаются как UTF-8.
+  /// null — не запустился или не уложился в [timeout] (процесс убит).
+  Future<({int code, String out, String err})?> runPowerShell(String script,
+      {Map<String, String> env = const {}, required Duration timeout});
+
+  /// Открывает `explorer.exe shell:AppsFolder` (все приложения Windows).
+  Future<void> openAllApps();
 }

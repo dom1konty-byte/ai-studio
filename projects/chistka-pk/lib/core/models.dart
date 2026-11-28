@@ -63,6 +63,8 @@ enum CategoryId {
   spotify,
   vscode,
   gpu,
+  winUpdate,
+  prefetch,
 }
 
 class Category {
@@ -72,12 +74,16 @@ class Category {
     required this.hint,
     required this.targets,
     this.isProgram = false,
+    this.adminOnly = false,
   });
   final CategoryId id;
   final String title;
   final String hint;
   final List<CleanTarget> targets;
   final bool isProgram;
+
+  /// Только в режиме администратора (Кэш обновлений Windows, Prefetch).
+  final bool adminOnly;
 }
 
 /// Итог очистки.

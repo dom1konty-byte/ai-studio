@@ -1,12 +1,24 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
 import '../core/browsers.dart';
+import '../core/update.dart' show appVersion;
+import '../core/procs.dart';
+import '../core/programs.dart';
 import '../core/whitelist.dart';
+import 'elevation.dart';
+import '../core/async_pool.dart';
+import 'icon_extract.dart';
+import 'proc_ffi.dart';
 import 'platform_api.dart';
+import 'single_instance.dart';
+import 'win_registry.dart';
 
 // Win32 через dart:ffi напрямую (shell32 / kernel32): без зависимости от версии пакета win32.
 
@@ -25,6 +37,37 @@ final class _ShFileOpStruct extends Struct {
   external Pointer<Utf16> lpszProgressTitle;
 }
 
+final class _ShellExecInfo extends Struct {
+  @Uint32()
+  external int cbSize;
+  @Uint32()
+  external int fMask;
+  @IntPtr()
+  external int hwnd;
+  external Pointer<Utf16> lpVerb;
+  external Pointer<Utf16> lpFile;
+  external Pointer<Utf16> lpParameters;
+  external Pointer<Utf16> lpDirectory;
+  @Int32()
+  external int nShow;
+  @IntPtr()
+  external int hInstApp;
+  external Pointer<Void> lpIDList;
+  external Pointer<Utf16> lpClass;
+  @IntPtr()
+  external int hkeyClass;
+  @Uint32()
+  external int dwHotKey;
+  @IntPtr()
+  external int hMonitor;
+  @IntPtr()
+  external int hProcess;
+}
+
+typedef _ShellExecNative = Int32 Function(Pointer<_ShellExecInfo>);
+typedef _ShellExecDart = int Function(Pointer<_ShellExecInfo>);
+typedef _LastErrNative = Uint32 Function();
+typedef _LastErrDart = int Function();
 typedef _ShFileOpNative = Int32 Function(Pointer<_ShFileOpStruct>);
 typedef _ShFileOpDart = int Function(Pointer<_ShFileOpStruct>);
 typedef _QueryBinNative = Int32 Function(Pointer<Utf16>, Pointer<Uint8>);
@@ -38,6 +81,9 @@ typedef _DiskNative = Int32 Function(
 typedef _DiskDart = int Function(
     Pointer<Utf16>, Pointer<Uint64>, Pointer<Uint64>, Pointer<Uint64>);
 
+const _seeMaskNoCloseProcess = 0x40;
+const _seeMaskNoAsync = 0x100;
+const _errorCancelled = 1223;
 const _foDelete = 3;
 const _fofAllowUndo = 0x0040;
 const _fofNoConfirmMkdir = 0x0200;
@@ -46,6 +92,12 @@ const _driveFixed = 3;
 const _sherbNoConfirmation = 0x1;
 const _sherbNoProgressUi = 0x2;
 const _sherbNoSound = 0x4;
+
+/// reg.exe export/delete: только HKCU\… и HKLM\SOFTWARE\… (без прав HKLM не удалится).
+bool _regKeyAllowed(String key) {
+  final u = key.toUpperCase();
+  return u.startsWith(r'HKCU\') || u.startsWith(r'HKLM\SOFTWARE\');
+}
 
 class WindowsPlatform implements PlatformApi {
   late final DynamicLibrary _shell32 = DynamicLibrary.open('shell32.dll');
@@ -57,6 +109,10 @@ class WindowsPlatform implements PlatformApi {
       _shell32.lookupFunction<_QueryBinNative, _QueryBinDart>('SHQueryRecycleBinW');
   late final _EmptyBinDart _emptyBin =
       _shell32.lookupFunction<_EmptyBinNative, _EmptyBinDart>('SHEmptyRecycleBinW');
+  late final _ShellExecDart _shellExec =
+      _shell32.lookupFunction<_ShellExecNative, _ShellExecDart>('ShellExecuteExW');
+  late final _LastErrDart _lastError =
+      _kernel32.lookupFunction<_LastErrNative, _LastErrDart>('GetLastError');
   late final _DriveTypeDart _driveType =
       _kernel32.lookupFunction<_DriveTypeNative, _DriveTypeDart>('GetDriveTypeW');
   late final _DiskDart _disk =
@@ -250,7 +306,375 @@ class WindowsPlatform implements PlatformApi {
   @override
   Future<void> openFolder(String path) async {
     try {
+      // Только существующая папка: иначе Проводник мог бы запустить файл.
+      if (!Directory(path).existsSync()) return;
       await Process.start('$_sysRoot\\explorer.exe', [path], mode: ProcessStartMode.detached);
     } catch (_) {}
+  }
+
+  @override
+  Future<List<RawUninstall>> readUninstallEntries() async {
+    try {
+      return await Isolate.run(readUninstallSync);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<String>> regSubKeys(String key) async {
+    try {
+      return WinRegistry.instance.subKeysOf(key);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  @override
+  Future<UninstallRun> runUninstaller(String exe, String args) async {
+    // Повторная проверка: только X:\…\*.exe, который существует (msiexec/rundll32 — из System32).
+    final okExe = RegExp(r'^[A-Za-z]:\\').hasMatch(exe) &&
+        exe.toLowerCase().endsWith('.exe') &&
+        File(exe).existsSync();
+    if (!okExe) {
+      return const UninstallRun(started: false, error: 'Программа удаления не найдена');
+    }
+    final file = exe.toNativeUtf16();
+    final verb = 'open'.toNativeUtf16();
+    final params = args.isEmpty ? nullptr : args.toNativeUtf16();
+    final dirText = RegExp(r'^[A-Za-z]:\\').hasMatch(exe) && exe.contains(r'\')
+        ? exe.substring(0, exe.lastIndexOf(r'\'))
+        : null;
+    final dir = dirText == null ? nullptr : dirText.toNativeUtf16();
+    final info = calloc<_ShellExecInfo>();
+    var handle = 0;
+    try {
+      info.ref
+        ..cbSize = sizeOf<_ShellExecInfo>()
+        ..fMask = _seeMaskNoCloseProcess | _seeMaskNoAsync
+        ..hwnd = 0
+        ..lpVerb = verb
+        ..lpFile = file
+        ..lpParameters = params.cast<Utf16>()
+        ..lpDirectory = dir.cast<Utf16>()
+        ..nShow = 1;
+      final ok = _shellExec(info);
+      if (ok == 0) {
+        final err = _lastError();
+        return UninstallRun(
+          started: false,
+          cancelled: err == _errorCancelled,
+          error: 'ShellExecuteEx: код $err',
+        );
+      }
+      handle = info.ref.hProcess;
+    } catch (e) {
+      return UninstallRun(started: false, error: '$e');
+    } finally {
+      calloc.free(file);
+      calloc.free(verb);
+      if (params != nullptr) calloc.free(params);
+      if (dir != nullptr) calloc.free(dir);
+      calloc.free(info);
+    }
+    if (handle == 0) {
+      // процесса нет (передача другой программе): ждать нечего
+      return const UninstallRun(started: true);
+    }
+    // Ждём до 10 минут. Дескриптор закрывает сама waitForProcessSync (в Isolate);
+    // если Isolate не удалось запустить — закрываем здесь.
+    ({int? code, bool timedOut}) res;
+    try {
+      res = await Isolate.run(() => waitForProcessSync(handle, uninstallWaitMs));
+    } catch (_) {
+      closeHandleSync(handle);
+      res = (code: null, timedOut: false);
+    }
+    return UninstallRun(started: true, exitCode: res.code, timedOut: res.timedOut);
+  }
+
+  @override
+  Future<bool> exportRegKey(String key, String file) async {
+    if (!_regKeyAllowed(key)) return false;
+    try {
+      final r = await Process.run('$_sysRoot\\System32\\reg.exe', ['export', key, file, '/y']);
+      if (r.exitCode != 0) return false;
+      final f = File(file);
+      return f.existsSync() && f.lengthSync() > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> deleteRegKey(String key) async {
+    if (!_regKeyAllowed(key)) return false;
+    try {
+      final r = await Process.run('$_sysRoot\\System32\\reg.exe', ['delete', key, '/f']);
+      return r.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<Map<String, String>> regStringValues(String key) async {
+    try {
+      return WinRegistry.instance.stringValues(key);
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  @override
+  Future<Uint8List?> regReadBinary(String key, String name) async {
+    try {
+      return WinRegistry.instance.readBinary(key, name);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> regWriteBinary(String key, String name, Uint8List data) async {
+    try {
+      return WinRegistry.instance.writeBinary(key, name, data);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> regWriteString(String key, String name, String value) async {
+    try {
+      return WinRegistry.instance.writeString(key, name, value);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> regDeleteValue(String key, String name) async {
+    try {
+      return WinRegistry.instance.deleteValue(key, name);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> regCanWrite(String key) async {
+    try {
+      return WinRegistry.instance.canWrite(key);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Pointer<Utf16>? _soundPath;
+
+  @override
+  Future<void> playDropSound(String assetPath, String dataDir) async {
+    if (!Platform.isWindows) return;
+    try {
+      final target = File('$dataDir\\drop-$appVersion.wav');
+      final src = File(assetPath);
+      if (!target.existsSync() || (src.existsSync() && target.lengthSync() != src.lengthSync())) {
+        if (!src.existsSync()) return;
+        await target.parent.create(recursive: true);
+        await src.copy(target.path);
+      }
+      // Память под путь живёт до конца процесса: звук играет асинхронно.
+      final path = _soundPath ??= target.path.toNativeUtf16();
+      final playSound = DynamicLibrary.open('winmm.dll').lookupFunction<
+          Int32 Function(Pointer<Utf16>, IntPtr, Uint32),
+          int Function(Pointer<Utf16>, int, int)>('PlaySoundW');
+      const sndAsync = 0x1, sndNoDefault = 0x2, sndFilename = 0x20000;
+      playSound(path, 0, sndFilename | sndAsync | sndNoDefault);
+    } catch (_) {}
+  }
+
+  @override
+  Future<void> notify(String title, String text) async {
+    // Всплывающая подсказка трея через PowerShell (без сторонних пакетов);
+    // тексты передаются через переменные окружения, не через командную строку.
+    const script = r'''
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+$n = New-Object System.Windows.Forms.NotifyIcon
+try { $n.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($env:CD_EXE) } catch { $n.Icon = [System.Drawing.SystemIcons]::Information }
+$n.Visible = $true
+$n.ShowBalloonTip(6000, $env:CD_TITLE, $env:CD_TEXT, [System.Windows.Forms.ToolTipIcon]::None)
+Start-Sleep -Seconds 7
+$n.Dispose()
+''';
+    try {
+      await Process.start(
+        '$_sysRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
+        environment: {
+          'CD_TITLE': title,
+          'CD_TEXT': text,
+          'CD_EXE': Platform.resolvedExecutable,
+        },
+      );
+    } catch (_) {}
+  }
+
+  // --- режим администратора ---
+
+  @override
+  Future<bool> isElevated() async => isProcessElevated();
+
+  @override
+  Future<RelaunchResult> relaunch({required bool elevated}) async {
+    final exe = Platform.resolvedExecutable;
+    final held = SingleInstance.handle != 0;
+    SingleInstance.release(); // иначе новый процесс увидит «уже запущено» и выйдет
+    var result = RelaunchResult.failed;
+    try {
+      if (elevated) {
+        // ShellExecuteExW ждёт ответа UAC — в отдельном Isolate, чтобы окно не «не отвечало».
+        result = RelaunchResult.values[await Isolate.run(() => _runElevatedSync(exe))];
+      } else {
+        // Из повышенного процесса обычный запуск — через Проводник (стандартный приём).
+        await Process.start('$_sysRoot\\explorer.exe', [exe], mode: ProcessStartMode.detached);
+        result = RelaunchResult.started;
+      }
+    } catch (_) {
+      result = RelaunchResult.failed;
+    } finally {
+      if (result != RelaunchResult.started && held) {
+        try {
+          SingleInstance.acquire();
+        } catch (_) {}
+      }
+    }
+    return result;
+  }
+
+  @override
+  Future<int?> runTool(String exe, List<String> args) async {
+    try {
+      final r = await Process.run(exe, args, stdoutEncoding: null, stderrEncoding: null);
+      return r.exitCode;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> runToolOutput(String exe, List<String> args) async {
+    try {
+      final r = await Process.run(exe, args, stdoutEncoding: const SystemEncoding());
+      return r.stdout as String;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> runToolUtf8(String exe, List<String> args, {required Duration timeout}) async {
+    Process? p;
+    try {
+      p = await Process.start(exe, args);
+      final out = p.stdout.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+      unawaited(p.stderr.drain<void>());
+      final code = await p.exitCode.timeout(timeout);
+      final bytes = await out;
+      if (code != 0 && bytes.isEmpty) return null;
+      return utf8.decode(bytes, allowMalformed: true);
+    } catch (_) {
+      p?.kill();
+      return null;
+    }
+  }
+
+  @override
+  Future<({int code, String out, String err})?> runPowerShell(String script,
+      {Map<String, String> env = const {}, required Duration timeout}) async {
+    Process? p;
+    try {
+      p = await Process.start(
+        '$_sysRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', script],
+        environment: env,
+      );
+      final out = p.stdout.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+      final err = p.stderr.fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+      final code = await p.exitCode.timeout(timeout);
+      return (
+        code: code,
+        out: utf8.decode(await out, allowMalformed: true),
+        err: utf8.decode(await err, allowMalformed: true),
+      );
+    } catch (_) {
+      p?.kill();
+      return null;
+    }
+  }
+
+  @override
+  Future<void> openAllApps() async {
+    try {
+      await Process.start('$_sysRoot\\explorer.exe', ['shell:AppsFolder'],
+          mode: ProcessStartMode.detached);
+    } catch (_) {}
+  }
+
+  @override
+  Future<SysSample?> systemSample() async {
+    try {
+      return await sampleInWorker();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<KillResult> killProcess(int pid) async => terminateProcessByPid(pid);
+
+  // --- значки программ ---
+
+  /// Не более 3 одновременных извлечений значков (каждое — свой Isolate).
+  final _iconPool = AsyncPool(3);
+
+  @override
+  Future<Uint8List?> programIcon(String path, int index) async {
+    try {
+      return await _iconPool.run(() => Isolate.run(() => extractIconPngSync(path, index)));
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Запуск exe от администратора (UAC). Вызывается в отдельном Isolate;
+/// возвращает индекс [RelaunchResult].
+int _runElevatedSync(String exe) {
+  final shell = DynamicLibrary.open('shell32.dll');
+  final kernel = DynamicLibrary.open('kernel32.dll');
+  final shellExec = shell.lookupFunction<_ShellExecNative, _ShellExecDart>('ShellExecuteExW');
+  final lastError = kernel.lookupFunction<_LastErrNative, _LastErrDart>('GetLastError');
+  final file = exe.toNativeUtf16();
+  final verb = 'runas'.toNativeUtf16();
+  final params = '--admin-restart'.toNativeUtf16();
+  final info = calloc<_ShellExecInfo>();
+  try {
+    info.ref
+      ..cbSize = sizeOf<_ShellExecInfo>()
+      ..fMask = _seeMaskNoAsync
+      ..hwnd = 0
+      ..lpVerb = verb
+      ..lpFile = file
+      ..lpParameters = params
+      ..lpDirectory = nullptr
+      ..nShow = 1;
+    if (shellExec(info) != 0) return RelaunchResult.started.index;
+    return (lastError() == _errorCancelled ? RelaunchResult.cancelled : RelaunchResult.failed).index;
+  } finally {
+    calloc.free(file);
+    calloc.free(verb);
+    calloc.free(params);
+    calloc.free(info);
   }
 }

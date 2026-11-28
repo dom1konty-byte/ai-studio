@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>ЧистоДиск 1.3 — макет «Интернет»</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#cfd8d8;font-family:"Segoe UI",system-ui,sans-serif;color:#1B2B2B;font-size:14px;display:flex;justify-content:center;padding:16px}
+.win{width:1000px;height:680px;background:#EEF6F6;display:flex;border-radius:8px;overflow:hidden;border:1px solid #b5c6c6}
+.side{width:240px;background:#E3F1F1;display:flex;flex-direction:column;padding:12px 8px 8px;flex:none;overflow:hidden}
+.logo{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:16px;cursor:pointer;font-size:18px;font-weight:600;height:44px}
+.logo:hover{background:rgba(15,157,154,.1)}
+.drop{width:32px;height:32px;background:#0F9D9A;border-radius:50%/62% 62% 38% 38%;display:grid;place-items:center;color:#fff;font-size:15px}
+.item{display:flex;align-items:center;gap:12px;height:34px;padding:0 16px;border-radius:24px;cursor:pointer;transition:background .12s;font-size:13px}
+.item:hover{background:rgba(15,157,154,.08)}
+.item.sel{background:#CDEDEC;color:#0B3F3E;font-weight:600}
+.item .i{width:20px;text-align:center;font-size:14px}
+.sub{padding-left:28px}
+.grp{margin-top:4px;font-weight:600;color:#0B3F3E}
+.arrow{margin-left:auto;font-size:10px;color:#566B6B}
+.sp{flex:1}
+.stat{font-size:12px;color:#566B6B;padding:0 16px 4px}
+.admin{margin:0 8px 4px;background:#FFF1D6;color:#6B4300;border-radius:12px;padding:6px 12px;font-size:12px;font-weight:600}
+.row{display:flex;gap:8px;padding:0 8px}
+.ib{width:48px;height:40px;border-radius:24px;display:grid;place-items:center;font-size:18px;cursor:pointer}
+.ib:hover{background:rgba(15,157,154,.12)}
+.main{flex:1;padding:24px;display:flex;flex-direction:column;gap:16px;overflow:hidden;min-width:0}
+.head{display:flex;align-items:center}
+h1{font-size:28px;font-weight:600;line-height:1.1}
+.cap{color:#566B6B;font-size:12px;margin-top:4px}
+.btn{height:48px;padding:0 24px;border-radius:24px;border:0;font:600 14px "Segoe UI",system-ui;cursor:pointer;background:#0B7C7A;color:#fff;margin-left:auto}
+.btn:hover{filter:brightness(.95)}
+.top{display:flex;gap:16px;height:232px}
+.card{background:#fff;border:1px solid #D5E6E6;border-radius:16px}
+.speed{width:340px;padding:8px;display:flex;justify-content:center}
+.mets{flex:1;display:flex;flex-direction:column;gap:8px}
+.met{flex:1;display:flex;align-items:center;gap:12px;padding:0 16px}
+.dot{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:18px;flex:none}
+.m1{background:rgba(15,157,154,.14);color:#0B7C7A}.m2{background:rgba(61,90,128,.14);color:#3D5A80}.m3{background:rgba(123,94,167,.14);color:#6a4d96}
+.met b{font-size:22px;font-weight:600;margin-left:auto}
+.met span{font-size:12px;color:#566B6B;display:block}
+.jit{font-size:12px;color:#566B6B;padding-left:4px}
+h2{font-size:16px;font-weight:600;margin-bottom:8px}
+.tips{display:flex;gap:16px}
+.tip{flex:1;display:flex;gap:12px;padding:12px 16px;border-radius:16px;background:#FFF8E6;border:1px solid #F0DDB0}
+.tip.ok{background:#E6F4EA;border-color:#BFDCC6}
+.tip .dot{width:32px;height:32px;font-size:15px;background:#FFE7A8;color:#6B4300}
+.tip.ok .dot{background:#C8E6CF;color:#1E5E24}
+.tip b{font-size:14px;display:block}.tip span{font-size:12px;color:#3d4a4a}
+.hist{display:flex;gap:16px}
+.chart{width:340px;padding:8px 8px 4px}
+.list{flex:1;padding:8px 16px;font-size:12px}
+.lr{display:flex;height:26px;align-items:center;border-bottom:1px solid #EEF6F6}
+.lr span{flex:1}.lr span:first-child{flex:1.4}
+.lr.h{color:#566B6B}
+.clr{color:#0B7C7A;font-weight:600;font-size:12px;margin-top:2px;display:inline-block}
+</style></head><body>
+<div class="win">
+ <div class="side">
+  <div class="logo" title="О программе"><div class="drop">✓</div>ЧистоДиск</div>
+  <div class="item grp"><span class="i">🧹</span>Очистка<span class="arrow">▲</span></div>
+  <div class="item sub"><span class="i">◉</span>Очистка</div>
+  <div class="item sub"><span class="i">⬇</span>Загрузки</div>
+  <div class="item sub"><span class="i">◔</span>Большие файлы</div>
+  <div class="item sub"><span class="i">◑</span>Карта диска</div>
+  <div class="item sub"><span class="i">❐</span>Дубликаты</div>
+  <div class="item sub"><span class="i">▢</span>Пустые папки</div>
+  <div class="item grp"><span class="i">🖥</span>Компьютер<span class="arrow">▲</span></div>
+  <div class="item sub"><span class="i">💾</span>Здоровье диска</div>
+  <div class="item sub"><span class="i">⏱</span>Что тормозит</div>
+  <div class="item sub"><span class="i">🔋</span>Батарея</div>
+  <div class="item"><span class="i">▦</span>Программы</div>
+  <div class="item"><span class="i">🚀</span>Автозагрузка</div>
+  <div class="item sel"><span class="i">📶</span>Интернет</div>
+  <div class="sp"></div>
+  <div class="stat">За всё время: 27,4 ГБ</div>
+  <div class="admin">🛡 Режим администратора</div>
+  <div class="row"><div class="ib" title="Настройки">⚙</div><div class="ib" title="Журнал">🕘</div></div>
+ </div>
+ <div class="main">
+  <div class="head"><div><h1>Интернет</h1><div class="cap">Замер 27.11.2026, 14:32</div></div><button type="button" class="btn">Повторить замер</button></div>
+  <div class="top">
+   <div class="card speed">
+    <svg width="324" height="214" viewBox="0 0 300 230" role="img" aria-label="Скорость загрузки 412 Мбит/с">
+     <defs><linearGradient id="g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#17B3AE"/><stop offset="1" stop-color="#0B7C7A"/></linearGradient></defs>
+     <path d="M63.4 190 A100 100 0 1 1 236.6 190" fill="none" stroke="#D5E6E6" stroke-width="16" stroke-linecap="round"/>
+     <path d="M63.4 190 A100 100 0 0 1 114 46.7" fill="none" stroke="url(#g)" stroke-width="16" stroke-linecap="round"/>
+     <circle cx="114" cy="46.7" r="7" fill="#fff" stroke="#0B7C7A" stroke-width="3"/>
+     <g font-size="11" fill="#566B6B" text-anchor="middle"><text x="44" y="206">0</text><text x="40" y="82">250</text><text x="150" y="16">500</text><text x="260" y="82">750</text><text x="256" y="206">1000</text></g>
+     <text x="150" y="150" text-anchor="middle" font-size="56" font-weight="300" fill="#1B2B2B">412</text>
+     <text x="150" y="176" text-anchor="middle" font-size="13" fill="#566B6B">Мбит/с · загрузка</text>
+    </svg>
+   </div>
+   <div class="mets">
+    <div class="card met"><div class="dot m1">⚡</div><div>Пинг<span>Отклик сервера</span></div><b>18 мс</b></div>
+    <div class="card met"><div class="dot m2">↓</div><div>Загрузка<span>Скачивание</span></div><b>412 Мбит/с</b></div>
+    <div class="card met"><div class="dot m3">↑</div><div>Отдача<span>Отправка</span></div><b>38 Мбит/с</b></div>
+    <div class="jit">Скачки пинга (джиттер): 14 мс</div>
+   </div>
+  </div>
+  <div>
+   <h2>Советы</h2>
+   <div class="tips">
+    <div class="tip"><div class="dot">!</div><div><b>Отдача заметно ниже загрузки</b><span>Видеозвонки и отправка файлов могут идти медленно. Уточните тариф у провайдера.</span></div></div>
+    <div class="tip ok"><div class="dot">✓</div><div><b>Пинг в норме</b><span>Игры и звонки пойдут без задержек.</span></div></div>
+   </div>
+  </div>
+  <div>
+   <h2>История</h2>
+   <div class="hist">
+    <div class="card chart">
+     <svg width="324" height="116" viewBox="0 0 330 116" role="img" aria-label="График загрузки за 10 замеров">
+      <line x1="10" y1="100" x2="320" y2="100" stroke="#D5E6E6"/>
+      <polygon points="10,80 44,58.4 78,90.3 112,38.3 146,49.5 180,66.9 214,27 248,44.4 282,54.7 316,33.1 316,100 10,100" fill="rgba(15,157,154,.12)"/>
+      <polyline points="10,80 44,58.4 78,90.3 112,38.3 146,49.5 180,66.9 214,27 248,44.4 282,54.7 316,33.1" fill="none" stroke="#0F9D9A" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="316" cy="33.1" r="4.5" fill="#0B7C7A"/>
+      <text x="10" y="113" font-size="10" fill="#566B6B">10 замеров назад</text><text x="320" y="113" font-size="10" fill="#566B6B" text-anchor="end">сейчас</text>
+     </svg>
+    </div>
+    <div class="card list">
+     <div class="lr h"><span>Дата</span><span>Пинг</span><span>Загрузка</span><span>Отдача</span></div>
+     <div class="lr"><span>27.11, 14:32</span><span>18 мс</span><span>412</span><span>38</span></div>
+     <div class="lr"><span>26.11, 21:05</span><span>22 мс</span><span>366</span><span>41</span></div>
+     <div class="lr"><span>26.11, 09:40</span><span>19 мс</span><span>388</span><span>40</span></div>
+     <span class="clr">Очистить историю</span>
+    </div>
+   </div>
+  </div>
+ </div>
+</div>
+</body></html>

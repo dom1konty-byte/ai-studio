@@ -61,6 +61,8 @@ void main() {
       r'C:\Users\X\Downloads',
       r'C:\Users\X\Documents',
       r'C:\Users\X\Desktop',
+      r'C:\Users\X\Pictures',
+      r'C:\Users\X\Videos',
     ]);
     final d = make(
       FakePlatform(),

@@ -5,5 +5,5 @@
 
 | Имя | Папка | Тип | Этап | Ветка | Создан |
 |---|---|---|---|---|---|
-| Чистка ПК | [`chistka-pk`](chistka-pk/) | Программа Windows | Готово | `chistka-pk` | 2026-11-27 |
+| Чистка ПК | [`chistka-pk`](chistka-pk/) | Программа Windows | Готово (1.4.3) | `chistka-pk` | 2026-11-27 |
 | Пульт студии | [`pult-studii`](pult-studii/) | Программа Windows | Готово (v1.4) | `pult-studii` | 2026-11-28 |

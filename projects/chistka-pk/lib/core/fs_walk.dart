@@ -29,7 +29,8 @@ Future<void> walkTree(
 }
 
 /// Синхронный обход для Isolate.
-void walkTreeSync(Directory root, void Function(File f) onFile) {
+void walkTreeSync(Directory root, void Function(File f) onFile,
+    {bool Function(Directory d)? skipDir}) {
   final stack = <Directory>[root];
   while (stack.isNotEmpty) {
     final dir = stack.removeLast();
@@ -39,6 +40,7 @@ void walkTreeSync(Directory root, void Function(File f) onFile) {
         if (e is File) {
           onFile(e);
         } else if (e is Directory) {
+          if (skipDir != null && skipDir(e)) continue;
           stack.add(e);
         }
       }
