@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pult_studii/models/models.dart';
 import 'package:pult_studii/models/safety.dart';
+import 'package:pult_studii/services/app_storage.dart';
 import 'package:pult_studii/services/git_service.dart';
 import 'package:pult_studii/services/process_runner.dart';
 import 'package:pult_studii/services/remote_control.dart';
@@ -59,6 +60,13 @@ class FakeRepo {
   final readmes = <String, String>{};
   String? addError;
   String logOut = '';
+  bool fetchFails = false;
+
+  /// Как будто Офис создал проект и запушил ветку.
+  void addProject(String slug, String readme) {
+    origins.add(slug);
+    readmes[slug] = readme;
+  }
 
   String? _branchAt(String? cwd) {
     if (cwd == _main) return mainBranch;
@@ -70,6 +78,9 @@ class FakeRepo {
 
   ProcResult call(String exe, List<String> args, String? cwd) {
     final k = args.join(' ');
+    if (fetchFails && k.startsWith('fetch')) {
+      return const ProcResult(1, '', 'нет сети');
+    }
     if (k == 'worktree list --porcelain') {
       final b = StringBuffer(
           'worktree $_main\nHEAD aaa\nbranch refs/heads/$mainBranch\n\n');
@@ -175,7 +186,7 @@ Future<(AppController, FakeProc, FakeRepo, List<String>, List<String>)> _app({
 
 void main() {
   group('worktree', () {
-    test('есть локальная ветка: worktree add <путь> <ветка>, longpaths один раз',
+    test('есть локальная ветка: worktree add <путь> <ветка>, longpaths только -c',
         () async {
       final (git, proc, repo) = _git();
       repo.locals.add('alpha');
@@ -184,11 +195,18 @@ void main() {
       expect(res.dir, _wtAlpha);
       expect(proc.calls, contains('git worktree add $_wtAlpha alpha'));
       await git.prepareProject('beta');
-      expect(proc.calls.where((c) => c.contains('core.longpaths')), hasLength(1));
-      expect(proc.calls, contains('git pull --ff-only'));
-      // pull идёт в папке проекта
-      final i = proc.calls.indexOf('git pull --ff-only');
+      // глобальный конфиг не трогаем, длинные пути — ключом -c на запуск
+      expect(proc.calls.where((c) => c.contains('--global')), isEmpty);
+      expect(proc.calls.where((c) => c.contains(' config ')), isEmpty);
+      expect(proc.rawCalls,
+          contains('git -c core.longpaths=true worktree add $_wtAlpha alpha'));
+      // в worktree: без сети, перемотка до origin/<ветка>
+      expect(proc.calls, contains('git merge --ff-only origin/alpha'));
+      expect(proc.calls.where((c) => c == 'git pull --ff-only'), isEmpty);
+      final i = proc.calls.indexOf('git merge --ff-only origin/alpha');
       expect(proc.cwds[i], _wtAlpha);
+      expect(proc.rawCalls.where((c) => c.contains('merge --ff-only')).single,
+          startsWith('git -c core.longpaths=true '));
     });
 
     test('нет локальной ветки: worktree add -b <ветка> <путь> origin/<ветка>',
@@ -250,7 +268,87 @@ void main() {
         ..addError = 'error: Filename too long';
       final (git, _, _) = _git(repo);
       final res = await git.prepareProject('alpha');
-      expect(res.blockedReason, contains('git config --global core.longpaths true'));
+      expect(res.blockedReason, contains('слишком длинный'));
+      expect(res.blockedReason, isNot(contains('--global')));
+    });
+
+    test('worktree add: «already exists», папка пуста → удаляем и повторяем',
+        () async {
+      final repo = FakeRepo()..locals.add('alpha');
+      var adds = 0;
+      final proc = FakeProc((exe, args, cwd) {
+        if (args.join(' ').startsWith('worktree add ')) {
+          adds++;
+          if (adds == 1) {
+            return ProcResult(128, '', "fatal: '$_wtAlpha' already exists");
+          }
+        }
+        return repo.call(exe, args, cwd);
+      });
+      final storage = MemoryStorage()..folderKinds[_wtAlpha] = FolderKind.empty;
+      final git = GitService(proc, storage)..repoPath = _main;
+      final res = await git.prepareProject('alpha');
+      expect(res.blockedReason, isNull);
+      expect(adds, 2);
+      expect(storage.deletedDirs, [_wtAlpha]);
+    });
+
+    test('worktree add: «already exists», папка не пуста → просим удалить',
+        () async {
+      final repo = FakeRepo()
+        ..locals.add('alpha')
+        ..addError = "fatal: '$_wtAlpha' already exists";
+      final proc = FakeProc(repo.call);
+      final storage = MemoryStorage()..folderKinds[_wtAlpha] = FolderKind.notEmpty;
+      final git = GitService(proc, storage)..repoPath = _main;
+      final res = await git.prepareProject('alpha');
+      expect(res.dir, isNull);
+      expect(res.blockedReason, contains('Удали папку $_wtAlpha и открой проект снова'));
+      expect(storage.deletedDirs, isEmpty);
+      expect(proc.calls.where((c) => c.startsWith('git worktree add')), hasLength(1));
+    });
+
+    test('merge --ff-only не удался: предупреждение, чат работает', () async {
+      final repo = FakeRepo()..worktrees['alpha'] = _wtAlpha;
+      final proc = FakeProc((exe, args, cwd) => args.join(' ') == 'merge --ff-only origin/alpha'
+          ? const ProcResult(1, '', 'not possible to fast-forward')
+          : repo.call(exe, args, cwd));
+      final git = GitService(proc, MemoryStorage())..repoPath = _main;
+      final res = await git.prepareProject('alpha');
+      expect(res.blockedReason, isNull);
+      expect(res.pulled, isFalse);
+      expect(res.warning, contains('merge --ff-only'));
+    });
+
+    test('Офис работает: основную папку с ветки проекта не уводим', () async {
+      final repo = FakeRepo()
+        ..mainBranch = 'alpha'
+        ..locals.add('alpha');
+      final (git, proc, _) = _git(repo);
+      git.officeBusy = () => true;
+      final res = await git.prepareProject('alpha');
+      expect(res.blockedReason, contains('Подожди, пока Офис закончит'));
+      expect(proc.calls.where((c) => c.startsWith('git switch')), isEmpty);
+      expect(proc.calls.where((c) => c.startsWith('git worktree add')), isEmpty);
+    });
+
+    test('pendingWork: ветки нет на GitHub → сравниваем с origin/main', () async {
+      final repo = FakeRepo()..origins.remove('alpha');
+      final (git, proc, _) = _git(repo);
+      final w = await git.pendingWork(_main, 'alpha');
+      expect(w.noRemoteBranch, isTrue);
+      expect(w.clean, isFalse);
+      expect(w.describe(), contains('ветки ещё нет на GitHub'));
+      expect(proc.calls, contains('git rev-list --count origin/main..HEAD'));
+    });
+
+    test('мьютекс: путь в разном регистре — одна очередь', () async {
+      final (git, _, _) = _git();
+      final order = <String>[];
+      final a = git.pendingWork('C:\\Ai', 'alpha').then((_) => order.add('a'));
+      final b = git.pendingWork('c:\\ai', 'alpha').then((_) => order.add('b'));
+      await Future.wait([a, b]);
+      expect(order, ['a', 'b']);
     });
 
     test('небезопасный slug отклоняется без запуска git', () async {
@@ -463,9 +561,10 @@ void main() {
       await app.refreshBoard();
       expect(app.projects.map((p) => p.slug), ['alpha', 'beta']);
 
-      // Офис «создаёт» проект
-      repo.origins.add('gamma');
-      repo.readmes['gamma'] = _gammaReadme;
+      // Офис «создаёт» проект во время хода
+      proc.onStart = (i) {
+        if (i == 0) repo.addProject('gamma', _gammaReadme);
+      };
       proc.queue
         ..add(FakeRunning([_init(_sidO), _result(_sidO)]))
         ..add(FakeRunning([_init(_sidG), _result(_sidG)]));
@@ -481,7 +580,8 @@ void main() {
           office,
           contains('Новый проект: Гамма, тип: site (Сайт). Идея: сайт кофейни. '
               'Создай через /new-project, сессию проекта не запускай — '
-              'Рубка откроет его сама.'));
+              'Рубка откроет его сама. Потом запушь ветку gamma '
+              '(git push -u origin gamma).'));
       expect(app.activeKey, 'gamma');
       expect(proc.calls.where((c) => c.startsWith('git worktree add -b gamma ')),
           hasLength(1));
@@ -492,6 +592,81 @@ void main() {
       expect(proc.startCwds[1], p.join(p.dirname(_main), 'ai-studio-wt', 'gamma'));
       expect(app.state.sessionId('gamma'), _sidG);
       app.dispose();
+    });
+
+    test('доска не загрузилась: Офису ничего не отправляем', () async {
+      final repo = FakeRepo()..fetchFails = true;
+      final (app, proc, _, _, _) = await _app(repo: repo);
+      final err = await app.startNewProject(
+          name: 'Гамма', type: 'site', idea: 'сайт');
+      expect(err, contains('Доска'));
+      expect(proc.started, isEmpty);
+      app.dispose();
+    });
+
+    test('идёт загрузка доски: ждём её и берём известные проекты из неё',
+        () async {
+      final repo = FakeRepo();
+      final (app, proc, _, _, _) = await _app(repo: repo);
+      final loading = app.refreshBoard(); // уже идёт
+      proc.queue.add(FakeRunning([_init(_sidO), _result(_sidO)]));
+      proc.onStart = (i) {
+        // к моменту отправки доска уже загружена
+        expect(app.projects.map((p) => p.slug), ['alpha', 'beta']);
+        repo.addProject('gamma', _gammaReadme);
+      };
+      proc.queue.add(FakeRunning([_init(_sidG), _result(_sidG)]));
+      final err = await app.startNewProject(
+          name: 'Гамма', type: 'site', idea: 'сайт');
+      await loading;
+      expect(err, isNull);
+      expect(app.activeKey, 'gamma');
+      app.dispose();
+    });
+
+    test('проект уже есть с таким адресом: не отправляем', () async {
+      final (app, proc, _, _, _) = await _app();
+      final err = await app.startNewProject(
+          name: 'Alpha', type: 'site', idea: 'сайт');
+      expect(err, contains('уже есть'));
+      expect(proc.started, isEmpty);
+      app.dispose();
+    });
+
+    test('Офис упал: проект не открываем, даже если ветка появилась', () async {
+      final repo = FakeRepo();
+      final (app, proc, _, _, toasts) = await _app(repo: repo);
+      proc.onStart = (i) => repo.addProject('gamma', _gammaReadme);
+      proc.queue.add(FakeRunning(const [], code: 1, err: 'boom'));
+      await app.startNewProject(name: 'Гамма', type: 'site', idea: 'сайт');
+      await _pump();
+      expect(proc.started, hasLength(1));
+      expect(app.activeKey, officeKey);
+      expect(app.chats.containsKey('gamma'), isFalse);
+      expect(toasts.single, contains('не закончил'));
+      app.dispose();
+    });
+
+    test('появился другой проект, не заказанный: не открываем его', () async {
+      final repo = FakeRepo();
+      final (app, proc, _, _, toasts) = await _app(repo: repo);
+      proc.onStart = (i) => repo.addProject(
+          'omega', _gammaReadme.replaceAll('gamma', 'omega').replaceAll('Гамма', 'Омега'));
+      proc.queue.add(FakeRunning([_init(_sidO), _result(_sidO)]));
+      await app.startNewProject(name: 'Гамма', type: 'site', idea: 'сайт');
+      await _pump();
+      expect(proc.started, hasLength(1));
+      expect(app.activeKey, officeKey);
+      expect(app.chats.containsKey('omega'), isFalse);
+      expect(toasts.single, contains('«gamma»'));
+      app.dispose();
+    });
+
+    test('slug как в scripts/new_project.py', () {
+      expect(projectSlug('Мой сайт'), 'moy-sait');
+      expect(projectSlug('Гамма'), 'gamma');
+      expect(projectSlug('Кофе №1!'), 'kofe-1');
+      expect(projectSlug('!!!'), '');
     });
 
     test('проект не появился: подсказка, второй чат не открывается', () async {
@@ -586,20 +761,22 @@ void main() {
           dir: r'C:\ai-studio-wt\alpha',
           claudePath: r'C:\Users\d\.local\bin\claude.exe',
           sessionId: _sidA,
-          useWt: true);
-      expect(wt.exe, 'cmd');
+          wtPath: r'C:\Users\d\AppData\Local\Microsoft\WindowsApps\wt.exe');
+      expect(wt.exe, sys32('cmd.exe'));
       expect(wt.args, [
-        '/c', 'start', '', 'wt.exe', '-d', r'C:\ai-studio-wt\alpha', //
+        '/c', 'start', '', //
+        r'C:\Users\d\AppData\Local\Microsoft\WindowsApps\wt.exe', '-d',
+        r'C:\ai-studio-wt\alpha', //
         r'C:\Users\d\.local\bin\claude.exe', '--resume', _sidA,
         '--remote-control',
       ]);
       final plain = RemoteControl.build(
           dir: r'C:\ai-studio-wt\alpha',
           claudePath: 'claude.exe',
-          sessionId: _sidA,
-          useWt: false);
+          sessionId: _sidA);
       expect(plain.args, [
-        '/c', 'start', '', '/D', r'C:\ai-studio-wt\alpha', 'claude.exe', //
+        '/c', 'start', '', '/D', r'C:\ai-studio-wt\alpha', //
+        sys32('cmd.exe'), '/k', 'claude.exe', //
         '--resume', _sidA, '--remote-control',
       ]);
     });
@@ -607,7 +784,7 @@ void main() {
     test('проверка id и путей', () {
       RcLaunch mk({String? sid = _sidA, String dir = r'C:\wt\a'}) =>
           RemoteControl.build(
-              dir: dir, claudePath: 'claude.exe', sessionId: sid, useWt: true);
+              dir: dir, claudePath: 'claude.exe', sessionId: sid, wtPath: 'wt');
       expect(() => mk(sid: null), throwsA(isA<RcException>()));
       expect(() => mk(sid: 'abc; calc'), throwsA(isA<RcException>()));
       expect(() => mk(dir: r'C:\wt\a & calc'), throwsA(isA<RcException>()));
@@ -629,16 +806,17 @@ void main() {
       // сессии ещё нет — кнопка неактивна
       expect(c.rcDisabledReason, isNotNull);
       expect(await c.openRemoteControl(), isNotNull);
-      expect(proc.runs.where((r) => r.first == 'cmd'), isEmpty);
+      expect(proc.runs.where((r) => r.first == sys32('cmd.exe')), isEmpty);
 
       proc.queue.add(FakeRunning([_init(_sidA), _result(_sidA)]));
       await c.send('привет');
       expect(c.rcDisabledReason, isNull);
 
       expect(await c.openRemoteControl(), isNull);
-      final run = proc.runs.lastWhere((r) => r.first == 'cmd');
+      final run = proc.runs.lastWhere((r) => r.first == sys32('cmd.exe'));
+      expect(proc.cwds.last, isNull); // cwd для start не задаём
       expect(run, [
-        'cmd', '/c', 'start', '', 'wt.exe', '-d', c.workDir, //
+        sys32('cmd.exe'), '/c', 'start', '', 'wt', '-d', c.workDir, //
         r'C:\Users\d\.local\bin\claude.exe', '--resume', _sidA,
         '--remote-control',
       ]);
@@ -669,8 +847,11 @@ void main() {
       proc.queue.add(FakeRunning([_init(_sidA), _result(_sidA)]));
       await c.send('привет');
       expect(await c.openRemoteControl(), isNull);
-      final run = proc.runs.lastWhere((r) => r.first == 'cmd');
-      expect(run.sublist(0, 6), ['cmd', '/c', 'start', '', '/D', c.workDir]);
+      final run = proc.runs.lastWhere((r) => r.first == sys32('cmd.exe'));
+      expect(run.sublist(0, 8), [
+        sys32('cmd.exe'), '/c', 'start', '', '/D', c.workDir, //
+        sys32('cmd.exe'), '/k',
+      ]);
       expect(run.last, '--remote-control');
       app.dispose();
     });

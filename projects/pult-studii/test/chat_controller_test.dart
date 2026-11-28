@@ -279,4 +279,71 @@ void main() {
     expect(proc.started, hasLength(2));
     expect(chat.messages.last.kind, MsgKind.error);
   });
+
+  int count(String text, String part) => part.allMatches(text).length;
+  const startPart = 'Проект: Альфа (alpha). Ветка: alpha.';
+
+  test('R1: «No conversation found» — стартовый текст появляется при повторе',
+      () async {
+    final (chat, proc, _, _) = await _make(session: _sid);
+    proc.queue
+      ..add(FakeRunning(const [_resultNoConv]))
+      ..add(FakeRunning(const [_init, _resultOk]));
+    await chat.send('привет');
+    final first = proc.started[0].join('\n');
+    final second = proc.started[1].join('\n');
+    expect(first, isNot(contains('Проект:'))); // сессия была — без старта
+    expect(count(second, startPart), 1); // новая сессия — со стартом
+    expect(second, contains('Задача: привет'));
+  });
+
+  test('R2: повтор в существующую сессию не дублирует стартовый текст', () async {
+    final (chat, proc, _, _) = await _make(session: _sid);
+    proc.queue
+      ..add(FakeRunning(const [])) // без ответа — ошибка
+      ..add(FakeRunning(const [_init, _resultOk]));
+    await chat.send('привет');
+    expect(chat.messages.last.kind, MsgKind.error);
+    await chat.retry();
+    expect(proc.started, hasLength(2));
+    expect(proc.started[0].join('\n'), isNot(contains('Проект:')));
+    expect(proc.started[1].join('\n'), isNot(contains('Проект:')));
+    expect(proc.started[1], containsAllInOrder(['--resume', _sid]));
+  });
+
+  test('R2: новый разговор упал — при повторе стартовый текст ровно один раз',
+      () async {
+    final (chat, proc, _, _) = await _make();
+    proc.queue
+      ..add(FakeRunning(const [])) // сессия не создалась
+      ..add(FakeRunning(const [_init, _resultOk]));
+    await chat.send('привет');
+    await chat.retry();
+    expect(count(proc.started[0].join('\n'), startPart), 1);
+    expect(count(proc.started[1].join('\n'), startPart), 1);
+  });
+
+  test('сводка с телефона: в сессии — префикс без старта, при сбросе — со стартом',
+      () async {
+    final (chat, proc, _, _) = await _make(
+        session: _sid, lastSeen: 'abc1234', log: 'aaa1111 2026-11-28 раз');
+    expect(chat.summary, isNotEmpty);
+    proc.queue
+      ..add(FakeRunning(const [_resultNoConv]))
+      ..add(FakeRunning(const [_init, _resultOk]));
+    await chat.send('привет');
+    final first = proc.started[0].join('\n');
+    final second = proc.started[1].join('\n');
+    expect(first, contains('С телефона сделаны коммиты'));
+    expect(first, isNot(contains('Проект:')));
+    expect(count(second, startPart), 1);
+    expect(count(second, 'С телефона сделаны коммиты'), 1);
+  });
+
+  test('открыт терминал RC: «Новый чат» не работает', () async {
+    final (chat, _, state, _) = await _make(session: _sid);
+    chat.rcOpen = true;
+    await chat.newChat();
+    expect(state.sessionId('alpha'), _sid);
+  });
 }

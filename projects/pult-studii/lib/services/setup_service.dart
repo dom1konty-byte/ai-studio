@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../models/safety.dart';
 import 'app_storage.dart';
 import 'direct_install.dart';
 import 'process_runner.dart';
@@ -100,10 +101,12 @@ bool _safeForCmd(String path) => !RegExp(r'[&|<>^%!"\r\n]').hasMatch(path);
 
 const githubDeviceUrl = 'https://github.com/login/device';
 
-final _ghCodeRe = RegExp(r'\b[A-Z0-9]{4}-[A-Z0-9]{4}\b');
+final _ghCodeRe = RegExp(r'one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})\b',
+    caseSensitive: false);
 
-/// Одноразовый код из строки вывода gh (или null).
-String? parseGhCode(String line) => _ghCodeRe.firstMatch(line)?.group(0);
+/// Одноразовый код из строки вывода gh (после «one-time code:») или null.
+String? parseGhCode(String line) =>
+    _ghCodeRe.firstMatch(line)?.group(1)?.toUpperCase();
 
 /// Идущий вход `gh auth login --web`.
 class GhLoginSession {
@@ -123,6 +126,9 @@ class GhLoginSession {
   late final Future<String?> result;
 
   bool get cancelled => _cancelled;
+
+  /// Текст результата при отмене (это не ошибка).
+  static const cancelledMessage = 'Вход отменён.';
 
   /// Отмена: убить процесс.
   Future<void> cancel() async {
@@ -162,9 +168,9 @@ class GhLoginSession {
       return 'Вход не завершён за ${timeout.inMinutes} минут.';
     }
     await readers;
-    if (_cancelled) return 'Вход отменён.';
+    if (_cancelled) return cancelledMessage;
     if (code == 0) return null;
-    final log = tail.join('\n');
+    final log = maskSecrets(tail.join('\n'));
     return 'Вход не удался${log.isEmpty ? '' : ': $log'}';
   }
 }
@@ -270,7 +276,7 @@ class SetupService {
 
   /// Открыть страницу ввода кода (адрес фиксированный).
   Future<void> openGithubDevice() => _proc.run(
-      'rundll32', ['url.dll,FileProtocolHandler', githubDeviceUrl],
+      sys32('rundll32.exe'), ['url.dll,FileProtocolHandler', githubDeviceUrl],
       timeout: const Duration(seconds: 30));
 
   Future<ProcResult> ghSetupGit() => _proc.run('gh', ['auth', 'setup-git']);
@@ -304,7 +310,7 @@ class SetupService {
       return const LaunchResult(
           error: 'В пути к программе есть странные символы — окно не открыто.');
     }
-    final r = await _proc.run('cmd', ['/c', 'start', '', exe, ...args],
+    final r = await _proc.run(sys32('cmd.exe'), ['/c', 'start', '', exe, ...args],
         timeout: const Duration(seconds: 30));
     return r.ok
         ? const LaunchResult()

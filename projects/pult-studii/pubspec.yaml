@@ -12,6 +12,7 @@ dependencies:
   material_ui: ^1.11.1
   flutter_markdown_plus: ^1.0.3
   path: ^1.9.0
+  crypto: ^3.0.0
   window_manager: ^0.5.0
 
 dev_dependencies:

@@ -87,7 +87,11 @@ List<WorktreeEntry> parseWorktrees(String out) {
 
 /// Незакоммиченное и неотправленное в папке.
 class PendingWork {
-  const PendingWork({this.dirty = false, this.unpushed = 0, this.unknown = false});
+  const PendingWork(
+      {this.dirty = false,
+      this.unpushed = 0,
+      this.unknown = false,
+      this.noRemoteBranch = false});
 
   final bool dirty;
   final int unpushed;
@@ -95,10 +99,14 @@ class PendingWork {
   /// Не удалось посчитать неотправленные коммиты.
   final bool unknown;
 
-  bool get clean => !dirty && unpushed == 0 && !unknown;
+  /// Ветки ещё нет на GitHub (считаем коммиты от main).
+  final bool noRemoteBranch;
+
+  bool get clean => !dirty && unpushed == 0 && !unknown && !noRemoteBranch;
 
   String describe() => [
         if (dirty) 'есть незакоммиченные правки',
+        if (noRemoteBranch) 'ветки ещё нет на GitHub',
         if (unpushed > 0) 'неотправленных коммитов: $unpushed',
         if (unknown) 'не удалось проверить, всё ли отправлено на GitHub',
       ].join('; ');
@@ -110,8 +118,38 @@ class RepoRemote {
   final String repo;
 }
 
+final _alreadyExists = RegExp(r'already exists', caseSensitive: false);
+
 final _slugRe = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$');
 bool isSafeSlug(String s) => _slugRe.hasMatch(s);
+
+const _translit = {
+  'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e',
+  'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+  'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+  'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+  'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya', //
+};
+
+/// Порт `slugify` из scripts/new_project.py: «Мой сайт» → `moy-sait`.
+/// «й» в конце слова → y, внутри → i.
+String projectSlug(String name) {
+  final low = name.toLowerCase().split('');
+  final b = StringBuffer();
+  for (var i = 0; i < low.length; i++) {
+    final c = low[i];
+    if (c == 'й') {
+      final next = i + 1 < low.length ? low[i + 1] : '';
+      b.write(RegExp(r'^\p{L}$', unicode: true).hasMatch(next) ? 'i' : 'y');
+    } else {
+      b.write(_translit[c] ?? c);
+    }
+  }
+  return b
+      .toString()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+}
 
 const _skipBranches = {'main', 'ai-office', 'HEAD', 'origin'};
 
@@ -157,9 +195,15 @@ class GitService {
   /// Ключ основной папки общий для всего, что трогает её `.git`
   /// (fetch, worktree add/prune, переключение веток).
   final Map<String, Future<void>> _tails = {};
-  bool _longPathsSet = false;
 
-  Future<T> _locked<T>(String key, Future<T> Function() job) {
+  /// Занят ли чат Офиса (его ветку в основной папке нельзя менять).
+  bool Function()? officeBusy;
+
+  /// Ключ мьютекса: один и тот же путь в разной записи — одна очередь.
+  static String _key(String path) => p.canonicalize(path).toLowerCase();
+
+  Future<T> _locked<T>(String rawKey, Future<T> Function() job) {
+    final key = _key(rawKey);
     final c = Completer<T>();
     final prev = _tails[key] ?? Future<void>.value();
     _tails[key] = prev.then((_) async {
@@ -183,8 +227,12 @@ class GitService {
 
   Future<ProcResult> _gitIn(String dir, List<String> args) {
     if (dir.isEmpty) throw GitException('Папка ai-studio не выбрана.');
-    return _proc.run('git', args, cwd: dir);
+    // Длинные пути — только для этого запуска, глобальный конфиг не трогаем.
+    final inWorktree = repoPath.isNotEmpty && _key(dir) != _key(repoPath);
+    return _proc.run('git', [if (inWorktree) ..._longPaths, ...args], cwd: dir);
   }
+
+  static const _longPaths = ['-c', 'core.longpaths=true'];
 
   Future<ProcResult> _git(List<String> args) => _gitIn(repoPath, args);
 
@@ -310,11 +358,18 @@ class GitService {
         if (!isSafeSlug(branch)) return const PendingWork(unknown: true);
         final st = await _gitIn(dir, ['status', '--porcelain']);
         final dirty = !st.ok || st.stdout.trim().isNotEmpty;
-        final cnt = await _gitIn(
-            dir, ['rev-list', '--count', 'origin/$branch..HEAD']);
+        // Ветки на GitHub ещё нет — сравниваем с main.
+        final onRemote = (await _gitIn(
+                dir, ['rev-parse', '--verify', '--quiet', 'origin/$branch']))
+            .ok;
+        final base = onRemote ? 'origin/$branch' : 'origin/main';
+        final cnt = await _gitIn(dir, ['rev-list', '--count', '$base..HEAD']);
         final n = cnt.ok ? int.tryParse(cnt.stdout.trim()) : null;
         return PendingWork(
-            dirty: dirty, unpushed: n ?? 0, unknown: n == null);
+            dirty: dirty,
+            unpushed: n ?? 0,
+            unknown: n == null,
+            noRemoteBranch: !onRemote);
       });
 
   // ---------------------------------------------------------------- Офис
@@ -415,6 +470,29 @@ class GitService {
     return (pulled: true, warning: null);
   }
 
+  /// В worktree: `git merge --ff-only origin/<slug>` (fetch уже был).
+  Future<({bool pulled, String? warning})> _mergeIn(
+      String dir, String slug, bool dirty,
+      {required bool hasOrigin}) async {
+    if (dirty) {
+      return (
+        pulled: false,
+        warning: 'В папке есть незакоммиченные правки — обновление '
+            'пропущено. Коммиты ещё не подтянуты в папку.'
+      );
+    }
+    if (!hasOrigin) return (pulled: true, warning: null);
+    final m = await _gitIn(dir, ['merge', '--ff-only', 'origin/$slug']);
+    if (!m.ok) {
+      return (
+        pulled: false,
+        warning: 'git merge --ff-only не удался: ${_err(m)}\n'
+            'Коммиты ещё не подтянуты в папку.'
+      );
+    }
+    return (pulled: true, warning: null);
+  }
+
   // -------------------------------------------------------------- Проекты
 
   /// Открытие чата проекта: fetch, своя папка (worktree), pull --ff-only.
@@ -444,9 +522,10 @@ class GitService {
             dir: dir);
       }
       final dirty = st.stdout.trim().isNotEmpty;
-      final pull = await _pullIn(dir, dirty);
-      if (pull.warning != null) warning = pull.warning;
       final origin = await originSha(slug);
+      // fetch уже сделан: без сети, только перемотка до origin/<ветка>.
+      final pull = await _mergeIn(dir, slug, dirty, hasOrigin: origin != null);
+      if (pull.warning != null) warning = pull.warning;
       var commits = <String>[];
       if (lastSeenSha != null && origin != null && lastSeenSha != origin) {
         commits = await commitsSince(lastSeenSha, slug);
@@ -493,36 +572,51 @@ class GitService {
               'правки. Закоммить их (или убери) и открой проект снова.'
         );
       }
+      if (officeBusy?.call() ?? false) {
+        return (
+          path: null,
+          error: 'Подожди, пока Офис закончит, и открой проект снова.'
+        );
+      }
       final err = await _switchTo(
           main, officeKey, await originSha(officeKey), true);
       if (err != null) return (path: null, error: err);
     }
 
-    if (!_longPathsSet) {
-      // Длинные пути Windows: один раз на запуск программы.
-      await _gitIn(main, ['config', '--global', 'core.longpaths', 'true']);
-      _longPathsSet = true;
-    }
-
     final local = await _gitIn(
         main, ['rev-parse', '--verify', '--quiet', 'refs/heads/$slug']);
-    final ProcResult add;
+    final List<String> addArgs;
     if (local.ok) {
-      add = await _gitIn(main, ['worktree', 'add', target, slug]);
+      addArgs = ['worktree', 'add', target, slug];
     } else if (await originSha(slug) != null) {
-      add = await _gitIn(
-          main, ['worktree', 'add', '-b', slug, target, 'origin/$slug']);
+      addArgs = ['worktree', 'add', '-b', slug, target, 'origin/$slug'];
     } else {
       return (
         path: null,
         error: 'Ветки $slug нет ни на компьютере, ни на GitHub.'
       );
     }
+    Future<ProcResult> doAdd() => _gitIn(main, [..._longPaths, ...addArgs]);
+    var add = await doAdd();
+    if (!add.ok && _alreadyExists.hasMatch(_err(add))) {
+      // Пустая папка-остаток: удаляем и повторяем. Не пустая — не трогаем.
+      if (await _storage.folderKind(target) == FolderKind.empty &&
+          await _storage.deleteEmptyDir(target)) {
+        await _gitIn(main, ['worktree', 'prune']);
+        add = await doAdd();
+      } else {
+        return (
+          path: null,
+          error: 'Папка $target уже есть и в ней что-то лежит. '
+              'Удали папку $target и открой проект снова.'
+        );
+      }
+    }
     if (!add.ok) {
       var msg = 'Не удалось создать папку проекта: ${_err(add)}';
       if (RegExp(r'too long|filename', caseSensitive: false).hasMatch(msg)) {
-        msg = '$msg\nПуть слишком длинный. Выполни в терминале: '
-            'git config --global core.longpaths true';
+        msg = '$msg\nПуть слишком длинный. Выбери папку студии ближе к '
+            'корню диска (например C:\\ai-studio) и открой проект снова.';
       }
       return (path: null, error: msg);
     }

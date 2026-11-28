@@ -28,7 +28,13 @@ class AppController extends ChangeNotifier {
         git = GitService(proc, storage),
         gh = GhService(proc),
         tools = ToolsCheck(proc, storage),
-        claude = ClaudeRunner(proc);
+        claude = ClaudeRunner(proc) {
+    // Основную папку нельзя уводить с ветки Офиса, пока Офис работает.
+    git.officeBusy = () {
+      final c = chats[officeKey];
+      return c != null && (c.working || c.preparing);
+    };
+  }
 
   final ProcessRunner proc;
   final AppStorage storage;
@@ -104,6 +110,9 @@ class AppController extends ChangeNotifier {
 
   bool _disposed = false;
 
+  /// Отмена идущего входа в GitHub (ставит мастер настройки).
+  Future<void> Function()? cancelLogin;
+
   @override
   void notifyListeners() {
     if (!_disposed) super.notifyListeners();
@@ -149,6 +158,9 @@ class AppController extends ChangeNotifier {
 
   /// Закрытие окна: остановить все процессы директоров.
   Future<void> stopAll() async {
+    try {
+      await cancelLogin?.call();
+    } catch (_) {}
     await Future.wait(chats.values.map((c) async {
       try {
         await c.stop();
@@ -201,8 +213,16 @@ class AppController extends ChangeNotifier {
     await recheck();
   }
 
-  Future<void> refreshBoard() async {
-    if (git.repoPath.isEmpty || boardLoading) return;
+  Future<void>? _refreshing;
+
+  /// Обновить доску. Уже идёт обновление — вернёт его Future (дождаться конца).
+  Future<void> refreshBoard() {
+    if (git.repoPath.isEmpty) return Future.value();
+    return _refreshing ??=
+        _refreshBoard().whenComplete(() => _refreshing = null);
+  }
+
+  Future<void> _refreshBoard() async {
     boardLoading = true;
     boardError = null;
     notifyListeners();
@@ -354,8 +374,13 @@ class AppController extends ChangeNotifier {
     if (n.isEmpty || n.length > 80) return 'Имя проекта: от 1 до 80 символов.';
     if (label == null) return 'Выбери тип проекта.';
     if (i.isEmpty) return 'Напиши идею проекта.';
+    if (i.length > 2000) return 'Идея слишком длинная: не больше 2000 символов.';
     if (git.repoPath.isEmpty) return 'Папка ai-studio не выбрана.';
     if (_creatingProject) return 'Другой проект ещё создаётся.';
+    final expected = projectSlug(n);
+    if (expected.isEmpty) {
+      return 'Из имени не получился адрес проекта. Используй буквы или цифры.';
+    }
     _creatingProject = true;
     try {
       openOffice();
@@ -366,22 +391,43 @@ class AppController extends ChangeNotifier {
             ? 'Офис не открыт: ${office.blockedReason}'
             : 'Офис сейчас занят. Дождись ответа и повтори.';
       }
+      // Доска должна быть загружена: иначе «уже известные» проекты неизвестны.
+      await refreshBoard();
+      if (boardError != null) {
+        return 'Доска проектов не обновилась (${boardError!}). '
+            'Проверь интернет и повтори.';
+      }
       final known = projects.map((p) => p.slug).toSet();
+      if (known.contains(expected)) {
+        return 'Проект «$expected» уже есть. Выбери другое имя.';
+      }
+      office.lastTurnOk = false;
       await office.send('Новый проект: $n, тип: $type ($label). Идея: $i. '
           'Создай через /new-project, сессию проекта не запускай — '
-          'Рубка откроет его сама.');
-      while (boardLoading) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      await refreshBoard();
-      final fresh = projects.where((p) => !known.contains(p.slug)).toList();
-      if (fresh.isEmpty) {
-        toast('Офис пока не создал проект — посмотри ответ в «Офисе».');
+          'Рубка откроет его сама. Потом запушь ветку $expected '
+          '(git push -u origin $expected).');
+      if (!office.lastTurnOk) {
+        toast('Офис не закончил ход — проект не открываю. '
+            'Посмотри ответ в «Офисе».');
         return null;
       }
-      final proj = fresh.firstWhere(
-          (p) => p.name.toLowerCase() == n.toLowerCase(),
-          orElse: () => fresh.first);
+      await refreshBoard();
+      final fresh = projects
+          .where((p) =>
+              !known.contains(p.slug) &&
+              (p.slug == expected ||
+                  p.name.toLowerCase() == n.toLowerCase()))
+          .toList();
+      if (fresh.isEmpty) {
+        toast('Офис пока не создал проект «$expected» — '
+            'посмотри ответ в «Офисе».');
+        return null;
+      }
+      // Сначала точный slug, потом совпадение имени (fresh уже отфильтрован).
+      final proj = [
+        ...fresh.where((p) => p.slug == expected),
+        ...fresh,
+      ].first;
       final c = chats[proj.slug] ?? _create(proj.slug, proj.name);
       activeKey = proj.slug;
       newCounts.remove(proj.slug);

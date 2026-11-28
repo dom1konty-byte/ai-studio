@@ -42,6 +42,8 @@ class Env {
               '"https://github.com/cli/cli/releases/download/v/gh_2.70.0_windows_amd64.msi"}]}',
       'https://nodejs.org/dist/index.json':
           '[{"version":"v22.1.0","lts":"Jod","files":["win-x64-msi"]}]',
+      'https://nodejs.org/dist/v22.1.0/SHASUMS256.txt':
+          '${FakeInstallFs.okHash}  node-v22.1.0-x64.msi\n',
     });
   bool failDirect = false;
   bool badSignature = false;
@@ -69,7 +71,7 @@ class Env {
       installed.add(_wingetToExe[id]!);
       return const ProcResult(0, 'Successfully installed');
     }
-    if (exe == 'powershell') {
+    if (exe == powershellPath()) {
       if (k.contains('install.ps1')) {
         if (psClaudeFails) return const ProcResult(1, '', 'ps упал');
         installed.add('claude');
@@ -78,14 +80,14 @@ class Env {
       final subj = k.contains('Git-')
           ? 'CN=Johannes Schindelin'
           : k.contains('gh_')
-              ? 'CN=GitHub, Inc.'
+              ? r'CN=\"GitHub, Inc.\"'
               : k.contains('node-')
                   ? 'CN=OpenJS Foundation'
                   : 'CN=Python Software Foundation';
       return ProcResult(0,
           '{"Status":${badSignature ? 2 : 0},"S":"${badSignature ? 'CN=Evil' : subj}"}');
     }
-    if (exe == 'msiexec') {
+    if (exe == sys32('msiexec.exe')) {
       installed.add(args[1].contains('gh_') ? 'gh' : 'node');
       return const ProcResult(0);
     }
@@ -133,7 +135,7 @@ class Env {
             direct: DirectInstaller(
                 proc: proc,
                 downloader: downloader..failDownload = failDirect,
-                tempDir: '/tmp/rubka-test')),
+                fs: FakeInstallFs())),
         defaultFolder: _folder,
         initialFolder: folder,
         onFinish: onFinish ?? (_) async => true,
@@ -307,7 +309,7 @@ void main() {
       final w = env.wizard();
       await w.refresh();
       await w.installSelected();
-      expect(env.calls.any((c) => c.startsWith('msiexec')), isFalse);
+      expect(env.calls.any((c) => c.contains('msiexec')), isFalse);
       expect(w.tool('gh').run, InstallRun.failed);
       expect(w.tool('gh').log, contains('Подпись'));
       env.badSignature = false;
@@ -351,7 +353,7 @@ void main() {
       expect(copied, ['AB12-CD34']);
       expect(
           env.calls,
-          contains('rundll32 url.dll,FileProtocolHandler '
+          contains('${sys32('rundll32.exe')} url.dll,FileProtocolHandler '
               'https://github.com/login/device'));
       expect(w.ghOk, isTrue);
       expect(w.ghDone, isTrue);
@@ -363,7 +365,7 @@ void main() {
 
     test('GitHub: код может прийти в stdout', () async {
       final env = Env(installed: {'winget', 'git', 'gh'});
-      env.proc.queue.add(FakeRunning(const ['code: ZZ99-0AA1']));
+      env.proc.queue.add(FakeRunning(const ['one-time code: ZZ99-0AA1']));
       final copied = <String>[];
       final w = WizardController(
         service: SetupService(env.proc, env.storage),
@@ -426,10 +428,41 @@ void main() {
       await w.cancelGhLogin();
       await f;
       expect(running.killed, isTrue);
-      expect(w.ghError, contains('отменён'));
+      expect(w.ghError, isEmpty); // отмена — не ошибка
       expect(w.ghOk, isFalse);
       expect(w.ghLoginRunning, isFalse);
       expect(w.busy, isFalse);
+    });
+
+    test('GitHub: код читается только после «one-time code:» (регистр любой)', () {
+      expect(parseGhCode('! First copy your One-Time Code: ab12-cd34'), 'AB12-CD34');
+      expect(parseGhCode('Visit https://x/ABCD-1234'), isNull);
+    });
+
+    test('GitHub: хвост лога ошибки маскирует секреты', () async {
+      final env = Env(installed: {'winget', 'git', 'gh'});
+      env.proc.queue.add(FakeRunning(const [],
+          code: 1, err: 'denied ghp_abcdefghijklmnopqrstuvwxyz0123456789'));
+      final w = env.wizard();
+      await w.refresh();
+      await w.startGhLogin();
+      expect(w.ghError, isNot(contains('ghp_abcdefghijklmnop')));
+    });
+
+    test('GitHub: окно закрыли во время запуска → процесс убит', () async {
+      final env = Env(installed: {'winget', 'git', 'gh'});
+      final gate = Completer<int>();
+      final running = FakeRunning(const [], exitGate: gate);
+      env.proc.queue.add(running);
+      env.proc.startGate = Completer<void>();
+      final w = env.wizard();
+      await w.refresh();
+      final f = w.startGhLogin();
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      w.dispose();
+      env.proc.startGate!.complete();
+      await f;
+      expect(running.killed, isTrue);
     });
 
     test('GitHub: уже вошёл → процесс не запускается, сразу готово', () async {
@@ -458,7 +491,7 @@ void main() {
       final w = env.wizard();
       await w.refresh();
       await w.launchClaudeLogin();
-      expect(env.calls, contains('cmd /c start  claude auth login'));
+      expect(env.calls, contains('${sys32('cmd.exe')} /c start  claude auth login'));
       await w.checkClaude();
       expect(w.claudeDone, isFalse);
       env.claudeAuth = true;
@@ -470,7 +503,7 @@ void main() {
       final w2 = old.wizard();
       await w2.refresh();
       await w2.launchClaudeLogin();
-      expect(old.calls, contains('cmd /c start  claude'));
+      expect(old.calls, contains('${sys32('cmd.exe')} /c start  claude'));
       expect(w2.claudeMessage, contains('/login'));
     });
   });

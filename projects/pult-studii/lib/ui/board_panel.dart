@@ -421,6 +421,7 @@ class _NewProjectDialogState extends State<_NewProjectDialog> {
               controller: _idea,
               minLines: 3,
               maxLines: 8,
+              maxLength: 2000,
               onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                   labelText: 'Идея', alignLabelWithHint: true),

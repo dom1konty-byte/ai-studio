@@ -47,6 +47,9 @@ class ChatController extends ChangeNotifier {
   bool summaryDismissed = false;
   bool working = false;
 
+  /// Последний ход закончился успешно.
+  bool lastTurnOk = false;
+
   /// Папка, в которой работает директор (основная или worktree проекта).
   String workDir = '';
 
@@ -80,7 +83,7 @@ class ChatController extends ChangeNotifier {
   bool _resultSeen = false;
   ChatMessage? _streaming;
   String? _pendingPrefix;
-  String? _lastPrompt;
+  String? _lastRaw;
   bool _disposed = false;
 
   bool get canSend =>
@@ -162,6 +165,11 @@ class ChatController extends ChangeNotifier {
   Future<void> _checkFolder() async {
     final prev = state.worktree(slug);
     if (prev != null && p.equals(prev, workDir)) return;
+    // Офис работает в основной папке: старых записей о ней нет — сессию не трогаем.
+    if (prev == null && p.equals(workDir, git.repoPath)) {
+      await _safe(() => state.setWorktree(slug, workDir));
+      return;
+    }
     final had = state.sessionId(slug) != null;
     await _safe(() => state.setWorktree(slug, workDir));
     if (had) {
@@ -198,17 +206,19 @@ class ChatController extends ChangeNotifier {
     if (t.isEmpty || !canSend) return;
     if (approval) approvalHidden = true;
     _add(ChatMessage(MsgKind.user, t));
-    // Первое сообщение нового разговора — со стартовым текстом.
-    var prompt = state.sessionId(slug) == null ? startText(t) : t;
+    _lastRaw = t;
+    await _run(t, onceTools);
+  }
+
+  /// Итоговый запрос по ТЕКУЩЕЙ сессии: в новом разговоре — со стартовым
+  /// текстом, в существующем — без него. Сводка с телефона снимается только
+  /// после успешного хода (см. _run).
+  String _compose(String raw) {
+    final fresh = state.sessionId(slug) == null;
+    final base = fresh ? startText(raw) : raw;
     final prefix = _pendingPrefix;
-    // Префикс снимается только после успешного хода (см. _run).
-    if (prefix != null) {
-      prompt = state.sessionId(slug) == null
-          ? '$prompt\n\n$prefix'
-          : '$prefix\n\n$prompt';
-    }
-    _lastPrompt = prompt;
-    await _run(prompt, onceTools);
+    if (prefix == null) return base;
+    return fresh ? '$base\n\n$prefix' : '$prefix\n\n$base';
   }
 
   Future<void> sendYes() => send('да', approval: true);
@@ -221,10 +231,10 @@ class ChatController extends ChangeNotifier {
 
   /// Повторить последний запрос после ошибки.
   Future<void> retry() async {
-    final prompt = _lastPrompt;
-    if (prompt == null || !canSend) return;
+    final raw = _lastRaw;
+    if (raw == null || !canSend) return;
     messages.removeWhere((m) => m.kind == MsgKind.error);
-    await _run(prompt, const []);
+    await _run(raw, const []);
   }
 
   /// «Разрешить один раз» ([always] false: правило не сохраняется)
@@ -243,7 +253,7 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> newChat() async {
-    if (working) return;
+    if (working || rcOpen) return;
     await _safe(() => state.setSessionId(slug, null));
     _pendingPrefix = null;
     _add(ChatMessage(MsgKind.note, 'Новый чат'));
@@ -305,7 +315,7 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> _run(String prompt, List<String> onceTools) async {
+  Future<void> _run(String raw, List<String> onceTools) async {
     working = true;
     _stopRequested = false;
     _canRetrySession = true;
@@ -313,18 +323,20 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
     var ok = false;
     try {
-      ok = await _attempt(prompt, onceTools);
+      ok = await _attempt(raw, onceTools);
       if (_sessionLost && !_stopRequested) {
         // «No conversation found»: сбросить сессию и повторить один раз.
         _canRetrySession = false;
         await _safe(() => state.setSessionId(slug, null));
         _add(ChatMessage(MsgKind.note,
             'Прежний разговор не найден — начинаю новый и повторяю запрос.'));
-        ok = await _attempt(prompt, onceTools);
+        ok = await _attempt(raw, onceTools);
       }
     } finally {
       _turn = null;
       working = false;
+      lastTurnOk = ok;
+      notifyListeners();
       if (ok) {
         // Сводка ушла директору — только теперь двигаем «прочитано».
         _pendingPrefix = null;
@@ -346,7 +358,7 @@ class ChatController extends ChangeNotifier {
   }
 
   /// Один запуск claude. true — ход закончился успешно.
-  Future<bool> _attempt(String prompt, List<String> onceTools) async {
+  Future<bool> _attempt(String raw, List<String> onceTools) async {
     _turnShowedText = false;
     _resultSeen = false;
     _resultError = false;
@@ -355,7 +367,7 @@ class ChatController extends ChangeNotifier {
     _streaming = null;
     try {
       final turn = await claude.start(
-        prompt: prompt,
+        prompt: _compose(raw),
         cwd: workDir,
         sessionId: state.sessionId(slug),
         extraTools: [...state.allowedTools(slug), ...onceTools],

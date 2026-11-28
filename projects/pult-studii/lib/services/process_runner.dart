@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 /// Абстракция запуска процессов: в тестах подменяется фейком.
 class ProcResult {
   const ProcResult(this.exitCode, [this.stdout = '', this.stderr = '']);
@@ -63,3 +65,16 @@ bool isShellScript(String exePath) {
   final l = exePath.toLowerCase();
   return l.endsWith('.cmd') || l.endsWith('.bat');
 }
+
+/// Папка Windows (`%SystemRoot%`).
+String systemRoot() => Platform.environment['SystemRoot'] ?? r'C:\Windows';
+
+/// Полный путь к системной программе: `%SystemRoot%\System32\<имя>`.
+/// Нужен, чтобы не запускать одноимённый файл из другой папки.
+String sys32(String name) => '${systemRoot()}\\System32\\$name';
+
+/// Полный путь к Windows PowerShell 5.
+String powershellPath() => sys32(r'WindowsPowerShell\v1.0\powershell.exe');
+
+/// `explorer.exe` лежит прямо в папке Windows.
+String explorerPath() => '${systemRoot()}\\explorer.exe';

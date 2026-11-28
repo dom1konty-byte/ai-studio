@@ -49,11 +49,13 @@ class _SetupScreenState extends State<SetupScreen> {
     );
     _folder = TextEditingController(text: _w.folder);
     _repo = TextEditingController(text: _w.repoSlug);
+    c.cancelLogin = _w.cancelGhLogin;
     _w.refresh(pickStep: true);
   }
 
   @override
   void dispose() {
+    widget.controller.cancelLogin = null;
     _w.dispose();
     _folder.dispose();
     _repo.dispose();

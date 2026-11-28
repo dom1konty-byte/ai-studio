@@ -47,11 +47,11 @@ class GhService {
     return dir;
   }
 
-  Future<void> openFolder(String dir) => _proc.run('explorer', [dir]);
+  Future<void> openFolder(String dir) => _proc.run(explorerPath(), [dir]);
 
   /// Открыть https-ссылку в браузере без оболочки (rundll32).
   Future<void> openUrl(String url) =>
-      _proc.run('rundll32', ['url.dll,FileProtocolHandler', url]);
+      _proc.run(sys32('rundll32.exe'), ['url.dll,FileProtocolHandler', url]);
 }
 
 final _repoPartRe = RegExp(r'^[A-Za-z0-9._-]+$');

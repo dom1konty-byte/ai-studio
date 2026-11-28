@@ -61,6 +61,9 @@ class FakeProc implements ProcessRunner {
   /// [exe, ...args] всех run() (без склейки в строку).
   final runs = <List<String>>[];
 
+  /// Как calls, но с `-c core.longpaths=true` (calls и handler его не видят).
+  final rawCalls = <String>[];
+
   /// cwd всех start().
   final startCwds = <String?>[];
 
@@ -77,22 +80,30 @@ class FakeProc implements ProcessRunner {
 
   String? exeName = 'claude';
 
+  /// Вызывается в start() с номером запуска (0, 1, …): «директор что-то сделал».
+  void Function(int index)? onStart;
+
   /// Если задан — start() ждёт, пока его завершат (для теста «стоп до старта»).
   Completer<void>? startGate;
 
   @override
   Future<ProcResult> run(String exe, List<String> args,
       {String? cwd, Duration timeout = const Duration(seconds: 120)}) async {
-    calls.add([exe, ...args].join(' '));
+    rawCalls.add([exe, ...args].join(' '));
+    final a = args.length >= 2 && args[0] == '-c' && args[1] == 'core.longpaths=true'
+        ? args.sublist(2)
+        : args;
+    calls.add([exe, ...a].join(' '));
     cwds.add(cwd);
-    runs.add([exe, ...args]);
-    return handler(exe, args, cwd);
+    runs.add([exe, ...a]);
+    return handler(exe, a, cwd);
   }
 
   @override
   Future<RunningProcess> start(String exe, List<String> args,
       {String? cwd, String? stdin, Map<String, String>? environment}) async {
     await startGate?.future;
+    onStart?.call(started.length);
     started.add([exe, ...args]);
     startCwds.add(cwd);
     stdins.add(stdin);
@@ -147,6 +158,17 @@ class MemoryStorage implements AppStorage {
   @override
   Future<FolderKind> folderKind(String path) async =>
       folderKinds[path] ?? FolderKind.missing;
+
+  /// Удалённые пустые папки.
+  final deletedDirs = <String>[];
+
+  @override
+  Future<bool> deleteEmptyDir(String path) async {
+    if (folderKinds[path] == FolderKind.notEmpty) return false;
+    folderKinds.remove(path);
+    deletedDirs.add(path);
+    return true;
+  }
 }
 
 const sampleReadme = '''
@@ -167,7 +189,7 @@ class FakeDownloader implements Downloader {
   bool failDownload = false;
 
   @override
-  Future<String> fetchText(Uri url) async {
+  Future<String> fetchText(Uri url, DownloadRule rule) async {
     fetched.add(url.toString());
     final t = texts[url.toString()];
     if (t == null) throw DownloadException('нет ответа');
@@ -175,11 +197,55 @@ class FakeDownloader implements Downloader {
   }
 
   @override
-  Future<void> download(
-      Uri url, String destPath, void Function(int percent) onProgress) async {
+  Future<void> download(Uri url, String destPath, DownloadRule rule,
+      void Function(int percent) onProgress) async {
     if (failDownload) throw DownloadException('Не удалось скачать');
     downloaded.add(url.toString());
     onProgress(50);
     onProgress(100);
   }
+}
+
+class _FakeHeld implements HeldFile {
+  _FakeHeld(this._fs, this._path);
+  final FakeInstallFs _fs;
+  final String _path;
+
+  @override
+  Future<String> sha256() async => _fs.hashes[_path] ?? _fs.defaultHash;
+
+  @override
+  Future<void> close() async => _fs.closed.add(_path);
+}
+
+/// Файлы установки без диска: хэш задаётся тестом.
+class FakeInstallFs implements InstallFs {
+  FakeInstallFs([this.root = '/tmp/rubka-test']);
+
+  final String root;
+  static const okHash =
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  String defaultHash = okHash;
+  final hashes = <String, String>{};
+  final opened = <String>[];
+  final closed = <String>[];
+  final deletedDirs = <String>[];
+  final createdDirs = <String>[];
+  var _n = 0;
+
+  @override
+  Future<String> createTempDir() async {
+    final d = '$root/rubka-${_n++}';
+    createdDirs.add(d);
+    return d;
+  }
+
+  @override
+  Future<HeldFile> open(String path) async {
+    opened.add(path);
+    return _FakeHeld(this, path);
+  }
+
+  @override
+  Future<void> deleteDir(String dir) async => deletedDirs.add(dir);
 }

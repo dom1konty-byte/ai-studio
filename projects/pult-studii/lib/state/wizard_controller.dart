@@ -263,10 +263,19 @@ class WizardController extends ChangeNotifier {
         notifyListeners();
       });
       _ghSession = session;
+      if (_disposed) {
+        await session.cancel();
+        return;
+      }
       final err = await session.result;
       _ghSession = null;
       ghLoginRunning = false;
-      if (err != null) {
+      if (_disposed) return;
+      if (session.cancelled || err == GhLoginSession.cancelledMessage) {
+        // Отмена — не ошибка.
+        ghMessage = '';
+        ghCode = '';
+      } else if (err != null) {
         ghError = err;
         ghMessage = '';
         ghCode = '';

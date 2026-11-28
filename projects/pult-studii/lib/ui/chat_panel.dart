@@ -304,6 +304,9 @@ class _ChatPanelState extends State<ChatPanel> {
                 'с телефона. Если в приложении Claude чата не видно — '
                 'в терминале введи /remote-control',
                 style: Rubka.body(size: 14, color: Rubka.onAmber)),
+            const SizedBox(height: 4),
+            Text('Если терминал закрыт — нажми «вернуться».',
+                style: Rubka.body(size: 14, color: Rubka.onAmber)),
             const SizedBox(height: 8),
             FilledButton(
                 onPressed: chat.returnFromRc,

@@ -23,6 +23,9 @@ abstract class AppStorage {
 
   /// Нет папки / пустая / в ней что-то есть.
   Future<FolderKind> folderKind(String path);
+
+  /// Удалить пустую папку (не пустую — не трогать). true — папки больше нет.
+  Future<bool> deleteEmptyDir(String path);
 }
 
 class FileStorage implements AppStorage {
@@ -56,11 +59,26 @@ class FileStorage implements AppStorage {
   Future<Map<String, dynamic>> loadState() async {
     try {
       if (!await _stateFile.exists()) return {};
-      final j = jsonDecode(await _stateFile.readAsString());
-      return j is Map ? Map<String, dynamic>.from(j) : {};
+      final text = await _stateFile.readAsString();
+      try {
+        final j = jsonDecode(text);
+        if (j is Map) return Map<String, dynamic>.from(j);
+      } catch (_) {}
+      await _keepBadCopy();
+      return {};
     } catch (_) {
+      await _keepBadCopy();
       return {};
     }
+  }
+
+  /// Битый state.json: сохранить копию, чтобы не потерять при перезаписи.
+  Future<void> _keepBadCopy() async {
+    try {
+      if (await _stateFile.exists()) {
+        await _stateFile.copy(p.join(dir, 'state.json.bad'));
+      }
+    } catch (_) {}
   }
 
   @override
@@ -120,6 +138,19 @@ class FileStorage implements AppStorage {
     if (path.trim().isEmpty) return false;
     return await Directory(p.join(path, '.claude', 'agents')).exists() &&
         await File(p.join(path, 'projects', 'README.md')).exists();
+  }
+
+  @override
+  Future<bool> deleteEmptyDir(String path) async {
+    try {
+      final d = Directory(path);
+      if (!await d.exists()) return true;
+      if (!await d.list().isEmpty) return false;
+      await d.delete(); // не рекурсивно
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
@@ -188,7 +219,16 @@ class StateRepo {
   }
 
   /// Папка, в которой начат разговор (сессия Claude привязана к папке).
-  String? worktree(String slug) => _proj(slug)['worktree'] as String?;
+  /// Запись из state.json принимаем, только если это основная папка студии
+  /// или папка внутри `<родитель основной>\ai-studio-wt\` (файл могли подменить).
+  String? worktree(String slug) {
+    final v = _proj(slug)['worktree'];
+    final repo = repoPath;
+    if (v is! String || v.isEmpty || repo == null) return null;
+    if (p.equals(v, repo)) return v;
+    final root = p.join(p.dirname(repo), 'ai-studio-wt');
+    return p.isWithin(root, v) ? v : null;
+  }
 
   Future<void> setWorktree(String slug, String path) {
     _proj(slug)['worktree'] = path;
