@@ -11,6 +11,7 @@ import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
 import 'board_panel.dart';
 import 'chat_panel.dart';
+import 'motion.dart';
 import 'night_dialog.dart';
 import 'studio_rail.dart';
 import 'update_banner.dart';
@@ -39,6 +40,26 @@ class _HomeScreenState extends State<HomeScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(m)));
     });
+    if (widget.controller.offerCompact) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _offerCompact());
+    }
+  }
+
+  /// Первый запуск: окно небольшое — предложить компактный режим.
+  void _offerCompact() {
+    final c = widget.controller;
+    if (!mounted || c.state.compactAsked || c.compact) return;
+    final size = MediaQuery.sizeOf(context);
+    if (size.width > 1100 && size.height >= 700) return;
+    unawaited(c.markCompactAsked());
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: const Text('Окно небольшое. Включить компактный режим?'),
+        duration: const Duration(seconds: 10),
+        action: SnackBarAction(
+            label: 'Включить', onPressed: () => unawaited(c.setCompact(true))),
+      ));
   }
 
   @override
@@ -95,18 +116,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onSetup: c.openSetup),
                             Expanded(
                               child: Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(14, 10, 14, 14),
-                                child: switch (_tab) {
-                                  _Tab.overview => _Overview(
-                                      controller: c, inputFocus: _inputFocus),
-                                  _Tab.chats => _Chats(
-                                      controller: c, inputFocus: _inputFocus),
-                                  _Tab.office => _ChatTile(
-                                      controller: c,
-                                      inputFocus: _inputFocus,
-                                      office: true),
-                                },
+                                padding: c.compact
+                                    ? const EdgeInsets.fromLTRB(8, 6, 8, 8)
+                                    : const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                                child: FadeSlideIn(
+                                  key: ValueKey(_tab),
+                                  dy: 0,
+                                  child: switch (_tab) {
+                                    _Tab.overview => _Overview(
+                                        controller: c,
+                                        inputFocus: _inputFocus),
+                                    _Tab.chats => _Chats(
+                                        controller: c, inputFocus: _inputFocus),
+                                    _Tab.office => _ChatTile(
+                                        controller: c,
+                                        inputFocus: _inputFocus,
+                                        office: true),
+                                  },
+                                ),
                               ),
                             ),
                           ],
@@ -181,7 +208,7 @@ class _Chats extends StatelessWidget {
           SizedBox(
               width: 270,
               child: BoardPanel(controller: controller, compact: true)),
-          const SizedBox(width: 12),
+          SizedBox(width: controller.compact ? 8 : 12),
           Expanded(
               child: _ChatTile(controller: controller, inputFocus: inputFocus)),
         ],
@@ -210,6 +237,8 @@ class _Overview extends StatelessWidget {
     return LayoutBuilder(builder: (context, box) {
       final chatW = (box.maxWidth * 0.36).clamp(320.0, 520.0);
       final narrow = box.maxWidth < 1000;
+      final compact = controller.compact;
+      final gap = compact ? 8.0 : 12.0;
       return Row(
         children: [
           Expanded(
@@ -217,16 +246,16 @@ class _Overview extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _TopLine(controller: controller),
-                const SizedBox(height: 10),
+                SizedBox(height: compact ? 6 : 10),
                 SizedBox(
-                    height: narrow ? 124 : 132,
+                    height: compact ? 100 : (narrow ? 124 : 132),
                     child: _Tiles(controller: controller, narrow: narrow)),
-                const SizedBox(height: 12),
+                SizedBox(height: gap),
                 Expanded(child: BoardPanel(controller: controller)),
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: gap),
           SizedBox(
               width: chatW,
               child: _ChatTile(controller: controller, inputFocus: inputFocus)),
@@ -386,25 +415,38 @@ class _Tiles extends StatelessWidget {
     }
     final spent = c.usageSummary.total.today.cost;
     final until = c.activeLimit;
-    final pad = narrow
-        ? const EdgeInsets.fromLTRB(12, 12, 12, 10)
-        : const EdgeInsets.fromLTRB(18, 16, 18, 14);
-    Widget big(String t, Key key, Color color) => FittedBox(
+    final compact = c.compact;
+    final gap = compact ? 8.0 : 12.0;
+    final pad = compact
+        ? const EdgeInsets.all(8)
+        : narrow
+            ? const EdgeInsets.fromLTRB(12, 12, 12, 10)
+            : const EdgeInsets.fromLTRB(18, 16, 18, 14);
+    Widget big(List<double> v, String Function(List<double>) fmt, Key key,
+            Color color) =>
+        FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: Text(t,
-              key: key,
-              style: Rubka.head(34, weight: FontWeight.w700, color: color)
+          child: CountText(
+              textKey: key,
+              values: v,
+              format: fmt,
+              style: Rubka.head(compact ? 26 : 34,
+                      weight: FontWeight.w700, color: color)
                   .copyWith(height: 1.15)),
         );
+    Widget appear(int i, Widget w) => Expanded(
+        child: FadeSlideIn(
+            delay: Duration(milliseconds: 40 * i), child: HoverLift(child: w)));
     Widget small(String t, Color color) => Text(t,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: Rubka.body(size: 12, color: color));
     return Row(
       children: [
-        Expanded(
-          child: InkWell(
+        appear(
+          0,
+          InkWell(
             key: const Key('tile-waits'),
             borderRadius: BorderRadius.circular(22),
             onTap: waiting.isEmpty
@@ -424,7 +466,8 @@ class _Tiles extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   small('Ждут твоего «да»', Colors.white),
-                  big('${waiting.length}', const Key('waits-count'),
+                  big([waiting.length.toDouble()],
+                      (v) => '${v[0].round()}', const Key('waits-count'),
                       Colors.white),
                   small(
                       waiting.isEmpty
@@ -436,25 +479,29 @@ class _Tiles extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: BentoTile(
+        SizedBox(width: gap),
+        appear(
+          1,
+          BentoTile(
             padding: pad,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 small('Сборки сегодня', Rubka.ink2),
-                big('$ok / $today', const Key('builds-count'), Rubka.text),
+                big([ok.toDouble(), today.toDouble()],
+                    (v) => '${v[0].round()} / ${v[1].round()}',
+                    const Key('builds-count'), Rubka.text),
                 small(failed == null ? 'без падений' : '1 упала — «$failed»',
                     Rubka.ink2),
               ],
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: InkWell(
+        SizedBox(width: gap),
+        appear(
+          2,
+          InkWell(
             key: const Key('btn-usage'),
             borderRadius: BorderRadius.circular(22),
             onTap: c.toggleUsage,
@@ -465,7 +512,8 @@ class _Tiles extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   small('Потрачено сегодня', Rubka.ink2),
-                  big(_money(spent), const Key('spent-count'), Rubka.text),
+                  big([spent], (v) => _money(v[0]), const Key('spent-count'),
+                      Rubka.text),
                   small(
                       until == null
                           ? 'лимит в норме'

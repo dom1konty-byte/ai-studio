@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../app/theme.dart';
+import 'motion.dart';
 
 /// Чёрная полоса значков 64 px. [active]: overview / chats / office / setup.
 class StudioRail extends StatelessWidget {
@@ -40,14 +41,15 @@ class StudioRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = Density.compactOf(context);
     return Container(
-      width: 64,
+      width: compact ? 56 : 64,
       decoration: const BoxDecoration(
         color: Rubka.ink,
         borderRadius: BorderRadius.only(
             topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: EdgeInsets.symmetric(vertical: compact ? 10 : 16),
       child: Column(
         children: [
           Container(

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
 import '../ui/home_screen.dart';
+import '../ui/motion.dart';
 import '../ui/setup_screen.dart';
 import 'theme.dart';
 
@@ -23,8 +24,18 @@ class RubkaApp extends StatelessWidget {
             return const Scaffold(
                 body: Center(child: CircularProgressIndicator()));
           }
-          if (controller.showSetup) return SetupScreen(controller: controller);
-          return HomeScreen(controller: controller);
+          return Density(
+            compact: controller.compact,
+            child: controller.showSetup
+                ? FadeSlideIn(
+                    key: const ValueKey('screen-setup'),
+                    dy: 0,
+                    child: SetupScreen(controller: controller))
+                : FadeSlideIn(
+                    key: const ValueKey('screen-home'),
+                    dy: 0,
+                    child: HomeScreen(controller: controller)),
+          );
         },
       ),
     );

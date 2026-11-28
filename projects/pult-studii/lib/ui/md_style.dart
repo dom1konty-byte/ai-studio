@@ -17,3 +17,9 @@ final MarkdownStyleSheet rubkaMdStyle = MarkdownStyleSheet(
       .copyWith(decoration: TextDecoration.underline),
   listBullet: Rubka.body(),
 );
+
+/// То же, но шрифт 14 (компактный режим).
+final MarkdownStyleSheet rubkaMdStyleCompact = rubkaMdStyle.copyWith(
+  p: Rubka.body(size: 14),
+  listBullet: Rubka.body(size: 14),
+);

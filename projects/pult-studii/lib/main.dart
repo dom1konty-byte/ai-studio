@@ -63,6 +63,7 @@ Future<void> main() async {
     storage: FileStorage(p.join(appData, 'pult-studii')),
     downloadsDir: p.join(home, 'Downloads'),
     homeDir: home,
+    offerCompact: true,
     attachments: attachments,
     updater: win ? UpdateService(proc) : null,
     notifier: win ? WindowsNotifier() : null,

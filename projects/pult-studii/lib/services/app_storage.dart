@@ -307,6 +307,22 @@ class StateRepo {
     return _save();
   }
 
+  /// Компактный режим (плотный интерфейс).
+  bool get compact => _data['compact'] == true;
+
+  Future<void> setCompact(bool on) {
+    _data['compact'] = on;
+    return _save();
+  }
+
+  /// Предложение компактного режима уже показывали.
+  bool get compactAsked => _data['compactAsked'] == true;
+
+  Future<void> setCompactAsked() {
+    _data['compactAsked'] = true;
+    return _save();
+  }
+
   /// Сводка «с телефона», которую ещё не отправили директору.
   List<String> pendingSummary(String slug) {
     final v = _proj(slug)['pendingSummary'];

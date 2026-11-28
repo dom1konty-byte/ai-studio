@@ -48,6 +48,7 @@ class AppController extends ChangeNotifier {
     this.voice,
     this.sleepGuard,
     this.nightEvery = const Duration(seconds: 30),
+    this.offerCompact = false,
     SitePreview? sitePreview,
     DateTime Function()? clock,
   })  : state = StateRepo(storage),
@@ -79,6 +80,25 @@ class AppController extends ChangeNotifier {
   /// «Не давать уснуть» для задач на ночь (null — выключено, например в тестах).
   final SleepGuard? sleepGuard;
   final Duration? nightEvery;
+
+  /// Предложить компактный режим при первом запуске (в тестах выключено).
+  final bool offerCompact;
+
+  bool get compact => state.compact;
+
+  Future<void> setCompact(bool on) async {
+    try {
+      await state.setCompact(on);
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Предложение показано — больше не показывать.
+  Future<void> markCompactAsked() async {
+    try {
+      await state.setCompactAsked();
+    } catch (_) {}
+  }
 
   /// Задачи на ночь: сообщения директору по расписанию.
   late final NightTasks night = NightTasks(

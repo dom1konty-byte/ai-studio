@@ -20,6 +20,7 @@ import '../state/chat_controller.dart';
 import 'docs_dialog.dart';
 import 'limit_banner.dart';
 import 'md_style.dart';
+import 'motion.dart';
 import 'night_dialog.dart';
 import 'phone_share_dialog.dart';
 
@@ -47,6 +48,9 @@ class _ChatPanelState extends State<ChatPanel> {
   int _lastLen = -1;
   bool _askingStop = false;
   bool _dragging = false;
+
+  /// Сообщения новее этого момента появляются плавно; история — сразу.
+  final DateTime _born = DateTime.now();
 
   ChatController get chat => widget.chat;
 
@@ -675,9 +679,13 @@ class _ChatPanelState extends State<ChatPanel> {
               actions: [for (final m in group) m.text]),
         ));
       } else {
+        final m = msgs[i];
+        final fresh = !m.time.isBefore(_born) && !motionOff(context);
         items.add(Padding(
           padding: const EdgeInsets.only(bottom: 16),
-          child: _message(msgs[i]),
+          child: fresh
+              ? FadeSlideIn(key: ObjectKey(m), dy: 10, child: _message(m))
+              : _message(m),
         ));
         i++;
       }
@@ -749,7 +757,10 @@ class _ChatPanelState extends State<ChatPanel> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (m.text.isNotEmpty)
-                  Text(m.text, style: Rubka.body(color: Colors.white)),
+                  Text(m.text,
+                      style: Rubka.body(
+                          size: Density.compactOf(context) ? 14 : 15,
+                          color: Colors.white)),
                 if (m.attachments.isNotEmpty) ...[
                   if (m.text.isNotEmpty) const SizedBox(height: 8),
                   _attachmentsView(m.attachments),
@@ -788,7 +799,9 @@ class _ChatPanelState extends State<ChatPanel> {
                   const SizedBox(height: 2),
                   MarkdownBody(
                     data: m.text,
-                    styleSheet: _mdStyle,
+                    styleSheet: Density.compactOf(context)
+                        ? rubkaMdStyleCompact
+                        : _mdStyle,
                     onTapLink: (text, href, title) =>
                         widget.app.openLink(href),
                   ),

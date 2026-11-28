@@ -30,7 +30,7 @@ class _SetupScreenState extends State<SetupScreen> {
     'Вход в GitHub',
     'Вход в Claude',
     'Папка студии',
-    'Уведомления',
+    'Вид и уведомления',
   ];
 
   /// Пятый шаг «Уведомления» живёт только в окне (мастер знает 4 шага).
@@ -338,9 +338,29 @@ class _SetupScreenState extends State<SetupScreen> {
       builder: (context, _) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _h('Уведомления',
-              'О чём Windows будет сообщать, пока AI Studio работает.'),
+          _h('Вид и уведомления',
+              'Плотность интерфейса и то, о чём Windows будет сообщать, '
+              'пока AI Studio работает.'),
           const SizedBox(height: 12),
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+            decoration: BoxDecoration(
+                color: Rubka.bento, borderRadius: BorderRadius.circular(16)),
+            child: Row(
+              children: [
+                Expanded(
+                    child: Text('Компактный режим',
+                        style: Rubka.body(size: 14, weight: FontWeight.w500))),
+                Switch(
+                  key: const Key('switch-compact'),
+                  value: c.compact,
+                  onChanged: c.setCompact,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
           for (final k in NotifyKind.values)
             Container(
               margin: const EdgeInsets.symmetric(vertical: 4),

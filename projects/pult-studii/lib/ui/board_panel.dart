@@ -8,6 +8,7 @@ import '../services/notifications.dart';
 import '../services/rate_limit.dart';
 import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
+import 'motion.dart';
 
 /// Цветная метка проекта: текст, фон и цвет текста.
 typedef ProjectTag = ({String label, Color bg, Color fg});
@@ -72,8 +73,11 @@ class BoardPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = controller;
+    final dense = Density.compactOf(context);
     return BentoTile(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: dense
+          ? const EdgeInsets.fromLTRB(8, 8, 8, 4)
+          : const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -250,7 +254,10 @@ class _ProjectRow extends StatelessWidget {
     final build = c.builds[p.slug] ?? BuildRun.loading;
     final tag = projectTag(p, build);
     final fresh = (c.newCounts[p.slug] ?? 0) > 0;
-    return Material(
+    final dense = Density.compactOf(context);
+    return HoverLift(
+      radius: 10,
+      child: Material(
       color: selected ? Rubka.bubble : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
@@ -261,8 +268,9 @@ class _ProjectRow extends StatelessWidget {
           if (msg != null) c.toast(msg);
         },
         child: Container(
-          constraints: const BoxConstraints(minHeight: 42),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          constraints: BoxConstraints(minHeight: dense ? 36 : 42),
+          padding: EdgeInsets.symmetric(
+              horizontal: 8, vertical: dense ? 2 : 6),
           child: Row(
             children: [
               if (c.isWorking(p.slug)) ...[
@@ -342,6 +350,7 @@ class _ProjectRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }
