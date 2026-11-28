@@ -6,7 +6,6 @@ import 'package:chistka_pk/core/models.dart';
 import 'package:chistka_pk/core/scanner.dart';
 import 'package:chistka_pk/state/app_controller.dart';
 import 'package:chistka_pk/ui/app.dart';
-import 'package:chistka_pk/ui/splash.dart';
 import 'package:chistka_pk/ui/window_fx.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
@@ -29,11 +28,11 @@ AppController _make({
     );
 
 Future<void> _pump(WidgetTester tester, AppController c,
-    {Size size = const Size(1200, 760), bool splash = false}) async {
+    {Size size = const Size(1200, 760)}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(ChistoApp(controller: c, splash: splash));
+  await tester.pumpWidget(ChistoApp(controller: c));
   await tester.pump();
   await tester.pump();
 }
@@ -402,41 +401,6 @@ void main() {
     }
     expect(find.text('Скоро'), findsNothing);
     await tester.pumpWidget(const SizedBox());
-  });
-
-  group('заставка', () {
-    testWidgets('показывается ~1 с и пропускается щелчком', (tester) async {
-      await _pump(tester, _make(tmp: tmp), splash: true);
-      expect(find.byKey(const Key('splash')), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.byKey(const Key('splash')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('splash')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.byKey(const Key('splash')), findsNothing);
-    });
-
-    testWidgets('сама заканчивается за ~1,65 с (минимум 1,4 с)', (tester) async {
-      await _pump(tester, _make(tmp: tmp), splash: true);
-      await tester.pump(const Duration(milliseconds: splashMs - 100));
-      expect(find.byKey(const Key('splash')), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.byKey(const Key('splash')), findsNothing);
-      expect(splashMs, greaterThanOrEqualTo(1400));
-    });
-
-    testWidgets('нет заставки при --tray (splash: false)', (tester) async {
-      await _pump(tester, _make(tmp: tmp));
-      expect(find.byKey(const Key('splash')), findsNothing);
-    });
-
-    testWidgets('нет заставки при «Убрать анимации»', (tester) async {
-      tester.platformDispatcher.accessibilityFeaturesTestValue =
-          const FakeAccessibilityFeatures(disableAnimations: true);
-      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
-      await _pump(tester, _make(tmp: tmp), splash: true);
-      expect(find.byKey(const Key('splash')), findsNothing);
-    });
   });
 
   group('плавное сворачивание (содержимое внутри Flutter)', () {

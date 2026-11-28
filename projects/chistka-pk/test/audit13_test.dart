@@ -6,9 +6,7 @@ import 'package:chistka_pk/core/hidden.dart';
 import 'package:chistka_pk/core/killable.dart';
 import 'package:chistka_pk/core/models.dart';
 import 'package:chistka_pk/core/procs.dart';
-import 'package:chistka_pk/ui/splash.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_ui/material_ui.dart';
 
 int _sleepForever() {
   var x = 0;
@@ -117,27 +115,5 @@ void main() {
   test('батарея: полная ёмкость 0 — «нет данных»', () {
     expect(const BatteryInfo(design: 50000, full: 0).noData, isTrue);
     expect(const BatteryInfo(design: 50000, full: 40000).noData, isFalse);
-  });
-
-  testWidgets('заставка: Stack всегда, ввод под ней заблокирован, потом свободен', (tester) async {
-    var taps = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: Splash(
-        enabled: true,
-        child: Scaffold(body: Center(child: TextButton(onPressed: () => taps++, child: const Text('под')))),
-      ),
-    ));
-    await tester.pump();
-    expect(find.byKey(const Key('splash')), findsOneWidget);
-    expect(find.byType(Stack), findsWidgets);
-    final stateBefore = tester.state(find.byType(Scaffold));
-    await tester.tap(find.text('под'), warnIfMissed: false);
-    expect(taps, 0);
-    await tester.pump(const Duration(milliseconds: splashMs + 300));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('splash')), findsNothing);
-    expect(tester.state(find.byType(Scaffold)), same(stateBefore)); // состояние сохранено
-    await tester.tap(find.text('под'));
-    expect(taps, 1);
   });
 }

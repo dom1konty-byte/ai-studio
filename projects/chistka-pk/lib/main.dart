@@ -45,10 +45,10 @@ Future<void> main(List<String> args) async {
       // Обычный запуск: окно показываем плавно после первого кадра (см. ниже),
       // чтобы не было белой вспышки.
     });
-    // Тяжёлое (стекло, реестр, значок в трее, обновления) — только после заставки.
+    // Тяжёлое (стекло, реестр, значок в трее, обновления) — после первого кадра + 300 мс (см. ChistoApp).
     if (!trayOnly) {
       controller.holdHeavy();
-      // Страховка: если заставка не дошла до конца — стартуем через 4 с.
+      // Страховка: если первый кадр не пришёл — стартуем через 4 с.
       Timer(const Duration(seconds: 4), controller.releaseHeavy);
     }
     unawaited(controller.heavyReleased.then((_) async {
@@ -80,10 +80,10 @@ Future<void> main(List<String> args) async {
     })
       ..start();
   }
-  runApp(ChistoApp(controller: controller, splash: !trayOnly, onboarding: !trayOnly));
+  runApp(ChistoApp(controller: controller, onboarding: !trayOnly));
   if (Platform.isWindows && !trayOnly) {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Первый кадр заставки уже нарисован: показываем окно сразу, непрозрачным,
+      // Первый кадр главного экрана уже нарисован: показываем окно сразу, непрозрачным,
       // без анимации прозрачности (каждый вызов — канал платформы).
       await windowManager.show();
       guard?.markShown();

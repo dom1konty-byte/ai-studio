@@ -6,7 +6,6 @@ import 'package:chistka_pk/platform/glass.dart';
 import 'package:chistka_pk/state/app_controller.dart';
 import 'package:chistka_pk/ui/app.dart';
 import 'package:chistka_pk/ui/pult_tile.dart';
-import 'package:chistka_pk/ui/splash.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -21,11 +20,11 @@ AppController _make({String? dir}) => AppController(
       largeScan: (_, __) async => [],
     );
 
-Future<void> _pump(WidgetTester tester, AppController c, {bool splash = false}) async {
+Future<void> _pump(WidgetTester tester, AppController c) async {
   tester.view.physicalSize = const Size(1200, 760);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(ChistoApp(controller: c, splash: splash));
+  await tester.pumpWidget(ChistoApp(controller: c));
   await tester.pump();
   await tester.pump();
 }
@@ -179,37 +178,6 @@ void main() {
       expect(tints.toSet(), hasLength(tints.length));
       expect(tints.first, tintDisk.bg);
       await tester.pumpWidget(const SizedBox());
-    });
-  });
-
-  group('заставка 2 с', () {
-    testWidgets('длится 2 с и пропускается щелчком', (tester) async {
-      expect(splashMs, 2000);
-      await _pump(tester, _make(), splash: true);
-      await tester.pump(const Duration(milliseconds: 1900));
-      expect(find.byKey(const Key('splash')), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.byKey(const Key('splash')), findsNothing);
-
-      final c2 = _make();
-      await tester.pumpWidget(const SizedBox());
-      await _pump(tester, c2, splash: true);
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(find.byKey(const Key('splash')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(find.byKey(const Key('splash')), findsNothing);
-    });
-
-    testWidgets('логотип виден целиком к 700 мс и держится ≥ 1200 мс', (tester) async {
-      await _pump(tester, _make(), splash: true);
-      await tester.pump(const Duration(milliseconds: 800));
-      final op = tester.widgetList<Opacity>(find.descendant(
-          of: find.byKey(const Key('splash')), matching: find.byType(Opacity)));
-      expect(op.every((o) => o.opacity == 1), isTrue);
-      await tester.pump(const Duration(milliseconds: 1000)); // 1800 мс — ещё виден
-      expect(find.byKey(const Key('splash')), findsOneWidget);
-      await tester.pumpAndSettle();
     });
   });
 }
