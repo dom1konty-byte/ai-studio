@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
-/// Анимация сворачивания/разворачивания внутри Flutter: содержимое окна
-/// уменьшается к правому нижнему углу (1 → 0,85) и затухает. Окно при этом
-/// не двигается (покадровый setBounds убран).
+/// Анимация содержимого окна внутри Flutter (вместе с системным AnimateWindow):
+/// открытие 0,94 → 1 за 320 мс (easeOutCubic), закрытие 1 → 0,92 за 280 мс
+/// (easeInCubic). Окно при этом не двигается.
 class WindowFx {
   _WindowFxHostState? _host;
 
@@ -12,7 +12,7 @@ class WindowFx {
   Future<void> playHide() => _host?._run(hide: true) ?? Future.value();
   Future<void> playShow() => _host?._run(hide: false) ?? Future.value();
 
-  /// До `windowManager.show()`: содержимое «спрятано» (масштаб 0,85, прозрачность 0).
+  /// До показа окна: содержимое в начальном масштабе 0,94.
   void prepareShow() => _host?._prepareShow();
 
   /// После hide / после показа: содержимое в обычном виде.
@@ -24,7 +24,10 @@ class WindowFx {
 
 final windowFx = WindowFx();
 
-const windowFxDuration = Duration(milliseconds: 220);
+const windowFxShowDuration = Duration(milliseconds: 320);
+const windowFxHideDuration = Duration(milliseconds: 280);
+const windowFxShowScale = 0.94;
+const windowFxHideScale = 0.92;
 
 class WindowFxHost extends StatefulWidget {
   const WindowFxHost({super.key, required this.child, this.fx});
@@ -38,8 +41,7 @@ class WindowFxHost extends StatefulWidget {
 enum _Mode { idle, hide, show }
 
 class _WindowFxHostState extends State<WindowFxHost> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctl =
-      AnimationController(vsync: this, duration: windowFxDuration);
+  late final AnimationController _ctl = AnimationController(vsync: this);
   _Mode _mode = _Mode.idle;
   late final WindowFx _fx = widget.fx ?? windowFx;
 
@@ -79,7 +81,11 @@ class _WindowFxHostState extends State<WindowFxHost> with SingleTickerProviderSt
     }
     _mode = hide ? _Mode.hide : _Mode.show;
     try {
-      await _ctl.forward(from: 0).orCancel;
+      await _ctl
+          .animateTo(1,
+              duration: hide ? windowFxHideDuration : windowFxShowDuration,
+              curve: Curves.linear)
+          .orCancel;
     } on TickerCanceled {
       return;
     }
@@ -103,21 +109,24 @@ class _WindowFxHostState extends State<WindowFxHost> with SingleTickerProviderSt
     if (mounted) setState(() {});
   }
 
+  double get _scale {
+    switch (_mode) {
+      case _Mode.idle:
+        return 1;
+      case _Mode.hide:
+        return 1 - (1 - windowFxHideScale) * _k;
+      case _Mode.show:
+        return 1 - (1 - windowFxShowScale) * _k;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final k = _k;
     // Фон под уменьшающимся содержимым — цвет фона приложения.
     final bg = Theme.of(context).scaffoldBackgroundColor;
     return ColoredBox(
       color: bg,
-      child: Opacity(
-        opacity: (1 - k).clamp(0.0, 1.0),
-        child: Transform.scale(
-          scale: 1 - 0.15 * k,
-          alignment: Alignment.bottomRight,
-          child: widget.child,
-        ),
-      ),
+      child: Transform.scale(scale: _scale, child: widget.child),
     );
   }
 }

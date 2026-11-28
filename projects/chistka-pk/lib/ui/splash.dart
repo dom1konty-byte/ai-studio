@@ -2,12 +2,12 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-const splashMs = 1000;
+const splashMs = 1500;
 const _fadeMs = 150;
 const _splashBg = Color(0xFFEEF6F6);
 const _teal = Color(0xFF0F9D9A);
 
-/// Заставка ~1 с: капля падает, расходятся круги, капля становится логотипом.
+/// Заставка ~1,5 с (логотип держится ~0,5 с): капля падает, расходятся круги, капля становится логотипом.
 /// Щелчок — пропуск. [enabled] = false или «Убрать анимации» — заставки нет.
 class Splash extends StatefulWidget {
   const Splash({super.key, required this.enabled, required this.child});
@@ -112,7 +112,7 @@ class _SplashArt extends StatelessWidget {
       // 0–420: капля падает сверху в центр.
       final fall = _seg(ms, 0, 420, Curves.easeInQuad);
       final dropY = -40 + (cy + 40) * fall;
-      // 600–1000: капля становится логотипом (чуть крупнее), подпись проявляется.
+      // 600–1000 (потом логотип держится до конца): капля становится логотипом (чуть крупнее), подпись проявляется.
       final morph = _seg(ms, 600, 1000, Curves.easeOut);
       final dropSize = 28 + 20 * morph;
       return Stack(

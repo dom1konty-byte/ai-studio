@@ -242,29 +242,44 @@ class _InternetScreenState extends State<InternetScreen> {
       tween: Tween(end: f),
       duration: animDuration(context, const Duration(milliseconds: 400)),
       curve: Curves.easeOutCubic,
-      builder: (context, v, _) => SizedBox(
-        height: 220,
-        child: CustomPaint(
-          painter: _GaugePainter(v, _border, cs.onSurface),
-          child: Align(
-            alignment: const Alignment(0, 0.2),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      builder: (context, v, _) => ClipRect(
+        child: SizedBox(
+          height: gaugeHeight,
+          child: LayoutBuilder(builder: (context, box) {
+            final g = GaugeGeometry.of(Size(box.maxWidth, gaugeHeight));
+            return Stack(
               children: [
-                Text(
-                  big > 0 ? _fmt(big) : '0',
-                  key: const Key('speed-big'),
-                  style: const TextStyle(fontSize: 52, fontWeight: FontWeight.w300),
+                Positioned.fill(
+                  child: CustomPaint(
+                    key: const Key('speed-gauge'),
+                    painter: _GaugePainter(v, _border, cs.onSurface),
+                  ),
                 ),
-                Text('Мбит/с', style: TextStyle(color: cs.onSurfaceVariant)),
-                Text(_phaseText,
-                    key: const Key('speed-phase'),
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: _status == _Status.failed ? cs.error : cs.onSurfaceVariant)),
+                // Число и подписи — ниже центра дуги, стрелка до них не доходит.
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: g.center.dy + g.textTopOffset,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        big > 0 ? _fmt(big) : '0',
+                        key: const Key('speed-big'),
+                        style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w300, height: 1.1),
+                      ),
+                      Text('Мбит/с', style: TextStyle(color: cs.onSurfaceVariant)),
+                      Text(_phaseText,
+                          key: const Key('speed-phase'),
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: _status == _Status.failed ? cs.error : cs.onSurfaceVariant)),
+                    ],
+                  ),
+                ),
               ],
-            ),
-          ),
+            );
+          }),
         ),
       ),
     );
@@ -506,7 +521,41 @@ class _ChartPainter extends CustomPainter {
   bool shouldRepaint(_ChartPainter o) => o.values != values || o.color != color;
 }
 
-/// Дуга 240° с градиентом, стрелкой и «бусиной» на конце.
+const gaugeHeight = 240.0;
+const _gaugeStroke = 16.0;
+const _beadRadius = 8.0;
+
+/// Геометрия спидометра: дуга 240° целиком внутри [size] с запасом на толщину
+/// линии, круглые концы и бусину.
+class GaugeGeometry {
+  GaugeGeometry(this.center, this.radius);
+  final Offset center;
+  final double radius;
+
+  /// Запас от края до дуги: полтолщины линии / бусина + обводка.
+  static const margin = _beadRadius + 3;
+
+  factory GaugeGeometry.of(Size size) {
+    // По вертикали дуга занимает от r вверх до 0,5r вниз (концы на 30° ниже центра).
+    final r = math.max(
+        10.0,
+        math.min((size.width / 2 - margin) / 0.866, (size.height - 2 * margin) / 1.5));
+    final top = (size.height - 1.5 * r) / 2;
+    return GaugeGeometry(Offset(size.width / 2, top + r), r);
+  }
+
+  /// Смещение верха текста от центра дуги.
+  double get textTopOffset => -4;
+
+  /// Рамка всего нарисованного (дуга + линия + бусина).
+  Rect get paintedBounds {
+    final e = math.max(_gaugeStroke / 2, _beadRadius + 1);
+    return Rect.fromLTRB(center.dx - radius * 0.866 - e, center.dy - radius - e,
+        center.dx + radius * 0.866 + e, center.dy + radius * 0.5 + e);
+  }
+}
+
+/// Дуга 240° с градиентом, короткой стрелкой и «бусиной» на конце.
 class _GaugePainter extends CustomPainter {
   _GaugePainter(this.fraction, this.track, this.needle);
   final double fraction;
@@ -518,12 +567,13 @@ class _GaugePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final r = math.min(size.width / 2, size.height / 1.4) - 14;
-    final center = Offset(size.width / 2, size.height / 2 + 10);
+    final g = GaugeGeometry.of(size);
+    final r = g.radius;
+    final center = g.center;
     final rect = Rect.fromCircle(center: center, radius: r);
     final p = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 16
+      ..strokeWidth = _gaugeStroke
       ..strokeCap = StrokeCap.round;
     canvas.drawArc(rect, _start, _sweep, false, p..color = track);
     if (fraction > 0) {
@@ -537,19 +587,19 @@ class _GaugePainter extends CustomPainter {
     }
     final a = _start + _sweep * fraction;
     final dir = Offset(math.cos(a), math.sin(a));
+    // Короткая стрелка (0,62–0,86 радиуса) на той же линии, что и бусина.
     canvas.drawLine(
-        center,
-        center + dir * (r - 30),
+        center + dir * (r * 0.62),
+        center + dir * (r * 0.86),
         Paint()
           ..color = needle
           ..strokeWidth = 3
           ..strokeCap = StrokeCap.round);
-    canvas.drawCircle(center, 6, Paint()..color = needle);
     final bead = center + dir * r;
-    canvas.drawCircle(bead, 8, Paint()..color = Colors.white);
+    canvas.drawCircle(bead, _beadRadius, Paint()..color = Colors.white);
     canvas.drawCircle(
         bead,
-        8,
+        _beadRadius,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2

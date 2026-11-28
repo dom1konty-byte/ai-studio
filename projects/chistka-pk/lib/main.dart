@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'platform/single_instance.dart';
 import 'platform/tray_service.dart';
+import 'platform/window_animator.dart';
 import 'platform/windows_platform.dart';
 import 'state/app_controller.dart';
 import 'ui/app.dart';
@@ -37,10 +38,9 @@ Future<void> main(List<String> args) async {
     await windowManager.waitUntilReadyToShow(options, () async {
       if (trayOnly) {
         await windowManager.hide();
-      } else {
-        await windowManager.show();
-        await windowManager.focus();
       }
+      // Обычный запуск: окно показываем плавно после первого кадра (см. ниже),
+      // чтобы не было белой вспышки.
     });
     await controller.init();
     try {
@@ -59,4 +59,16 @@ Future<void> main(List<String> args) async {
         delay: trayOnly ? const Duration(minutes: 1) : const Duration(seconds: 3)));
   }
   runApp(ChistoApp(controller: controller, splash: !trayOnly));
+  if (Platform.isWindows && !trayOnly) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Даём движку нарисовать первый кадр заставки в скрытом окне.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      try {
+        await WindowAnimator().show();
+      } catch (_) {
+        await windowManager.show();
+      }
+      await windowManager.focus();
+    });
+  }
 }

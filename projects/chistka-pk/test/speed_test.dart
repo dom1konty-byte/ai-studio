@@ -6,6 +6,7 @@ import 'package:chistka_pk/core/catalog.dart';
 import 'package:chistka_pk/core/speed.dart';
 import 'package:chistka_pk/state/app_controller.dart';
 import 'package:chistka_pk/ui/app.dart';
+import 'package:chistka_pk/ui/internet_screen.dart' show GaugeGeometry;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -238,4 +239,54 @@ void main() {
     expect(find.descendant(of: find.byKey(const Key('speed-history')), matching: find.byType(Row)).evaluate().length, 3);
     expect(find.text('Очистить историю'), findsOneWidget);
   });
+
+  for (final size in const [Size(1000, 680), Size(1280, 800)]) {
+    testWidgets('спидометр внутри карточки и не закрывает подзаголовок ${size.width.toInt()}×${size.height.toInt()}',
+        (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final dir = Directory.systemTemp.createTempSync('speedgauge');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}${Platform.pathSeparator}speed.json');
+      file.writeAsStringSync(jsonEncode([_r(5).toJson()]));
+      final c = AppController(
+        platform: FakePlatform(),
+        env: const Env({}),
+        dataDir: dir.path,
+        speedNetwork: FakeNet(),
+        downloadsScan: (_) async => [],
+        largeScan: (_, __) async => [],
+      );
+      c.speedStore = SpeedHistoryStore(file);
+      await tester.pumpWidget(ChistoApp(controller: c));
+      await tester.pump();
+      await tester.tap(find.text('Интернет'));
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 3; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      final sub = tester.getRect(find.textContaining('Замер '));
+      final gaugeBox = tester.getRect(find.byKey(const Key('speed-gauge')));
+      expect(sub.bottom, lessThanOrEqualTo(gaugeBox.top));
+      // всё нарисованное лежит внутри области рисования
+      final g = GaugeGeometry.of(gaugeBox.size);
+      final b = g.paintedBounds;
+      expect(b.left, greaterThanOrEqualTo(0));
+      expect(b.top, greaterThanOrEqualTo(0));
+      expect(b.right, lessThanOrEqualTo(gaugeBox.width));
+      expect(b.bottom, lessThanOrEqualTo(gaugeBox.height));
+      // число ниже верхушки стрелки: стрелка (от 0,62 радиуса) не заходит в текст
+      final big = tester.getRect(find.byKey(const Key('speed-big')));
+      final center = gaugeBox.topLeft + g.center;
+      for (final a in [150.0, 180.0, 270.0, 330.0, 390.0]) {
+        final rad = a * 3.141592653589793 / 180;
+        final inner = center + Offset.fromDirection(rad, g.radius * 0.62);
+        expect(big.inflate(2).contains(inner), isFalse, reason: 'угол $a');
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 }

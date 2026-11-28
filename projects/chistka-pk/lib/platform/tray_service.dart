@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:path/path.dart' as p;
 import 'package:tray_manager/tray_manager.dart';
@@ -7,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../state/app_controller.dart';
 import '../ui/window_fx.dart';
+import 'window_animator.dart';
 
 /// Значок у часов, меню и «крестик сворачивает в трей».
 class TrayService with TrayListener, WindowListener {
@@ -33,42 +33,25 @@ class TrayService with TrayListener, WindowListener {
     await windowManager.setPreventClose(true);
   }
 
+  final animator = WindowAnimator();
   bool _animating = false;
   bool _hiding = false;
   bool _pendingShow = false;
 
-  bool get _noAnimations => PlatformDispatcher.instance.accessibilityFeatures.disableAnimations;
-
-  /// Окно прозрачным сделать нельзя (рамка и заголовок системные), поэтому после
-  /// анимации содержимого окно гаснет за несколько шагов прозрачности.
-  Future<void> _fadeWindow({required bool toHidden}) async {
-    const steps = [0.75, 0.5, 0.25];
-    for (final o in toHidden ? steps : steps.reversed) {
-      await windowManager.setOpacity(o);
-      await Future<void>.delayed(const Duration(milliseconds: 25));
-    }
-  }
-
-  /// Плавно спрятать окно: содержимое уменьшается к правому нижнему углу и
-  /// затухает (220 мс, внутри Flutter), затем 3 шага прозрачности и hide.
+  /// Плавно спрятать окно: AnimateWindow (AW_BLEND, 280 мс) + масштаб содержимого.
   Future<void> hideAnimated() async {
     if (_animating) return;
     _animating = true; // синхронно, до первого await
     _hiding = true;
     controller.pauseComputerPolling();
     try {
-      if (!_noAnimations) {
-        try {
-          await windowFx.playHide();
-          await _fadeWindow(toHidden: true);
-        } catch (_) {}
-      }
-      await windowManager.hide();
+      await animator.hide();
+    } catch (_) {
+      try {
+        await windowManager.hide();
+      } catch (_) {}
     } finally {
       windowFx.reset();
-      try {
-        await windowManager.setOpacity(1);
-      } catch (_) {}
       _animating = false;
       _hiding = false;
     }
@@ -86,22 +69,12 @@ class TrayService with TrayListener, WindowListener {
     }
     _animating = true; // синхронно, до первого await
     try {
-      if (!_noAnimations) {
-        try {
-          if (!await windowManager.isVisible()) {
-            windowFx.prepareShow();
-            await windowManager.setOpacity(0.25);
-            await windowManager.show();
-            await _fadeWindow(toHidden: false);
-            await windowManager.setOpacity(1);
-            await windowFx.playShow();
-          }
-        } catch (_) {
-          try {
-            await windowManager.setOpacity(1);
-          } catch (_) {}
-        }
-      }
+      if (await windowManager.isMinimized()) await windowManager.restore();
+      if (!await windowManager.isVisible()) await animator.show();
+    } catch (_) {
+      try {
+        await windowManager.setOpacity(1);
+      } catch (_) {}
     } finally {
       windowFx.reset();
       _animating = false;

@@ -416,12 +416,13 @@ void main() {
       expect(find.byKey(const Key('splash')), findsNothing);
     });
 
-    testWidgets('сама заканчивается за ~1,15 с', (tester) async {
+    testWidgets('сама заканчивается за ~1,65 с (минимум 1,4 с)', (tester) async {
       await _pump(tester, _make(tmp: tmp), splash: true);
       await tester.pump(const Duration(milliseconds: splashMs - 100));
       expect(find.byKey(const Key('splash')), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.byKey(const Key('splash')), findsNothing);
+      expect(splashMs, greaterThanOrEqualTo(1400));
     });
 
     testWidgets('нет заставки при --tray (splash: false)', (tester) async {
@@ -439,21 +440,21 @@ void main() {
   });
 
   group('плавное сворачивание (содержимое внутри Flutter)', () {
-    testWidgets('содержимое уменьшается к правому нижнему углу и затухает за 220 мс', (tester) async {
+    testWidgets('содержимое плавно уменьшается 1 → 0,92 за 280 мс', (tester) async {
       await _pump(tester, _make(tmp: tmp));
       expect(windowFx.amount, 0);
       var done = false;
       windowFx.playHide().then((_) => done = true);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 110));
+      await tester.pump(const Duration(milliseconds: 140));
       expect(windowFx.amount, inExclusiveRange(0, 1));
       expect(done, isFalse);
-      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pump(const Duration(milliseconds: 150));
       expect(done, isTrue);
       expect(windowFx.amount, 1);
-      final op = tester.widget<Opacity>(find.descendant(
-          of: find.byType(WindowFxHost), matching: find.byType(Opacity)).first);
-      expect(op.opacity, 0);
+      final sc = tester.widget<Transform>(find.descendant(
+          of: find.byType(WindowFxHost), matching: find.byType(Transform)).first);
+      expect(sc.transform.storage[0], closeTo(0.92, 0.001));
       windowFx.reset();
       await tester.pump();
       expect(windowFx.amount, 0);
@@ -467,7 +468,7 @@ void main() {
       var done = false;
       windowFx.playShow().then((_) => done = true);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 230));
+      await tester.pump(const Duration(milliseconds: 330));
       expect(done, isTrue);
       expect(windowFx.amount, 0);
     });
