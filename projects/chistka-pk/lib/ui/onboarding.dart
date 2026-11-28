@@ -24,7 +24,7 @@ const onboardSteps = [
   OnboardStep('Здесь очистка', 'Быстрая очистка и поиск лишнего на диске.', Section.main),
   OnboardStep('Компьютер', 'Диск, процессы, батарея.', Section.computer),
   OnboardStep('Программы', 'Удаление программ полностью, вместе с остатками.', Section.programs),
-  OnboardStep('Значок у часов', 'Двойной щелчок по значку у часов открывает мини-окно.', null),
+  OnboardStep('Значок у часов', 'Щелчок по значку у часов — мини-окно.', null),
 ];
 
 /// Подсказки первого запуска («coach marks»): затемнение с «окошком» вокруг
@@ -95,7 +95,6 @@ class _OnboardingState extends State<Onboarding> {
             c.settingsLoaded &&
             !c.settings.onboardingDone &&
             !c.miniMode;
-        if (!show) _step = 0;
         // Всегда Stack: так основное дерево не пересоздаётся при показе подсказок.
         return Stack(
           children: [

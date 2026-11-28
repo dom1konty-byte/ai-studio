@@ -30,6 +30,10 @@ Color navPanelColor(BuildContext context, {required bool glass}) {
 /// Живой фон левой панели: медленные волны (период 10 с, прозрачность 5 %).
 /// Стоит под RepaintBoundary; кадры не идут, если окно скрыто/свёрнуто
 /// или в Windows включено «Убрать анимации».
+/// Окно сейчас на экране. Ставят TrayService и WindowAnimator: при скрытии волны
+/// останавливаются явно, не дожидаясь AppLifecycleState.
+final ValueNotifier<bool> windowShown = ValueNotifier<bool>(true);
+
 class WavesBackground extends StatefulWidget {
   const WavesBackground({super.key});
 
@@ -50,6 +54,7 @@ class _WavesBackgroundState extends State<WavesBackground>
     WidgetsBinding.instance.addObserver(this);
     final st = WidgetsBinding.instance.lifecycleState;
     _visible = st == null || st == AppLifecycleState.resumed || st == AppLifecycleState.inactive;
+    windowShown.addListener(_sync);
   }
 
   @override
@@ -66,7 +71,7 @@ class _WavesBackgroundState extends State<WavesBackground>
   }
 
   void _sync() {
-    final run = _visible && !_off;
+    final run = _visible && windowShown.value && !_off;
     if (run && !_ctl.isAnimating) {
       _ctl.repeat();
     } else if (!run && _ctl.isAnimating) {
@@ -77,6 +82,7 @@ class _WavesBackgroundState extends State<WavesBackground>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    windowShown.removeListener(_sync);
     _ctl.dispose();
     super.dispose();
   }

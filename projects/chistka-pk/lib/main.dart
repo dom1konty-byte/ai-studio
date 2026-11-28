@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'platform/glass.dart';
+import 'platform/show_guard.dart';
 import 'platform/single_instance.dart';
 import 'platform/tray_service.dart';
 import 'platform/window_animator.dart';
@@ -61,6 +62,16 @@ Future<void> main(List<String> args) async {
     unawaited(controller.autoCheckUpdates(
         delay: trayOnly ? const Duration(minutes: 1) : const Duration(seconds: 3)));
   }
+  ShowGuard? guard;
+  if (Platform.isWindows && !trayOnly) {
+    guard = ShowGuard(onTimeout: () async {
+      try {
+        await windowManager.show();
+        await windowManager.setOpacity(1);
+      } catch (_) {}
+    })
+      ..start();
+  }
   runApp(ChistoApp(controller: controller, splash: !trayOnly, onboarding: !trayOnly));
   if (Platform.isWindows && !trayOnly) {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -71,6 +82,7 @@ Future<void> main(List<String> args) async {
       } catch (_) {
         await windowManager.show();
       }
+      guard?.markShown();
       await windowManager.focus();
     });
   }

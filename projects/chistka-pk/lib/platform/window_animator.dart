@@ -1,44 +1,40 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/animation.dart' show Curves;
 import 'package:flutter/scheduler.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../ui/glass.dart' show windowShown;
 import '../ui/window_fx.dart';
-import 'glass.dart';
-import 'window_blend.dart';
 
-const windowBlendMs = 280;
+/// Прозрачность окна в момент [t] (0..1) анимации: показ — easeOutCubic, 0 → 1;
+/// скрытие — easeInCubic, 1 → 0.
+double fadeOpacity(double t, {required bool show}) {
+  final k = t.clamp(0.0, 1.0);
+  return show ? Curves.easeOutCubic.transform(k) : 1 - Curves.easeInCubic.transform(k);
+}
 
-/// Плавный показ и скрытие окна: AnimateWindow (AW_BLEND) + масштаб содержимого.
-/// Нет AnimateWindow — запасной вариант: прозрачность окна кадрами (Ticker).
+/// Плавный показ и скрытие окна: прозрачность окна по кадрам (Ticker)
+/// + масштаб содержимого. AnimateWindow не используется (чёрный контент Flutter).
 class WindowAnimator {
-  WindowAnimator({WindowBlend? blend}) : _blend = blend ?? Win32WindowBlend();
-  final WindowBlend _blend;
-
   bool get noAnimations => PlatformDispatcher.instance.accessibilityFeatures.disableAnimations;
 
   /// Показать окно плавно (окно сейчас скрыто).
   Future<void> show() async {
+    windowShown.value = true;
     if (noAnimations) {
       await windowManager.show();
       return;
     }
     windowFx.prepareShow();
     final fx = windowFx.playShow();
-    var ok = false;
     try {
-      // С эффектом «Стекло» AnimateWindow даёт чёрную вспышку — идём запасным путём (прозрачность окна).
-      if (!glassAvailable.value) ok = await _blend.show(windowBlendMs);
-    } catch (_) {}
-    if (!ok) {
-      try {
-        await windowManager.setOpacity(0);
-        await windowManager.show();
-        await _fade(0, 1);
-      } finally {
-        await _opaque();
-      }
+      await windowManager.setOpacity(0);
+      await windowManager.show();
+      await _fade(show: true, ms: windowFxShowDuration.inMilliseconds);
+    } finally {
+      await _opaque();
     }
     await fx;
   }
@@ -47,18 +43,13 @@ class WindowAnimator {
   Future<void> hide() async {
     if (!noAnimations) {
       final fx = windowFx.playHide();
-      var ok = false;
       try {
-        if (!glassAvailable.value) ok = await _blend.hide(windowBlendMs);
+        await _fade(show: false, ms: windowFxHideDuration.inMilliseconds);
       } catch (_) {}
-      if (!ok) {
-        try {
-          await _fade(1, 0);
-        } catch (_) {}
-      }
       await fx;
     }
     await windowManager.hide();
+    windowShown.value = false;
     windowFx.reset();
     await _opaque();
   }
@@ -69,18 +60,13 @@ class WindowAnimator {
     } catch (_) {}
   }
 
-  /// Прозрачность окна по кадрам, [windowBlendMs] мс.
-  Future<void> _fade(double from, double to) {
+  /// Прозрачность окна по кадрам: один вызов setOpacity за кадр, без ожидания.
+  Future<void> _fade({required bool show, required int ms}) {
     final done = Completer<void>();
-    var busy = false;
     late final Ticker ticker;
     ticker = Ticker((elapsed) {
-      final t = (elapsed.inMicroseconds / (windowBlendMs * 1000)).clamp(0.0, 1.0);
-      final o = from + (to - from) * t;
-      if (!busy) {
-        busy = true;
-        windowManager.setOpacity(o).whenComplete(() => busy = false);
-      }
+      final t = (elapsed.inMicroseconds / (ms * 1000)).clamp(0.0, 1.0);
+      unawaited(windowManager.setOpacity(fadeOpacity(t, show: show)).catchError((Object _) {}));
       if (t >= 1 && !done.isCompleted) {
         ticker.stop();
         done.complete();

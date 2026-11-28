@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../core/browsers.dart';
+import '../core/update.dart' show appVersion;
 import '../core/procs.dart';
 import '../core/programs.dart';
 import '../core/whitelist.dart';
@@ -476,9 +477,9 @@ class WindowsPlatform implements PlatformApi {
   Future<void> playDropSound(String assetPath, String dataDir) async {
     if (!Platform.isWindows) return;
     try {
-      final target = File('$dataDir\\drop.wav');
-      if (!target.existsSync()) {
-        final src = File(assetPath);
+      final target = File('$dataDir\\drop-$appVersion.wav');
+      final src = File(assetPath);
+      if (!target.existsSync() || (src.existsSync() && target.lengthSync() != src.lengthSync())) {
         if (!src.existsSync()) return;
         await target.parent.create(recursive: true);
         await src.copy(target.path);

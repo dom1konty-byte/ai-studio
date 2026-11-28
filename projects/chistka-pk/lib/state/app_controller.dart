@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 
 import 'package:flutter/foundation.dart' show ChangeNotifier, visibleForTesting;
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:path/path.dart' as p;
 
 import 'computer_service.dart';
@@ -1554,6 +1555,9 @@ class AppController extends ChangeNotifier {
   Future<void> restartOnboarding() async {
     section = Section.main;
     layer = Layer.none;
+    notifyListeners();
+    // Ждём кадр: главный экран должен успеть показаться под подсказками.
+    await WidgetsBinding.instance.endOfFrame;
     await _saveSettings(settings.copyWith(onboardingDone: false));
   }
 
