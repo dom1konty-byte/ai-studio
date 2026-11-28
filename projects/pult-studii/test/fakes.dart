@@ -55,6 +55,18 @@ class FakeProc implements ProcessRunner {
   /// Каждый вызов run: «exe arg1 arg2».
   final calls = <String>[];
 
+  /// cwd всех run().
+  final cwds = <String?>[];
+
+  /// [exe, ...args] всех run() (без склейки в строку).
+  final runs = <List<String>>[];
+
+  /// cwd всех start().
+  final startCwds = <String?>[];
+
+  /// Есть ли Windows Terminal (wt).
+  bool wtAvailable = true;
+
   /// Аргументы всех start().
   final started = <List<String>>[];
   final stdins = <String?>[];
@@ -72,6 +84,8 @@ class FakeProc implements ProcessRunner {
   Future<ProcResult> run(String exe, List<String> args,
       {String? cwd, Duration timeout = const Duration(seconds: 120)}) async {
     calls.add([exe, ...args].join(' '));
+    cwds.add(cwd);
+    runs.add([exe, ...args]);
     return handler(exe, args, cwd);
   }
 
@@ -80,6 +94,7 @@ class FakeProc implements ProcessRunner {
       {String? cwd, String? stdin, Map<String, String>? environment}) async {
     await startGate?.future;
     started.add([exe, ...args]);
+    startCwds.add(cwd);
     stdins.add(stdin);
     environments.add(environment);
     return queue.isNotEmpty ? queue.removeAt(0) : FakeRunning(const []);
@@ -87,7 +102,7 @@ class FakeProc implements ProcessRunner {
 
   @override
   Future<String?> resolveExecutable(String name) async =>
-      name == 'claude' ? exeName : name;
+      name == 'claude' ? exeName : (name == 'wt' && !wtAvailable ? null : name);
 
   @override
   Future<void> refreshEnvironment() async {}

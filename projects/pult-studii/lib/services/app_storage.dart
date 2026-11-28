@@ -136,7 +136,7 @@ class FileStorage implements AppStorage {
   }
 }
 
-/// state.json: {repoPath, projects: {slug: {sessionId, lastSeenSha, allowedTools}}}
+/// state.json: {repoPath, projects: {slug: {sessionId, worktree, lastSeenSha, allowedTools, rcOpen}}}
 class StateRepo {
   StateRepo(this._storage);
 
@@ -183,6 +183,28 @@ class StateRepo {
       m['sessionId'] = id;
     } else {
       return Future.value();
+    }
+    return _save();
+  }
+
+  /// Папка, в которой начат разговор (сессия Claude привязана к папке).
+  String? worktree(String slug) => _proj(slug)['worktree'] as String?;
+
+  Future<void> setWorktree(String slug, String path) {
+    _proj(slug)['worktree'] = path;
+    return _save();
+  }
+
+  /// Открыт терминал Remote Control — чат закрыт, пока Дамир не вернётся.
+  bool rcOpen(String slug) => _proj(slug)['rcOpen'] == true;
+
+  Future<void> setRcOpen(String slug, bool open) {
+    final m = _proj(slug);
+    if (open) {
+      m['rcOpen'] = true;
+    } else {
+      if (!m.containsKey('rcOpen')) return Future.value();
+      m.remove('rcOpen');
     }
     return _save();
   }

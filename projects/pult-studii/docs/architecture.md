@@ -28,6 +28,8 @@ claude -p "<текст>" --resume <session_id> --output-format stream-json --ver
 - Внутри worktree директор работает по `CLAUDE.md` как обычно: `git fetch`, `pull`, `merge origin/main`, push в `<slug>`. Команда `git checkout <slug>` там ничего не меняет и не мешает. Папки `.claude/` и `scripts/` у каждой ветки свои, после `merge origin/main` они свежие.
 - Перед каждым сообщением программа делает `git -C <wt> fetch` и `pull --ff-only`, если в папке нет незакоммиченных правок. Если правки есть, пишет директору первой строкой: «в папке есть незакоммиченные правки».
 
+**Как сделано в шаге 2.** `GitService.prepareProject` (fetch → worktree → pull) и `prepareOffice`. Мьютекс git — на папку: ключ основной папки общий для fetch, `worktree add/prune` и переключения веток, у worktree свой ключ. `state.json` хранит `worktree` (папка разговора): при смене папки `sessionId` сбрасывается. Стартовый текст добавляется к первому сообщению, если `sessionId` нет. Remote Control: `RemoteControl.build` (фиксированные аргументы, `isSafeLaunchPath`, `isValidSessionId`), флаг `rcOpen` хранится в `state.json`. «Новый проект»: `AppController.startNewProject`.
+
 ## 4. Доска
 - Ветки и этапы берём через локальный git, без API (так же работает `scripts/status.py`, переносим его логику в Dart): `git fetch --prune`, затем `git show origin/<ветка>:projects/README.md`. Из строки проекта берём этап.
 - Сборки — через gh, он уже вошёл в GitHub, поэтому токен в программе не хранится: `gh api repos/{o}/{r}/actions/workflows/<slug>.yml/runs?branch=<slug>&per_page=1`. Если есть успешный run → `gh api .../actions/runs/<id>/artifacts`. Кнопка «Скачать» → `gh run download <id> -n <artifact> -D %USERPROFILE%\Downloads\<slug>` и открыть папку. Артефакты хранятся 30 дней, потом кнопка неактивна.

@@ -91,7 +91,7 @@ void main() {
     await tester.tap(find.text('Да'));
     await _settle(tester);
 
-    expect(proc.started.single, contains('да'));
+    expect(proc.started.single, contains(endsWith('Задача: да')));
     expect(find.textContaining('Принято', findRichText: true), findsWidgets);
     expect(find.text('да'), findsOneWidget); // сообщение Дамира в ленте
   });

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../models/models.dart';
 import '../services/app_storage.dart';
@@ -8,6 +9,7 @@ import '../services/claude_runner.dart';
 import '../services/gh_service.dart';
 import '../services/git_service.dart';
 import '../services/process_runner.dart';
+import '../services/remote_control.dart';
 import '../services/tools_check.dart';
 import 'chat_controller.dart';
 
@@ -18,7 +20,11 @@ class AppController extends ChangeNotifier {
     required this.downloadsDir,
     this.homeDir = '',
     this.autoRefresh = const Duration(minutes: 3),
+    RemoteControl? remote,
+    Future<void> Function(String text)? copyText,
   })  : state = StateRepo(storage),
+        rc = remote ?? RemoteControl(proc),
+        _copy = copyText ?? _systemCopy,
         git = GitService(proc, storage),
         gh = GhService(proc),
         tools = ToolsCheck(proc, storage),
@@ -39,6 +45,11 @@ class AppController extends ChangeNotifier {
   final GhService gh;
   final ToolsCheck tools;
   final ClaudeRunner claude;
+  final RemoteControl rc;
+  final Future<void> Function(String text) _copy;
+
+  static Future<void> _systemCopy(String text) =>
+      Clipboard.setData(ClipboardData(text: text));
 
   final _toasts = StreamController<String>.broadcast();
   Stream<String> get toasts => _toasts.stream;
@@ -55,18 +66,41 @@ class AppController extends ChangeNotifier {
   bool boardLoading = false;
   String? boardError;
   final Map<String, BuildRun> builds = {};
-  final Set<String> newMarks = {};
+
+  /// Сколько коммитов с телефона на карточке (ключ — slug или officeKey).
+  final Map<String, int> newCounts = {};
   final Set<String> downloading = {};
 
-  ChatController? chat;
+  /// Все открытые чаты (проекты и офис) работают параллельно.
+  final Map<String, ChatController> chats = {};
+  final Map<String, int> _busySig = {};
+  String? activeKey;
+
+  static const officeProject = Project(
+      name: 'Офис студии',
+      slug: officeKey,
+      type: 'Офис',
+      stage: 'ветка $officeKey',
+      branch: officeKey,
+      branchExists: true);
+
+  ChatController? get chat => activeKey == null ? null : chats[activeKey];
+
   Project? get selected {
-    final c = chat;
-    if (c == null) return null;
+    final k = activeKey;
+    if (k == null) return null;
+    if (k == officeKey) return officeProject;
     for (final p in projects) {
-      if (p.slug == c.slug) return p;
+      if (p.slug == k) return p;
     }
     return null;
   }
+
+  /// Директор этого чата сейчас работает.
+  bool isWorking(String key) => chats[key]?.working ?? false;
+
+  bool get anyBusy =>
+      chats.values.any((c) => c.working || c.preparing);
 
   bool _disposed = false;
 
@@ -79,7 +113,9 @@ class AppController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _boardTimer?.cancel();
-    chat?.dispose();
+    for (final c in chats.values) {
+      c.dispose();
+    }
     _toasts.close();
     super.dispose();
   }
@@ -107,15 +143,17 @@ class AppController extends ChangeNotifier {
   }
 
   void _autoRefreshBoard() {
-    final c = chat;
-    if (_disposed ||
-        boardLoading ||
-        git.repoPath.isEmpty ||
-        !setupOk ||
-        (c != null && (c.working || c.preparing))) {
-      return;
-    }
+    if (_disposed || boardLoading || git.repoPath.isEmpty || !setupOk) return;
     unawaited(refreshBoard());
+  }
+
+  /// Закрытие окна: остановить все процессы директоров.
+  Future<void> stopAll() async {
+    await Future.wait(chats.values.map((c) async {
+      try {
+        await c.stop();
+      } catch (_) {}
+    }));
   }
 
   Future<void> recheck() async {
@@ -145,18 +183,21 @@ class AppController extends ChangeNotifier {
 
   Future<void> setRepoPath(String path) async {
     final p = path.trim();
-    final cur = chat;
-    if (cur != null && (cur.working || cur.preparing)) {
-      toast('Дождись ответа директора, потом меняй папку.');
+    if (anyBusy) {
+      toast('Дождись ответа директоров, потом меняй папку.');
       return;
     }
     await state.setRepoPath(p);
     await git.setRepoPath(p);
-    chat?.dispose();
-    chat = null;
+    for (final c in chats.values) {
+      c.dispose();
+    }
+    chats.clear();
+    _busySig.clear();
+    activeKey = null;
     projects = const [];
     builds.clear();
-    newMarks.clear();
+    newCounts.clear();
     await recheck();
   }
 
@@ -172,18 +213,25 @@ class AppController extends ChangeNotifier {
     } catch (e) {
       boardError = '$e';
     }
-    newMarks.clear();
-    for (final p in projects) {
-      final seen = state.lastSeenSha(p.slug);
-      if (seen != null && p.branchExists) {
-        try {
-          if (await git.newCommitCount(p.slug, seen) > 0) newMarks.add(p.slug);
-        } catch (_) {}
-      }
+    newCounts.clear();
+    final keys = [
+      officeKey,
+      for (final p in projects)
+        if (p.branchExists) p.slug,
+    ];
+    for (final k in keys) {
+      final seen = state.lastSeenSha(k);
+      if (seen == null || k == activeKey) continue;
+      try {
+        final n = await git.newCommitCount(k, seen);
+        if (n > 0) newCounts[k] = n;
+      } catch (_) {}
     }
-    try {
-      await refreshStageGuarded(chat?.slug);
-    } catch (_) {}
+    for (final k in chats.keys.toList()) {
+      try {
+        await refreshStageGuarded(k);
+      } catch (_) {}
+    }
     boardLoading = false;
     notifyListeners();
     unawaited(_loadBuilds());
@@ -207,49 +255,144 @@ class AppController extends ChangeNotifier {
     }));
   }
 
-  /// Этап из рабочей папки — только если там сейчас ветка этого проекта
-  /// и чат не закрыт (иначе README в папке чужой).
+  /// Этап из папки проекта — только если там ветка этого проекта
+  /// и чат открыт (иначе README в папке чужой).
   Future<void> refreshStageGuarded(String? slug) async {
-    final c = chat;
-    if (slug == null || c == null || c.slug != slug) return;
-    if (c.blockedReason != null || c.preparing) return;
-    if (await git.currentBranch() != slug) return;
+    final c = slug == null ? null : chats[slug];
+    if (slug == null || slug == officeKey || c == null) return;
+    if (c.blockedReason != null || c.preparing || c.workDir.isEmpty) return;
+    if (await git.currentBranch(dir: c.workDir) != slug) return;
     await refreshStage(slug);
   }
 
-  /// Этап проекта из рабочей папки (свежее, чем origin).
+  /// Этап проекта из его папки (свежее, чем origin).
   Future<void> refreshStage(String slug) async {
-    final stage = await git.localStage(slug);
+    final dir = chats[slug]?.workDir;
+    final stage = await git.localStage(slug, dir: dir);
     if (stage == null) return;
     projects = [for (final p in projects) p.slug == slug ? p.withStage(stage) : p];
     notifyListeners();
   }
 
-  /// Открыть чат проекта. Вернёт текст отказа, если открыть нельзя.
-  String? select(Project p) {
-    final cur = chat;
-    if (cur != null && cur.slug == p.slug) return null;
-    if (cur != null && (cur.working || cur.preparing)) {
-      return cur.working
-          ? 'Директор ещё работает в «${selected?.name ?? cur.slug}». '
-              'Дождись ответа и потом переключайся.'
-          : 'Ветка «${selected?.name ?? cur.slug}» ещё переключается. '
-              'Подожди пару секунд.';
-    }
-    cur?.dispose();
+  ChatController _create(String key, String title) {
     final c = ChatController(
-      slug: p.slug,
+      slug: key,
+      title: title,
+      rc: rc,
       git: git,
       claude: claude,
       state: state,
       storage: storage,
-      onTurnDone: () => refreshStageGuarded(p.slug),
+      onTurnDone: () => refreshStageGuarded(key),
     );
-    chat = c;
-    newMarks.remove(p.slug);
-    notifyListeners();
+    int sig() =>
+        (c.working ? 1 : 0) + (c.preparing ? 2 : 0) + (c.rcOpen ? 4 : 0);
+    _busySig[key] = sig();
+    c.addListener(() {
+      final n = sig();
+      if (_busySig[key] != n) {
+        _busySig[key] = n;
+        notifyListeners();
+      }
+    });
+    chats[key] = c;
     unawaited(c.open());
+    return c;
+  }
+
+  /// Открыть чат проекта (своя папка, свой процесс). Переключение
+  /// никогда не блокируется: другие чаты продолжают работать.
+  /// Вернёт текст отказа или null.
+  String? select(Project p) {
+    if (!isSafeSlug(p.slug)) return 'Недопустимое имя проекта.';
+    if (chats[p.slug] == null) _create(p.slug, p.name);
+    activeKey = p.slug;
+    newCounts.remove(p.slug);
+    notifyListeners();
     return null;
+  }
+
+  /// Вкладка «Офис»: основная папка, ветка ai-office.
+  void openOffice() {
+    if (chats[officeKey] == null) _create(officeKey, officeProject.name);
+    activeKey = officeKey;
+    newCounts.remove(officeKey);
+    notifyListeners();
+  }
+
+  /// «Продолжить на телефоне»: копирует стартовый текст. Есть незапушенное —
+  /// вернёт описание (UI предложит «Закоммить и запушь всё»), текст не копируется,
+  /// пока не вызвано с [force].
+  Future<PendingWork?> continueOnPhone(ChatController c,
+      {bool force = false}) async {
+    if (c.preparing || c.blockedReason != null || c.workDir.isEmpty) {
+      toast('Чат ещё не открыт — подожди пару секунд.');
+      return null;
+    }
+    if (c.working) {
+      toast('Дождись ответа директора и повтори.');
+      return null;
+    }
+    if (!force) {
+      final w = await c.pendingWork();
+      if (!w.clean) return w;
+    }
+    await _copy(c.phoneText);
+    toast('Скопировано — вставь в новую сессию Claude Code на телефоне');
+    return null;
+  }
+
+  bool _creatingProject = false;
+
+  /// «+ Новый проект»: просим Офис создать проект, потом открываем его чат.
+  /// Вернёт текст ошибки или null.
+  Future<String?> startNewProject(
+      {required String name, required String type, required String idea}) async {
+    final n = name.replaceAll(RegExp(r'[\x00-\x1f\x7f]'), ' ').trim();
+    final i = idea.trim();
+    final label = newProjectTypes[type];
+    if (n.isEmpty || n.length > 80) return 'Имя проекта: от 1 до 80 символов.';
+    if (label == null) return 'Выбери тип проекта.';
+    if (i.isEmpty) return 'Напиши идею проекта.';
+    if (git.repoPath.isEmpty) return 'Папка ai-studio не выбрана.';
+    if (_creatingProject) return 'Другой проект ещё создаётся.';
+    _creatingProject = true;
+    try {
+      openOffice();
+      final office = chats[officeKey]!;
+      await office.ready();
+      if (!office.canSend) {
+        return office.blockedReason != null
+            ? 'Офис не открыт: ${office.blockedReason}'
+            : 'Офис сейчас занят. Дождись ответа и повтори.';
+      }
+      final known = projects.map((p) => p.slug).toSet();
+      await office.send('Новый проект: $n, тип: $type ($label). Идея: $i. '
+          'Создай через /new-project, сессию проекта не запускай — '
+          'Рубка откроет его сама.');
+      while (boardLoading) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      await refreshBoard();
+      final fresh = projects.where((p) => !known.contains(p.slug)).toList();
+      if (fresh.isEmpty) {
+        toast('Офис пока не создал проект — посмотри ответ в «Офисе».');
+        return null;
+      }
+      final proj = fresh.firstWhere(
+          (p) => p.name.toLowerCase() == n.toLowerCase(),
+          orElse: () => fresh.first);
+      final c = chats[proj.slug] ?? _create(proj.slug, proj.name);
+      activeKey = proj.slug;
+      newCounts.remove(proj.slug);
+      notifyListeners();
+      await c.ready();
+      await c.send(
+          'Начни с этапа Бриф: задай мне 1–2 вопроса. О проекте: $i');
+      return null;
+    } finally {
+      _creatingProject = false;
+    }
   }
 
   Future<void> download(Project p) async {

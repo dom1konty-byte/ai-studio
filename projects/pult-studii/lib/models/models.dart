@@ -2,6 +2,31 @@ import 'dart:convert';
 
 import 'safety.dart';
 
+/// Ключ чата и ветка «Офиса» студии.
+const officeKey = 'ai-office';
+
+/// Первое сообщение нового разговора с офисом.
+String officeStartText(String task) =>
+    'Офис студии. Ветка: $officeKey. Задача: $task';
+
+/// Первое сообщение нового разговора с директором проекта.
+String projectStartText(String name, String slug, String task) =>
+    'Проект: $name ($slug). Ветка: $slug. Задача: $task';
+
+/// Задача для «Продолжить на телефоне».
+const continueTask = 'продолжи с текущего этапа';
+
+/// Что отправить директору, если в папке есть незапушенное.
+const commitAndPushText = 'Закоммить и запушь всё';
+
+/// Типы нового проекта: значения `scripts/new_project.py` → подпись.
+const newProjectTypes = {
+  'app': 'Android-приложение',
+  'site': 'Сайт',
+  'bot': 'Telegram-бот',
+  'windows': 'Программа Windows',
+};
+
 enum MsgKind { user, director, action, error, denial, note }
 
 /// Отказ в разрешении из `result.permission_denials`.

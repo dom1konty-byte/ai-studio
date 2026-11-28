@@ -128,7 +128,7 @@ void main() {
         return const ProcResult(0);
       });
       final git = GitService(proc, MemoryStorage())..repoPath = 'C:\\ai';
-      final r = await git.prepare('alpha', lastSeenSha: 'abc1234');
+      final r = await git.prepareMain('alpha', lastSeenSha: 'abc1234');
       expect(r.blockedReason, isNull);
       expect(r.newCommits, ['aaa1111 2026-11-28 С телефона']);
       expect(r.originSha, 'fff0000');
@@ -145,7 +145,7 @@ void main() {
         return const ProcResult(0, 'x\n');
       });
       final git = GitService(proc, MemoryStorage())..repoPath = 'C:\\ai';
-      final r = await git.prepare('alpha');
+      final r = await git.prepareMain('alpha');
       expect(r.blockedReason, isNotNull);
       expect(proc.calls.where((c) => c.contains('checkout')), isEmpty);
     });
@@ -153,7 +153,7 @@ void main() {
     test('prepare: небезопасное имя ветки отклоняется', () async {
       final git = GitService(FakeProc((a, b, c) => const ProcResult(0)), MemoryStorage())
         ..repoPath = 'C:\\ai';
-      expect((await git.prepare('--upload-pack=x')).blockedReason, isNotNull);
+      expect((await git.prepareMain('--upload-pack=x')).blockedReason, isNotNull);
     });
 
     test('loadProjects: этап берётся из ветки', () async {

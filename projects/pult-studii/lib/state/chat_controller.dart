@@ -1,18 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/models.dart';
 import '../services/app_storage.dart';
 import '../services/claude_runner.dart';
 import '../services/git_service.dart';
 import '../services/process_runner.dart';
+import '../services/remote_control.dart';
 import '../services/stream_json.dart';
 
-/// Чат одного проекта.
+/// Чат одного проекта или «Офиса» (slug == officeKey).
 class ChatController extends ChangeNotifier {
   ChatController({
     required this.slug,
+    required this.title,
+    this.rc,
     required this.git,
     required this.claude,
     required this.state,
@@ -21,6 +25,10 @@ class ChatController extends ChangeNotifier {
   });
 
   final String slug;
+
+  /// Имя для стартового текста («Проект: <Имя> …»).
+  final String title;
+  final RemoteControl? rc;
   final GitService git;
   final ClaudeRunner claude;
   final StateRepo state;
@@ -38,6 +46,23 @@ class ChatController extends ChangeNotifier {
   List<String> summary = [];
   bool summaryDismissed = false;
   bool working = false;
+
+  /// Папка, в которой работает директор (основная или worktree проекта).
+  String workDir = '';
+
+  /// Открыт терминал Remote Control: чат закрыт.
+  bool rcOpen = false;
+
+  /// Недописанный текст в поле ввода (переживает переключение чатов).
+  String draft = '';
+
+  bool get office => slug == officeKey;
+
+  /// Стартовый текст сессии: первое сообщение нового разговора.
+  String startText(String task) =>
+      office ? officeStartText(task) : projectStartText(title, slug, task);
+
+  String get phoneText => startText(continueTask);
 
   /// «Да»/«Поправить» уже нажаты — панель скрыта до следующей проверки.
   bool approvalHidden = false;
@@ -58,7 +83,8 @@ class ChatController extends ChangeNotifier {
   String? _lastPrompt;
   bool _disposed = false;
 
-  bool get canSend => !preparing && blockedReason == null && !working;
+  bool get canSend =>
+      !preparing && blockedReason == null && !working && !rcOpen;
 
   @override
   void notifyListeners() {
@@ -72,9 +98,17 @@ class ChatController extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Загрузить историю и подготовить ветку.
-  Future<void> open() async {
+  Future<void>? _opening;
+
+  /// Завершится, когда чат открыт (история и папка готовы).
+  Future<void> ready() => _opening ?? Future<void>.value();
+
+  /// Загрузить историю и подготовить папку.
+  Future<void> open() => _opening = _open();
+
+  Future<void> _open() async {
     preparing = true;
+    rcOpen = state.rcOpen(slug);
     blockedReason = null;
     warning = null;
     notifyListeners();
@@ -91,12 +125,16 @@ class ChatController extends ChangeNotifier {
         notifyListeners();
       }
       final seen = state.lastSeenSha(slug);
-      final res = await git.prepare(slug, lastSeenSha: seen);
+      final res = office
+          ? await git.prepareOffice(lastSeenSha: seen)
+          : await git.prepareProject(slug, lastSeenSha: seen);
+      workDir = res.dir ?? workDir;
       blockedReason = res.blockedReason;
       if (res.warning != null) {
         warning = warning == null ? res.warning : '$warning\n${res.warning}';
       }
       if (res.blockedReason == null) {
+        await _checkFolder();
         // Непрочитанная сводка переживает переключение и перезапуск.
         var commits = res.newCommits;
         if (commits.isEmpty) commits = state.pendingSummary(slug);
@@ -118,6 +156,18 @@ class ChatController extends ChangeNotifier {
     }
     preparing = false;
     notifyListeners();
+  }
+
+  /// Сессия Claude привязана к папке: папка сменилась — разговор новый.
+  Future<void> _checkFolder() async {
+    final prev = state.worktree(slug);
+    if (prev != null && p.equals(prev, workDir)) return;
+    final had = state.sessionId(slug) != null;
+    await _safe(() => state.setWorktree(slug, workDir));
+    if (had) {
+      await _safe(() => state.setSessionId(slug, null));
+      _add(ChatMessage(MsgKind.note, 'Новая папка — начинаю новый разговор'));
+    }
   }
 
   /// Запись состояния не должна ронять чат.
@@ -148,10 +198,15 @@ class ChatController extends ChangeNotifier {
     if (t.isEmpty || !canSend) return;
     if (approval) approvalHidden = true;
     _add(ChatMessage(MsgKind.user, t));
-    var prompt = t;
+    // Первое сообщение нового разговора — со стартовым текстом.
+    var prompt = state.sessionId(slug) == null ? startText(t) : t;
     final prefix = _pendingPrefix;
     // Префикс снимается только после успешного хода (см. _run).
-    if (prefix != null) prompt = '$prefix\n\n$t';
+    if (prefix != null) {
+      prompt = state.sessionId(slug) == null
+          ? '$prompt\n\n$prefix'
+          : '$prefix\n\n$prompt';
+    }
     _lastPrompt = prompt;
     await _run(prompt, onceTools);
   }
@@ -193,6 +248,46 @@ class ChatController extends ChangeNotifier {
     _pendingPrefix = null;
     _add(ChatMessage(MsgKind.note, 'Новый чат'));
   }
+
+  /// Почему нельзя открыть терминал для телефона (null — можно).
+  String? get rcDisabledReason {
+    if (state.sessionId(slug) == null) {
+      return 'Сначала напиши директору — пока нет разговора';
+    }
+    if (rcOpen) return 'Терминал уже открыт';
+    if (working || preparing) return 'Дождись конца хода директора';
+    if (blockedReason != null || workDir.isEmpty) return 'Чат закрыт';
+    return null;
+  }
+
+  /// Открыть терминал с Remote Control. Вернёт текст ошибки или null.
+  Future<String?> openRemoteControl() async {
+    final why = rcDisabledReason;
+    if (why != null) return why;
+    final r = rc;
+    if (r == null) return 'Remote Control недоступен';
+    final err = await r.open(dir: workDir, sessionId: state.sessionId(slug));
+    if (err != null) return err;
+    rcOpen = true;
+    await _safe(() => state.setRcOpen(slug, true));
+    _add(ChatMessage(MsgKind.note,
+        'Открыт терминал для телефона — чат в Рубке закрыт, пока он открыт'));
+    return null;
+  }
+
+  /// «Я закрыл терминал — вернуться»: разблокировать чат и подтянуть изменения.
+  Future<void> returnFromRc() async {
+    if (!rcOpen) return;
+    rcOpen = false;
+    await _safe(() => state.setRcOpen(slug, false));
+    _add(ChatMessage(MsgKind.note, 'Терминал закрыт — чат снова работает'));
+    await open();
+  }
+
+  /// Незакоммиченное и неотправленное в папке (для «Продолжить на телефоне»).
+  Future<PendingWork> pendingWork() => workDir.isEmpty
+      ? Future.value(const PendingWork(unknown: true))
+      : git.pendingWork(workDir, slug);
 
   /// Остановить ход: убить процесс и дождаться конца хода (до 3 с).
   Future<void> stop() async {
@@ -236,7 +331,7 @@ class ChatController extends ChangeNotifier {
         summaryDismissed = true;
         try {
           await state.setPendingSummary(slug, const []);
-          final head = await git.headSha();
+          final head = await git.headSha(dir: workDir);
           if (head != null) await state.setLastSeenSha(slug, head);
         } catch (_) {}
       }
@@ -261,7 +356,7 @@ class ChatController extends ChangeNotifier {
     try {
       final turn = await claude.start(
         prompt: prompt,
-        cwd: git.repoPath,
+        cwd: workDir,
         sessionId: state.sessionId(slug),
         extraTools: [...state.allowedTools(slug), ...onceTools],
       );

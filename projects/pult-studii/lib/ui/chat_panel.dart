@@ -36,7 +36,14 @@ class _ChatPanelState extends State<ChatPanel> {
   ChatController get chat => widget.chat;
 
   @override
+  void initState() {
+    super.initState();
+    _input.text = widget.chat.draft;
+  }
+
+  @override
   void dispose() {
+    widget.chat.draft = _input.text;
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -107,6 +114,64 @@ class _ChatPanelState extends State<ChatPanel> {
     if (ok == true) await chat.newChat();
   }
 
+  /// «Продолжить на телефоне»: копируем стартовый текст; есть незапушенное —
+  /// сначала предупреждаем.
+  Future<void> _continuePhone() async {
+    final w = await widget.app.continueOnPhone(chat);
+    if (w == null || !mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Не всё отправлено на GitHub'),
+        content: Text('В папке проекта: ${w.describe()}.\n'
+            'С телефона этого не будет видно. '
+            'Отправить директору «$commitAndPushText»?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: const Text('Отмена')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, 'copy'),
+              child: const Text('Скопировать всё равно')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'push'),
+              child: const Text('Отправить директору')),
+        ],
+      ),
+    );
+    if (choice == 'push') {
+      await chat.send(commitAndPushText);
+    } else if (choice == 'copy') {
+      await widget.app.continueOnPhone(chat, force: true);
+    }
+  }
+
+  /// «Открыть для телефона»: терминал с Remote Control, чат блокируется.
+  Future<void> _openRemote() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Открыть для телефона?'),
+        content: const Text(
+            'Чат в Рубке будет заблокирован, пока открыт терминал. '
+            'Откроется окно терминала с этим же разговором; его видно '
+            'в приложении Claude на телефоне. Закончишь — закрой терминал '
+            'и нажми «Я закрыл терминал — вернуться».'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Открыть терминал')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final err = await chat.openRemoteControl();
+    if (err != null) widget.app.toast(err);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -165,33 +230,87 @@ class _ChatPanelState extends State<ChatPanel> {
   }
 
   Widget _header() {
-    return SizedBox(
-      height: 56,
+    final rcWhy = chat.rcDisabledReason;
+    final phoneReady = !chat.preparing && chat.blockedReason == null;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 56),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         child: Row(
           children: [
             Expanded(
+              flex: 2,
               child: Text('${widget.project.name} · ${widget.project.stage}',
                   overflow: TextOverflow.ellipsis, style: Rubka.head(16)),
             ),
-            OutlinedButton(
-              onPressed: chat.working ? null : _confirmNewChat,
-              child: const Text('Новый чат'),
-            ),
-            if (chat.working) ...[
-              const SizedBox(width: 8),
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: Rubka.error),
-                onPressed: chat.stop,
-                child: const Text('Стоп'),
+            Flexible(
+              flex: 3,
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  OutlinedButton(
+                    onPressed: chat.working ? null : _confirmNewChat,
+                    child: const Text('Новый чат'),
+                  ),
+                  Tooltip(
+                    message:
+                        'Скопировать стартовый текст для новой сессии на телефоне',
+                    child: OutlinedButton(
+                      onPressed: phoneReady ? _continuePhone : null,
+                      child: const Text('Продолжить на телефоне'),
+                    ),
+                  ),
+                  Tooltip(
+                    message: rcWhy ??
+                        'Открыть этот разговор в терминале (Remote Control) — '
+                            'его будет видно в приложении Claude',
+                    child: OutlinedButton(
+                      onPressed: rcWhy == null ? _openRemote : null,
+                      child: const Text('Открыть для телефона'),
+                    ),
+                  ),
+                  if (chat.working)
+                    FilledButton(
+                      style:
+                          FilledButton.styleFrom(backgroundColor: Rubka.error),
+                      onPressed: chat.stop,
+                      child: const Text('Стоп'),
+                    ),
+                ],
               ),
-            ],
+            ),
           ],
         ),
       ),
     );
   }
+
+  Widget _rcBanner() => Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+            color: Rubka.summaryBg, borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Чат закрыт: открыт терминал для телефона',
+                style: Rubka.head(16, color: Rubka.onAmber)),
+            const SizedBox(height: 8),
+            Text(
+                'Пока терминал открыт, писать директору можно только там или '
+                'с телефона. Если в приложении Claude чата не видно — '
+                'в терминале введи /remote-control',
+                style: Rubka.body(size: 14, color: Rubka.onAmber)),
+            const SizedBox(height: 8),
+            FilledButton(
+                onPressed: chat.returnFromRc,
+                child: const Text('Я закрыл терминал — вернуться')),
+          ],
+        ),
+      );
 
   Widget _body() {
     if (chat.preparing && chat.messages.isEmpty) {
@@ -204,6 +323,7 @@ class _ChatPanelState extends State<ChatPanel> {
         _notice('Обновляю ветку проекта…', Rubka.panel, Rubka.text2),
       if (chat.blockedReason != null)
         _blocked(chat.blockedReason!),
+      if (chat.rcOpen) _rcBanner(),
       if (chat.warning != null)
         _notice(chat.warning!, Rubka.summaryBg, Rubka.onAmber),
       if (hasSummary) _summaryCard(),
@@ -469,7 +589,8 @@ class _ChatPanelState extends State<ChatPanel> {
   );
 
   Widget _inputRow() {
-    final enabled = !chat.preparing && chat.blockedReason == null;
+    final enabled =
+        !chat.preparing && chat.blockedReason == null && !chat.rcOpen;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [

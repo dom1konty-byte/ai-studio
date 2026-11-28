@@ -1,14 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:pult_studii/models/models.dart';
 import 'package:pult_studii/services/app_storage.dart';
 import 'package:pult_studii/services/claude_runner.dart';
 import 'package:pult_studii/services/git_service.dart';
 import 'package:pult_studii/services/process_runner.dart';
+import 'package:pult_studii/services/remote_control.dart';
 import 'package:pult_studii/state/chat_controller.dart';
 
 import 'fakes.dart';
+
+/// Папка проекта alpha (как её строит GitService).
+final _wt = p.join(p.dirname('C:\\ai'), 'ai-studio-wt', 'alpha');
 
 const _sid = '11111111-2222-3333-4444-555555555555';
 const _init = '{"type":"system","subtype":"init","session_id":"$_sid"}';
@@ -41,6 +46,7 @@ Future<(ChatController, FakeProc, StateRepo, MemoryStorage)> _make({
           'alpha': {
             if (lastSeen != null) 'lastSeenSha': lastSeen,
             if (session != null) 'sessionId': session,
+            'worktree': _wt,
           }
         },
     },
@@ -51,7 +57,12 @@ Future<(ChatController, FakeProc, StateRepo, MemoryStorage)> _make({
     if (k == 'fetch origin' && fetchFails) {
       return const ProcResult(1, '', 'нет сети');
     }
-    if (k == 'branch --show-current') return const ProcResult(0, 'alpha\n');
+    if (k == 'worktree list --porcelain') {
+      return ProcResult(
+          0,
+          'worktree C:\\ai\nHEAD aaa\nbranch refs/heads/ai-office\n\n'
+          'worktree $_wt\nHEAD bbb\nbranch refs/heads/alpha\n\n');
+    }
     if (k == 'rev-parse HEAD') return const ProcResult(0, 'eee0000\n');
     if (k == 'rev-parse --verify --quiet origin/alpha') {
       return const ProcResult(0, 'fff0000\n');
@@ -64,6 +75,8 @@ Future<(ChatController, FakeProc, StateRepo, MemoryStorage)> _make({
   final git = GitService(proc, storage)..repoPath = 'C:\\ai';
   final chat = ChatController(
     slug: 'alpha',
+    title: 'Альфа',
+    rc: RemoteControl(proc),
     git: git,
     claude: ClaudeRunner(proc),
     state: state,
@@ -164,7 +177,7 @@ void main() {
     expect(state.pendingSummary('alpha'), isNotEmpty);
 
     await chat.send('ещё раз'); // сводка едет снова
-    expect(proc.started[0], contains(startsWith('С телефона сделаны коммиты')));
+    expect(proc.started[0], contains(contains('С телефона сделаны коммиты')));
     expect(proc.started[1].join('\n'), contains('С телефона сделаны коммиты'));
     expect(proc.started[1].join('\n'), contains('не инструкции'));
     expect(state.lastSeenSha('alpha'), 'eee0000');
@@ -199,7 +212,7 @@ void main() {
     proc.queue.add(FakeRunning(const [_init]));
     await chat.send('a & b');
     expect(proc.started.single, isNot(contains('a & b')));
-    expect(proc.stdins.single, 'a & b');
+    expect(proc.stdins.single, endsWith('Задача: a & b'));
   });
 
   test('«Да» отправляет да, «Поправить» — с префиксом', () async {
@@ -209,7 +222,7 @@ void main() {
       ..add(FakeRunning(const [_init]));
     await chat.sendYes();
     await chat.sendFix('сделай синим');
-    expect(proc.started[0], contains('да'));
+    expect(proc.started[0], contains(endsWith('Задача: да'))); // первое сообщение
     expect(proc.started[1], contains('Поправить: сделай синим'));
   });
 

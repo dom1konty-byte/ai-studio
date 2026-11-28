@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pult_studii/models/models.dart';
 import 'package:pult_studii/services/process_runner.dart';
@@ -22,17 +20,11 @@ const _beta = Project(
     branch: 'beta',
     branchExists: true);
 
-Future<void> _untilReady(AppController app) async {
-  while (app.chat!.preparing) {
-    await Future<void>.delayed(Duration.zero);
-  }
-}
-
 void main() {
-  test('переключение проекта блокируется при preparing и working', () async {
+  test('переключение проектов не блокируется, чаты живут рядом', () async {
     final proc = FakeProc((exe, args, cwd) {
       final k = args.join(' ');
-      if (k == 'branch --show-current') return const ProcResult(0, 'alpha\n');
+      if (k == 'branch --show-current') return const ProcResult(0, 'ai-office\n');
       if (k.startsWith('rev-parse --verify --quiet origin/')) {
         return const ProcResult(0, 'fff0000\n');
       }
@@ -48,22 +40,15 @@ void main() {
 
     expect(app.select(_alpha), isNull);
     expect(app.chat!.preparing, isTrue);
-    expect(app.select(_beta), isNotNull); // идёт переключение ветки
-    expect(app.chat!.slug, 'alpha');
-
-    await _untilReady(app);
-    final run = FakeRunning(const [], stream: StreamController<String>());
-    proc.queue.add(run);
-    final f = app.chat!.send('долго');
-    await Future<void>.delayed(Duration.zero);
-    expect(app.chat!.working, isTrue);
-    expect(app.select(_beta), isNotNull); // директор работает
-    await app.chat!.stop();
-    await f;
-
-    expect(app.select(_beta), isNull);
+    expect(app.select(_beta), isNull); // даже пока ветка готовится
     expect(app.chat!.slug, 'beta');
-    await _untilReady(app);
+    expect(app.chats.keys, containsAll(['alpha', 'beta']));
+
+    await app.chats['alpha']!.ready();
+    await app.chats['beta']!.ready();
+    expect(app.select(_alpha), isNull);
+    expect(app.chat!.slug, 'alpha');
+    expect(app.chats, hasLength(2)); // второй чат не создаётся заново
     app.dispose();
   });
 }

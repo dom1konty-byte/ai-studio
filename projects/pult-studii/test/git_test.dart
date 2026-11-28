@@ -40,7 +40,7 @@ import 'fakes.dart';
 void main() {
   test('нет локальной ветки: создаём из origin (switch -c)', () async {
     final (git, proc) = _make();
-    final r = await git.prepare('alpha');
+    final r = await git.prepareMain('alpha');
     expect(r.blockedReason, isNull);
     expect(proc.calls, contains('git switch -c alpha origin/alpha'));
     expect(proc.calls, contains('git pull --ff-only'));
@@ -51,20 +51,20 @@ void main() {
 
   test('локальная ветка есть: обычный switch', () async {
     final (git, proc) = _make(local: true);
-    await git.prepare('alpha');
+    await git.prepareMain('alpha');
     expect(proc.calls, contains('git switch alpha'));
   });
 
   test('есть правки в чужой ветке: не переключаем', () async {
     final (git, proc) = _make(dirty: true);
-    final r = await git.prepare('alpha');
+    final r = await git.prepareMain('alpha');
     expect(r.blockedReason, contains('незакоммиченные'));
     expect(proc.calls.where((c) => c.contains('switch')), isEmpty);
   });
 
   test('правки в нужной ветке: pull пропущен, помечено', () async {
     final (git, proc) = _make(branch: 'alpha', dirty: true);
-    final r = await git.prepare('alpha');
+    final r = await git.prepareMain('alpha');
     expect(r.blockedReason, isNull);
     expect(r.pulled, isFalse);
     expect(proc.calls, isNot(contains('git pull --ff-only')));
@@ -72,7 +72,7 @@ void main() {
 
   test('fetch упал: чат работает, fetchOk=false', () async {
     final (git, _) = _make(branch: 'alpha', fetchOk: false);
-    final r = await git.prepare('alpha', lastSeenSha: 'abc1234');
+    final r = await git.prepareMain('alpha', lastSeenSha: 'abc1234');
     expect(r.blockedReason, isNull);
     expect(r.fetchOk, isFalse);
     expect(r.warning, contains('Не удалось обновить'));
@@ -80,14 +80,14 @@ void main() {
 
   test('pull упал: pulled=false и предупреждение', () async {
     final (git, _) = _make(branch: 'alpha', pullOk: false);
-    final r = await git.prepare('alpha');
+    final r = await git.prepareMain('alpha');
     expect(r.pulled, isFalse);
     expect(r.warning, contains('ещё не подтянуты'));
   });
 
   test('небезопасное имя ветки отклоняется', () async {
     final (git, proc) = _make();
-    final r = await git.prepare('--upload-pack=x');
+    final r = await git.prepareMain('--upload-pack=x');
     expect(r.blockedReason, isNotNull);
     expect(proc.calls, isEmpty);
   });
@@ -95,7 +95,7 @@ void main() {
   test('git-операции идут по очереди', () async {
     final (git, proc) = _make(branch: 'alpha');
     final order = <String>[];
-    final a = git.prepare('alpha').then((_) => order.add('prepare'));
+    final a = git.prepareMain('alpha').then((_) => order.add('prepare'));
     final b = git.setRepoPath('C:\\other').then((_) => order.add('path'));
     await Future.wait([a, b]);
     expect(order, ['prepare', 'path']);

@@ -19,7 +19,7 @@ class _CloseHandler with WindowListener {
   @override
   void onWindowClose() async {
     try {
-      await controller.chat?.stop();
+      await controller.stopAll();
     } catch (_) {}
     await windowManager.destroy();
   }

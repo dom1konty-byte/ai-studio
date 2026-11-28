@@ -102,3 +102,13 @@ final _secretRe = RegExp(
 
 /// Заменяет токены и ключи на `***` (перед записью истории на диск).
 String maskSecrets(String text) => text.replaceAll(_secretRe, '***');
+
+final _launchBad = RegExp(r'[&|<>^%"' "'" r'`!;,=\r\n\x00]');
+
+/// Путь можно передать `cmd /c start …` без кавычек и подстановок.
+bool isSafeLaunchPath(String path) =>
+    path.isNotEmpty &&
+    path == path.trim() &&
+    path.length <= 400 &&
+    !path.startsWith('-') &&
+    !_launchBad.hasMatch(path);

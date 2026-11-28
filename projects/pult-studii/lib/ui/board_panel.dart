@@ -36,6 +36,15 @@ class BoardPanel extends StatelessWidget {
               ],
             ),
           ),
+          _OfficeTile(controller: c),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: OutlinedButton.icon(
+              onPressed: () => _newProject(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Новый проект'),
+            ),
+          ),
           if (c.boardError != null)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 8),
@@ -65,6 +74,15 @@ class BoardPanel extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _newProject(BuildContext context) async {
+    final res = await showDialog<_NewProject>(
+        context: context, builder: (_) => const _NewProjectDialog());
+    if (res == null) return;
+    final err = await controller.startNewProject(
+        name: res.name, type: res.type, idea: res.idea);
+    if (err != null) controller.toast(err);
   }
 
   Widget _list(AppController c) {
@@ -116,7 +134,7 @@ class _ProjectCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = controller;
     final p = project;
-    final selected = c.chat?.slug == p.slug;
+    final selected = c.activeKey == p.slug;
     final waits = stageWaitsYes(p.stage);
     final build = c.builds[p.slug] ?? BuildRun.loading;
     return Material(
@@ -146,17 +164,8 @@ class _ProjectCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: Rubka.head(16)),
                   ),
-                  if (c.newMarks.contains(p.slug))
-                    Tooltip(
-                      message: 'Есть коммиты с телефона',
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        margin: const EdgeInsets.only(left: 6),
-                        decoration: const BoxDecoration(
-                            color: Rubka.primary, shape: BoxShape.circle),
-                      ),
-                    ),
+                  if ((c.newCounts[p.slug] ?? 0) > 0)
+                    _NewBadge(c.newCounts[p.slug]!),
                   if (waits)
                     Container(
                       margin: const EdgeInsets.only(left: 6),
@@ -174,6 +183,7 @@ class _ProjectCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Rubka.body(size: 13, color: Rubka.text2)),
+              if (c.isWorking(p.slug)) const _WorkingLine(),
               Row(
                 children: [
                   Expanded(child: _BuildLine(build)),
@@ -258,6 +268,177 @@ class _BuildLine extends StatelessWidget {
           child: Text('сборка: $word',
               overflow: TextOverflow.ellipsis,
               style: Rubka.body(size: 13, color: color)),
+        ),
+      ],
+    );
+  }
+}
+
+/// Значок «новое N»: коммиты с телефона.
+class _NewBadge extends StatelessWidget {
+  const _NewBadge(this.count);
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: 'Есть коммиты с телефона',
+        child: Container(
+          margin: const EdgeInsets.only(left: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+              color: Rubka.primary, borderRadius: BorderRadius.circular(8)),
+          child: Text('новое $count',
+              style: Rubka.head(12, color: Colors.white)),
+        ),
+      );
+}
+
+/// «Директор работает» на карточке.
+class _WorkingLine extends StatelessWidget {
+  const _WorkingLine();
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Rubka.working)),
+          const SizedBox(width: 6),
+          Text('директор работает',
+              style: Rubka.body(size: 13, color: Rubka.working)),
+        ],
+      );
+}
+
+/// Вкладка «Офис» над списком проектов.
+class _OfficeTile extends StatelessWidget {
+  const _OfficeTile({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    final selected = c.activeKey == officeKey;
+    final n = c.newCounts[officeKey] ?? 0;
+    return Material(
+      color: selected ? Rubka.selected : Colors.transparent,
+      child: InkWell(
+        onTap: c.openOffice,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 56),
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                  color: selected ? Rubka.primary : Colors.transparent,
+                  width: 4),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.apartment, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Офис', style: Rubka.head(16))),
+                  if (n > 0) _NewBadge(n),
+                ],
+              ),
+              if (c.isWorking(officeKey)) const _WorkingLine(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NewProject {
+  const _NewProject(this.name, this.type, this.idea);
+
+  final String name;
+  final String type;
+  final String idea;
+}
+
+class _NewProjectDialog extends StatefulWidget {
+  const _NewProjectDialog();
+
+  @override
+  State<_NewProjectDialog> createState() => _NewProjectDialogState();
+}
+
+class _NewProjectDialogState extends State<_NewProjectDialog> {
+  final _name = TextEditingController();
+  final _idea = TextEditingController();
+  String _type = newProjectTypes.keys.first;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _idea.dispose();
+    super.dispose();
+  }
+
+  bool get _valid =>
+      _name.text.trim().isNotEmpty && _idea.text.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Новый проект'),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _name,
+              autofocus: true,
+              maxLength: 80,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(labelText: 'Имя проекта'),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _type,
+              decoration: const InputDecoration(labelText: 'Тип'),
+              items: [
+                for (final e in newProjectTypes.entries)
+                  DropdownMenuItem(value: e.key, child: Text(e.value)),
+              ],
+              onChanged: (v) => setState(() => _type = v ?? _type),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _idea,
+              minLines: 3,
+              maxLines: 8,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                  labelText: 'Идея', alignLabelWithHint: true),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Отмена')),
+        FilledButton(
+          onPressed: _valid
+              ? () => Navigator.pop(
+                  context,
+                  _NewProject(_name.text.trim(), _type, _idea.text.trim()))
+              : null,
+          child: const Text('Создать'),
         ),
       ],
     );
