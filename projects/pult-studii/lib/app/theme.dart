@@ -30,6 +30,24 @@ class Rubka {
   static const dotGray = Color(0xFFC9C4BA);
   static const askBg = Color(0xFFFFFBF0);
 
+  // Версия 1.2 «Плитки».
+  static const bento = Color(0xFFEEF0F2);
+  static const ink = Color(0xFF111315);
+  static const ink2 = Color(0xFF6B7177);
+  static const bubble = Color(0xFFF4F5F6);
+  static const orange1 = Color(0xFFFF7A30);
+  static const orange2 = Color(0xFFFF4D2E);
+  static const send = Color(0xFFFF5A2E);
+  static const yes = Color(0xFF16A34A);
+  static const tagWaitBg = Color(0xFFFFE7D6);
+  static const tagWaitFg = Color(0xFFC2410C);
+  static const tagOkBg = Color(0xFFE7F8D0);
+  static const tagOkFg = Color(0xFF3F6212);
+  static const tagBadBg = Color(0xFFFDE2E2);
+  static const tagBadFg = Color(0xFFB91C1C);
+  static const tagIdleBg = Color(0xFFEEF0F2);
+  static const tagIdleFg = Color(0xFF555555);
+
   static const headFont = 'Bahnschrift';
   static const bodyFont = 'Segoe UI Variable';
   static const monoFont = 'Cascadia Mono';

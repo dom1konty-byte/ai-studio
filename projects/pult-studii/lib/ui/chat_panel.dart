@@ -258,7 +258,7 @@ class _ChatPanelState extends State<ChatPanel> {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 728),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 22),
+                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
                     child: _inputRow(),
                   ),
                 ),
@@ -307,7 +307,7 @@ class _ChatPanelState extends State<ChatPanel> {
     return SizedBox(
       height: 60,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 18),
         child: Row(
           children: [
             Expanded(
@@ -326,13 +326,13 @@ class _ChatPanelState extends State<ChatPanel> {
                       padding:
                           const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       decoration: BoxDecoration(
-                          color: waits ? Rubka.summaryBg : Rubka.field,
+                          color: waits ? Rubka.tagWaitBg : Rubka.tagIdleBg,
                           borderRadius: BorderRadius.circular(20)),
                       child: Text(p.stage,
                           overflow: TextOverflow.ellipsis,
                           style: Rubka.body(
                               size: 13,
-                              color: waits ? Rubka.working : Rubka.text2)),
+                              color: waits ? Rubka.tagWaitFg : Rubka.tagIdleFg)),
                     ),
                   ),
                 ],
@@ -610,13 +610,14 @@ class _ChatPanelState extends State<ChatPanel> {
               child: Text('Напиши, что сделать',
                   style: Rubka.body(color: Rubka.text2))),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               OutlinedButton(
                   onPressed: () => chat.send('Что сейчас по проекту?'),
                   child: const Text('Что сейчас по проекту?')),
-              const SizedBox(width: 8),
               OutlinedButton(
                   onPressed: () => chat.send('Продолжай'),
                   child: const Text('Продолжай')),
@@ -662,10 +663,10 @@ class _ChatPanelState extends State<ChatPanel> {
     return SelectionArea(
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680 + 48),
+          constraints: const BoxConstraints(maxWidth: 680 + 32),
           child: ListView.builder(
             controller: _scroll,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             itemCount: items.length,
             itemBuilder: (context, idx) => items[idx],
           ),
@@ -709,10 +710,15 @@ class _ChatPanelState extends State<ChatPanel> {
           alignment: Alignment.centerRight,
           child: Container(
             constraints: const BoxConstraints(maxWidth: 480),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: Rubka.primary,
-              borderRadius: BorderRadius.circular(18),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: const BoxDecoration(
+              color: Rubka.ink,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(14),
+                topRight: Radius.circular(14),
+                bottomLeft: Radius.circular(14),
+                bottomRight: Radius.circular(4),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -733,18 +739,32 @@ class _ChatPanelState extends State<ChatPanel> {
           alignment: Alignment.centerLeft,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 620),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Директор',
-                    style: Rubka.body(size: 12, color: Rubka.mute)),
-                const SizedBox(height: 2),
-                MarkdownBody(
-                  data: m.text,
-                  styleSheet: _mdStyle,
-                  onTapLink: (text, href, title) => widget.app.openLink(href),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: const BoxDecoration(
+                color: Rubka.bubble,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(14),
+                  topRight: Radius.circular(14),
+                  bottomLeft: Radius.circular(4),
+                  bottomRight: Radius.circular(14),
                 ),
-              ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Директор',
+                      style: Rubka.body(size: 12, color: Rubka.mute)),
+                  const SizedBox(height: 2),
+                  MarkdownBody(
+                    data: m.text,
+                    styleSheet: _mdStyle,
+                    onTapLink: (text, href, title) =>
+                        widget.app.openLink(href),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -961,7 +981,7 @@ class _ChatPanelState extends State<ChatPanel> {
           key: const Key('input-box'),
           padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
           decoration: BoxDecoration(
-              color: Rubka.field, borderRadius: BorderRadius.circular(16)),
+              color: Rubka.bubble, borderRadius: BorderRadius.circular(16)),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -998,7 +1018,7 @@ class _ChatPanelState extends State<ChatPanel> {
                   key: const Key('send-button'),
                   tooltip: 'Отправить (Enter)',
                   style: IconButton.styleFrom(
-                    backgroundColor: Rubka.primary,
+                    backgroundColor: Rubka.send,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: Rubka.disabledBg,
                     disabledForegroundColor: Rubka.disabledFg,
@@ -1099,7 +1119,7 @@ class _ApprovalCardState extends State<_ApprovalCard> {
               FilledButton(
                 key: const Key('approve-yes'),
                 style: FilledButton.styleFrom(
-                    backgroundColor: Rubka.success,
+                    backgroundColor: Rubka.yes,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12))),
                 onPressed: widget.chat.sendYes,

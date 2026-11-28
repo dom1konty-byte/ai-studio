@@ -50,12 +50,30 @@ Future<void> _settle(WidgetTester t) async {
   }
 }
 
-Color? _dotColor(WidgetTester t, String slug) {
+Color? _tagColor(WidgetTester t, String slug) {
   final box = t.widget<Container>(find
       .descendant(
-          of: find.byKey(Key('dot-$slug')), matching: find.byType(Container))
+          of: find.byKey(Key('tag-$slug')), matching: find.byType(Container))
       .first);
   return (box.decoration as BoxDecoration?)?.color;
+}
+
+Future<AppController> _start(WidgetTester tester, Size size,
+    {bool two = false}) async {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  final controller = AppController(
+      proc: FakeProc(_handler),
+      storage: MemoryStorage(
+          state: {'repoPath': 'C:\\ai-studio'},
+          readme: two ? sampleReadme : _alphaReadme),
+      downloadsDir: 'C:\\Downloads',
+      autoRefresh: null);
+  await tester.pumpWidget(RubkaApp(controller: controller));
+  controller.init();
+  await _settle(tester);
+  return controller;
 }
 
 void main() {
@@ -79,9 +97,9 @@ void main() {
 
     expect(find.text('Альфа'), findsOneWidget);
     expect(find.text('Бета'), findsOneWidget);
-    expect(_dotColor(tester, 'alpha'), Rubka.amber); // ждёт «да»
-    expect(_dotColor(tester, 'beta'), Rubka.dotGray); // сборки нет
-    expect(find.text('Выбери проект слева'), findsOneWidget);
+    expect(_tagColor(tester, 'alpha'), Rubka.tagWaitBg); // ждёт «да»
+    expect(_tagColor(tester, 'beta'), Rubka.tagIdleBg); // сборки нет
+    expect(find.text('Выбери проект'), findsOneWidget);
     expect(find.byKey(const Key('btn-usage')), findsOneWidget);
     expect(find.byKey(const Key('btn-setup')), findsOneWidget);
     expect(find.byKey(const Key('new-project')), findsOneWidget);
@@ -162,4 +180,43 @@ void main() {
     expect(find.text('Установить выбранное'), findsOneWidget);
     expect(find.text('Проверить снова'), findsOneWidget);
   });
+
+  testWidgets('плитка «ждут да» показывает число и открывает чат',
+      (tester) async {
+    await _start(tester, const Size(1200, 760));
+
+    expect(tester.widget<Text>(find.byKey(const Key('waits-count'))).data, '1');
+    expect(find.byKey(const Key('chat-title')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('tile-waits')));
+    await _settle(tester);
+
+    expect(find.byKey(const Key('chat-title')), findsOneWidget);
+    expect(find.byKey(const Key('approval-card')), findsOneWidget);
+  });
+
+  for (final size in const [Size(960, 600), Size(1200, 760)]) {
+    testWidgets('нет переполнения при ${size.width.toInt()}x${size.height.toInt()}',
+        (tester) async {
+      await _start(tester, size, two: true);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('project-alpha')));
+      await _settle(tester);
+      expect(find.byKey(const Key('approval-card')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('nav-chats')));
+      await _settle(tester);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('office-tile')));
+      await _settle(tester);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('nav-overview')));
+      await _settle(tester);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
