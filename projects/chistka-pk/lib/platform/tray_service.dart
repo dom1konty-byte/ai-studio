@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../state/app_controller.dart';
 import '../ui/window_fx.dart';
+import 'mini_window.dart';
 import 'window_animator.dart';
 
 /// Значок у часов, меню и «крестик сворачивает в трей».
@@ -28,12 +29,55 @@ class TrayService with TrayListener, WindowListener {
       MenuItem.separator(),
       MenuItem(key: _exit, label: 'Выход'),
     ]));
+    controller.miniWindowHook = _mini.apply;
+    controller.hideMiniHook = hideMini;
     trayManager.addListener(this);
     windowManager.addListener(this);
     await windowManager.setPreventClose(true);
   }
 
   final animator = WindowAnimator();
+  final _mini = MiniWindow();
+  bool _miniBusy = false;
+  DateTime _miniHiddenAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Клик по значку: мини-окно у часов (двойной щелчок tray_manager не отдаёт,
+  /// поэтому работает одиночный левый клик; «Открыть» — в меню).
+  Future<void> showMini() async {
+    if (_miniBusy) return;
+    // Клик по значку сам отнимает фокус и прячет мини-окно — не открываем заново.
+    if (DateTime.now().difference(_miniHiddenAt).inMilliseconds < 400) return;
+    _miniBusy = true;
+    try {
+      if (_animating) return;
+      if (!controller.miniMode) await controller.setMiniMode(true);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await windowManager.show();
+      await windowManager.focus();
+      controller.resumeComputerPolling();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    } catch (_) {
+    } finally {
+      _miniBusy = false;
+    }
+  }
+
+  /// Спрятать мини-окно и вернуть обычный вид (пока окно скрыто).
+  Future<void> hideMini() async {
+    if (!controller.miniMode) return;
+    _miniHiddenAt = DateTime.now();
+    try {
+      await windowManager.hide();
+    } catch (_) {}
+    controller.pauseComputerPolling();
+    await controller.setMiniMode(false);
+  }
+
+  @override
+  void onWindowBlur() {
+    if (controller.miniMode && !_miniBusy) hideMini();
+  }
+
   bool _animating = false;
   bool _hiding = false;
   bool _pendingShow = false;
@@ -62,6 +106,13 @@ class TrayService with TrayListener, WindowListener {
   }
 
   Future<void> showWindow() async {
+    if (controller.miniMode) {
+      // Из мини-окна — обратно в обычное, окно остаётся на экране.
+      await controller.setMiniMode(false);
+      await windowManager.show();
+      await windowManager.focus();
+      return;
+    }
     if (_animating) {
       // «Открыть» во время сворачивания — выполним после hideAnimated.
       if (_hiding) _pendingShow = true;
@@ -115,7 +166,7 @@ class TrayService with TrayListener, WindowListener {
   // tray_manager не отдаёт оконные сообщения Windows, поэтому перехватить его нельзя.
 
   @override
-  void onTrayIconMouseDown() => showWindow();
+  void onTrayIconMouseDown() => showMini();
 
   @override
   void onTrayIconRightMouseDown() => trayManager.popUpContextMenu();

@@ -52,6 +52,10 @@ class FakePlatform implements PlatformApi {
   @override
   Future<void> openFile(String path) async {}
 
+  final soundPlays = <String>[];
+  @override
+  Future<void> playDropSound(String assetPath, String dataDir) async => soundPlays.add(assetPath);
+
   final openedFolders = <String>[];
   @override
   Future<void> openFolder(String path) async => openedFolders.add(path);

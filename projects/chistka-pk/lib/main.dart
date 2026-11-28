@@ -61,7 +61,7 @@ Future<void> main(List<String> args) async {
     unawaited(controller.autoCheckUpdates(
         delay: trayOnly ? const Duration(minutes: 1) : const Duration(seconds: 3)));
   }
-  runApp(ChistoApp(controller: controller, splash: !trayOnly));
+  runApp(ChistoApp(controller: controller, splash: !trayOnly, onboarding: !trayOnly));
   if (Platform.isWindows && !trayOnly) {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Даём движку нарисовать первый кадр заставки в скрытом окне.

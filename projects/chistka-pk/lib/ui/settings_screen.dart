@@ -60,6 +60,20 @@ class SettingsScreen extends StatelessWidget {
               value: c.settings.transparentPanel,
               onChanged: c.setTransparentPanel,
             ),
+            SwitchListTile(
+              key: const Key('clean-sound-switch'),
+              title: const Text('Звук по окончании очистки'),
+              subtitle: const Text('Тихий «плюх» капли.'),
+              value: c.settings.cleanSound,
+              onChanged: c.setCleanSound,
+            ),
+            ListTile(
+              key: const Key('show-onboarding'),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              title: const Text('Показать подсказки снова'),
+              trailing: const Icon(Icons.lightbulb_outline),
+              onTap: c.restartOnboarding,
+            ),
           ],
         );
       },

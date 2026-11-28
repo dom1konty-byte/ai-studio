@@ -26,12 +26,20 @@ class AppSettings {
     this.autoUpdate = true,
     this.lastUpdateCheck,
     this.transparentPanel = true,
+    this.onboardingDone = false,
+    this.cleanSound = true,
   });
 
   final bool autostart;
 
   /// Вид «Стекло»: прозрачная панель и размытие Windows 11 под окном.
   final bool transparentPanel;
+
+  /// Подсказки первого запуска уже показаны (или пропущены).
+  final bool onboardingDone;
+
+  /// Тихий «плюх» по окончании очистки.
+  final bool cleanSound;
   final bool minimizeToTray;
   final bool trayHintShown;
 
@@ -56,6 +64,8 @@ class AppSettings {
     bool? autoUpdate,
     DateTime? lastUpdateCheck,
     bool? transparentPanel,
+    bool? onboardingDone,
+    bool? cleanSound,
   }) =>
       AppSettings(
         autostart: autostart ?? this.autostart,
@@ -66,6 +76,8 @@ class AppSettings {
         autoUpdate: autoUpdate ?? this.autoUpdate,
         lastUpdateCheck: lastUpdateCheck ?? this.lastUpdateCheck,
         transparentPanel: transparentPanel ?? this.transparentPanel,
+        onboardingDone: onboardingDone ?? this.onboardingDone,
+        cleanSound: cleanSound ?? this.cleanSound,
       );
 
   Map<String, Object?> toJson() => {
@@ -77,6 +89,8 @@ class AppSettings {
         'autoUpdate': autoUpdate,
         'lastUpdateCheck': lastUpdateCheck?.toIso8601String(),
         'transparentPanel': transparentPanel,
+        'onboardingDone': onboardingDone,
+        'cleanSound': cleanSound,
       };
 
   static AppSettings fromJson(Object? m) {
@@ -91,6 +105,8 @@ class AppSettings {
       navWidth: m['navWidth'] is num ? clampNavWidth((m['navWidth'] as num).toDouble()) : defaultNavWidth,
       autoUpdate: b('autoUpdate', true),
       transparentPanel: b('transparentPanel', true),
+      onboardingDone: b('onboardingDone', false),
+      cleanSound: b('cleanSound', true),
       lastUpdateCheck:
           m['lastUpdateCheck'] is String ? DateTime.tryParse(m['lastUpdateCheck'] as String) : null,
     );

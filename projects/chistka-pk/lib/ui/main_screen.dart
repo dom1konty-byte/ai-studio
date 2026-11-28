@@ -1,10 +1,12 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../core/clean_anim.dart';
 import '../core/format.dart';
 import '../core/models.dart';
 import '../state/app_controller.dart';
 import 'anim.dart';
 import 'app.dart';
+import 'clean_fx.dart';
 import 'pult_tile.dart';
 
 IconData categoryIcon(CategoryId id) {
@@ -237,6 +239,16 @@ class _QuickStrip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (cleaning && c.cleanTotalBytes > 0)
+            Text.rich(
+              key: const Key('countdown'),
+              TextSpan(style: base, children: [
+                const TextSpan(text: 'Можно освободить '),
+                TextSpan(
+                    text: formatSize(countdownBytes(c.cleanTotalBytes, c.progressFraction)),
+                    style: bold),
+              ]),
+            ),
           LinearProgressIndicator(value: cleaning ? (1 - c.progressFraction).clamp(0.0, 1.0) : null),
           const SizedBox(height: 2),
           Text(c.progressText, style: const TextStyle(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -274,12 +286,15 @@ class _QuickStrip extends StatelessWidget {
 
     final info = Row(
       children: [
-        Container(
-          width: 56,
-          height: 56,
-          decoration: const BoxDecoration(color: Color(0xFF0F9D9A), shape: BoxShape.circle),
-          child: const Icon(Icons.auto_fix_high, color: Colors.white, size: 28),
-        ),
+        if (done && !failed && (s!.freedBytes > 0 || s.recycledBytes > 0))
+          const DoneBurst(size: 56, color: Color(0xFF0F9D9A))
+        else
+          Container(
+            width: 56,
+            height: 56,
+            decoration: const BoxDecoration(color: Color(0xFF0F9D9A), shape: BoxShape.circle),
+            child: const Icon(Icons.auto_fix_high, color: Colors.white, size: 28),
+          ),
         const SizedBox(width: 16),
         Expanded(
           child: Column(
@@ -318,7 +333,10 @@ class _QuickStrip extends StatelessWidget {
 
     return LayoutBuilder(builder: (context, box) {
       final narrow = box.maxWidth < 560;
-      return Container(
+      return WaveSweep(
+        active: cleaning,
+        radius: cardRadius,
+        child: Container(
         constraints: const BoxConstraints(minHeight: 104),
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
@@ -349,6 +367,7 @@ class _QuickStrip extends StatelessWidget {
                   for (final a in actions) ...[const SizedBox(width: 8), a],
                 ],
               ),
+        ),
       );
     });
   }
@@ -449,6 +468,7 @@ class _FilesTile extends StatelessWidget {
         caption: caption,
         kind: TileKind.result,
         resultText: 'В Корзину ${formatSize(recycled)}',
+        burst: true,
         onAgain: find,
       );
     }
@@ -494,6 +514,7 @@ class _FilesTile extends StatelessWidget {
           title: title,
           caption: caption,
           kind: TileKind.result,
+          wave: c.tileBusy && (downloads ? c.downloadsSelected : c.bigSelected).isNotEmpty,
           resultText: files.isEmpty ? 'Пусто ✓' : 'Найдено ${files.length}, ${formatSize(bytes)}',
           actionLabel: 'Выбрать',
           onAction: files.isEmpty || busyApp ? null : () => c.openLayer(layer),
@@ -526,6 +547,7 @@ class _DupTile extends StatelessWidget {
         caption: caption,
         kind: TileKind.result,
         resultText: 'В Корзину ${formatSize(recycled)}${skippedText(c.dupSkipped)}',
+        burst: true,
         onAgain: c.loadDuplicates,
       );
     }
@@ -570,6 +592,7 @@ class _DupTile extends StatelessWidget {
           title: title,
           caption: caption,
           kind: TileKind.result,
+          wave: c.tileBusy && c.dupSelected.isNotEmpty,
           resultText: n == 0 ? 'Пусто ✓' : 'Найдено ${groupsWord(n)}, ${formatSize(c.dupWasted)} лишнего',
           actionLabel: 'Выбрать',
           onAction: n == 0 || busyApp ? null : () => c.openLayer(Layer.dupes),
@@ -602,6 +625,7 @@ class _EmptyDirsTile extends StatelessWidget {
         caption: caption,
         kind: TileKind.result,
         resultText: 'В Корзину ${emptyDirsWord(recycled)}${skippedText(c.emptySkipped)}',
+        burst: true,
         onAgain: c.loadEmptyDirs,
       );
     }

@@ -133,6 +133,7 @@ class AppController extends ChangeNotifier {
             : roaming != null
                 ? '$roaming\\ChistoDisk'
                 : null);
+    _dataBase = base;
     if (base != null) {
       updateDir = '$base${Platform.pathSeparator}update';
       logFile = File('$base${Platform.pathSeparator}log.txt');
@@ -270,6 +271,7 @@ class AppController extends ChangeNotifier {
     totalFreedEver = await _stats?.load() ?? 0;
     final store = _settingsStore;
     if (store != null) settings = await store.load();
+    settingsLoaded = true;
     try {
       adminMode = await platform.isElevated();
     } catch (_) {
@@ -825,6 +827,7 @@ class AppController extends ChangeNotifier {
     } catch (_) {}
     layer = Layer.none;
     tileBusy = false;
+    if (ok) _playDrop();
     notifyListeners();
     return ok ? sum : null;
   }
@@ -844,6 +847,7 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    cleanTotalBytes = selectedBytes;
     phase = Phase.cleaning;
     failedAll = false;
     errorMessage = null;
@@ -883,6 +887,7 @@ class AppController extends ChangeNotifier {
     layer = Layer.none;
     showDetails = false;
     phase = Phase.done;
+    if (!failedAll) _playDrop();
     notifyListeners();
   }
 
@@ -1352,6 +1357,9 @@ class AppController extends ChangeNotifier {
 
   AppSettings settings = const AppSettings();
 
+  /// Настройки прочитаны с диска (до этого подсказки не показываем).
+  bool settingsLoaded = false;
+
   /// Значение «ChistoDisk» есть в HKCU\…\Run (истина — реестр, не файл настроек).
   bool autostartOn = false;
 
@@ -1447,6 +1455,7 @@ class AppController extends ChangeNotifier {
       return null;
     }
     _quickBusy = true;
+    quickFreedBytes = null;
     notifyListeners();
     String msg;
     try {
@@ -1489,6 +1498,8 @@ class AppController extends ChangeNotifier {
         try {
           disk = await platform.diskSpace(systemDrive) ?? disk;
         } catch (_) {}
+        quickFreedBytes = sum.freedBytes;
+        _playDrop();
         msg = 'Освобождено ${formatSize(sum.freedBytes)}';
         if (pick.skippedBrowsers) msg += '. Кэш браузера пропущен: браузер запущен.';
       }
@@ -1532,6 +1543,110 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     return ok;
   }
+  Future<void> setCleanSound(bool on) => _saveSettings(settings.copyWith(cleanSound: on));
+
+  // ---------- Подсказки первого запуска ----------
+
+  /// «Понятно» / «Пропустить»: больше не показывать.
+  Future<void> finishOnboarding() => _saveSettings(settings.copyWith(onboardingDone: true));
+
+  /// «Показать подсказки снова»: открывает «Очистку» и запускает подсказки.
+  Future<void> restartOnboarding() async {
+    section = Section.main;
+    layer = Layer.none;
+    await _saveSettings(settings.copyWith(onboardingDone: false));
+  }
+
+  // ---------- Звук ----------
+
+  String? _dataBase;
+
+  /// Размер, который «можно освободить» в начале очистки (для счёта вниз).
+  int cleanTotalBytes = 0;
+
+  /// Сколько освободила последняя быстрая очистка (мини-окно); null — идёт/не было.
+  int? quickFreedBytes;
+
+  void _playDrop() {
+    final base = _dataBase;
+    if (!settings.cleanSound || base == null) return;
+    final asset = [
+      File(exePath).parent.path,
+      'data',
+      'flutter_assets',
+      'assets',
+      'sounds',
+      'drop.wav'
+    ].join(Platform.pathSeparator);
+    platform.playDropSound(asset, base).catchError((Object _) {});
+  }
+
+  // ---------- Мини-окно ----------
+
+  /// Окно сейчас в мини-режиме (360×480 у часов).
+  bool miniMode = false;
+
+  /// Меняет оконные параметры (рамка, размер, позиция); ставит TrayService.
+  Future<void> Function(bool mini)? miniWindowHook;
+
+  /// Спрятать мини-окно (Esc, потеря фокуса); ставит TrayService.
+  Future<void> Function()? hideMiniHook;
+
+  Future<void> hideMini() async {
+    final h = hideMiniHook;
+    if (h != null) {
+      await h();
+    } else {
+      await setMiniMode(false);
+    }
+  }
+
+  Future<void> setMiniMode(bool on) async {
+    if (miniMode == on) return;
+    miniMode = on;
+    if (on) {
+      layer = Layer.none;
+      unawaited(loadLastSpeed());
+    }
+    notifyListeners();
+    try {
+      await miniWindowHook?.call(on);
+    } catch (_) {}
+  }
+
+  SpeedResult? lastSpeed;
+  bool speedBusy = false;
+
+  Future<void> loadLastSpeed() async {
+    final h = await speedStore?.load() ?? const <SpeedResult>[];
+    lastSpeed = h.isEmpty ? lastSpeed : h.first;
+    notifyListeners();
+  }
+
+  /// Короткий замер для мини-окна (пинг 4 раза, по 3 с вниз и вверх).
+  Future<void> quickSpeedTest() async {
+    if (speedBusy) return;
+    speedBusy = true;
+    notifyListeners();
+    try {
+      await for (final e in SpeedTester(speedNetwork,
+              pingCount: 4, phaseDuration: const Duration(seconds: 3))
+          .run(SpeedCancel())) {
+        final r = e.result;
+        if (e.phase == SpeedPhase.done && r != null) {
+          lastSpeed = r;
+          final old = await speedStore?.load() ?? const <SpeedResult>[];
+          await speedStore?.save(addToHistory(old, r));
+        }
+      }
+    } catch (_) {
+      // нет сети — остаётся прошлый замер
+    } finally {
+      speedBusy = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> setAutoUpdate(bool on) => _saveSettings(settings.copyWith(autoUpdate: on));
   Future<void> setTransparentPanel(bool on) =>
       _saveSettings(settings.copyWith(transparentPanel: on));

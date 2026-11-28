@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../state/app_controller.dart';
 import '../platform/glass.dart';
 import 'glass.dart';
+import 'mini_view.dart';
+import 'onboarding.dart';
 import 'shell.dart';
 import 'splash.dart';
 import 'window_fx.dart';
@@ -38,11 +40,15 @@ ThemeData _theme(Brightness b) {
 }
 
 class ChistoApp extends StatefulWidget {
-  const ChistoApp({super.key, required this.controller, this.splash = false});
+  const ChistoApp(
+      {super.key, required this.controller, this.splash = false, this.onboarding = false});
   final AppController controller;
 
   /// Показать заставку при запуске (в трее/тестах — нет).
   final bool splash;
+
+  /// Подсказки первого запуска (в тестах — нет, если не включены).
+  final bool onboarding;
 
   @override
   State<ChistoApp> createState() => _ChistoAppState();
@@ -68,10 +74,21 @@ class _ChistoAppState extends State<ChistoApp> {
         builder: (context, _) => GlassScope(
           on: widget.controller.settings.transparentPanel && glassAvailable.value,
           child: WindowFxHost(
-              child: Splash(enabled: widget.splash, child: child ?? const SizedBox())),
+            child: Onboarding(
+              controller: widget.controller,
+              enabled: widget.onboarding,
+              delay: widget.splash ? const Duration(milliseconds: 2300) : Duration.zero,
+              child: Splash(enabled: widget.splash, child: child ?? const SizedBox()),
+            ),
+          ),
         ),
       ),
-      home: Shell(controller: widget.controller),
+      home: ListenableBuilder(
+        listenable: widget.controller,
+        builder: (context, _) => widget.controller.miniMode
+            ? MiniView(controller: widget.controller)
+            : Shell(controller: widget.controller),
+      ),
     );
   }
 }

@@ -137,4 +137,8 @@ abstract class PlatformApi {
 
   /// Завершает процесс (TerminateProcess).
   Future<KillResult> killProcess(int pid);
+
+  /// Тихий звук «плюх» (файл [assetPath] копируется в [dataDir]\drop.wav).
+  /// На не-Windows и при любой ошибке — молча ничего.
+  Future<void> playDropSound(String assetPath, String dataDir);
 }

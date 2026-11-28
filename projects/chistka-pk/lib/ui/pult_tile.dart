@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'anim.dart';
 import 'app.dart';
+import 'clean_fx.dart';
 import 'glass.dart';
 
 /// Состояние плитки пульта.
@@ -29,6 +30,8 @@ class PultTile extends StatelessWidget {
     this.summaryColor = successColor,
     this.onTap,
     this.tint,
+    this.wave = false,
+    this.burst = false,
   });
 
   final IconData icon;
@@ -51,6 +54,12 @@ class PultTile extends StatelessWidget {
 
   /// Фон плитки (версия 1.4); без него — белая карточка.
   final Color? tint;
+
+  /// Идёт удаление: по плитке бежит «волна».
+  final bool wave;
+
+  /// Только что очищено: галочка с кругами на воде вместо значка.
+  final bool burst;
 
   /// Нажатие на всю плитку.
   final VoidCallback? onTap;
@@ -148,7 +157,10 @@ class PultTile extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  IconCircle(icon: icon, color: color, size: 40, solid: tint != null, live: true),
+                  if (burst)
+                    DoneBurst(size: 40, color: color)
+                  else
+                    IconCircle(icon: icon, color: color, size: 40, solid: tint != null, live: true),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(title,
@@ -168,9 +180,13 @@ class PultTile extends StatelessWidget {
       );
     return HoverCard(
       tint: tint,
-      child: onTap == null
+      child: WaveSweep(
+        active: wave,
+        radius: cardRadius,
+        child: onTap == null
           ? body
           : InkWell(borderRadius: BorderRadius.circular(cardRadius), onTap: onTap, child: body),
+      ),
     );
   }
 }

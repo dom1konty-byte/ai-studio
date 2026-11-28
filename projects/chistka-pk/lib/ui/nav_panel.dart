@@ -6,6 +6,7 @@ import '../state/app_controller.dart';
 import 'about_dialog.dart';
 import 'anim.dart';
 import 'glass.dart';
+import 'onboarding.dart';
 
 /// Ниже этой ширины панель показывает только иконки.
 const navNarrowBelow = 120.0;
@@ -110,7 +111,11 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
         ),
       ),
     );
-    return _narrow ? Tooltip(message: it.label, waitDuration: const Duration(milliseconds: 400), child: tile) : tile;
+    final shown = _narrow
+        ? Tooltip(message: it.label, waitDuration: const Duration(milliseconds: 400), child: tile)
+        : tile;
+    final key = onboardKeys[it.section];
+    return key == null ? shown : KeyedSubtree(key: key, child: shown);
   }
 
   Widget _bottom(BuildContext context) {

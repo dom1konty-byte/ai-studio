@@ -470,6 +470,29 @@ class WindowsPlatform implements PlatformApi {
     }
   }
 
+  static Pointer<Utf16>? _soundPath;
+
+  @override
+  Future<void> playDropSound(String assetPath, String dataDir) async {
+    if (!Platform.isWindows) return;
+    try {
+      final target = File('$dataDir\\drop.wav');
+      if (!target.existsSync()) {
+        final src = File(assetPath);
+        if (!src.existsSync()) return;
+        await target.parent.create(recursive: true);
+        await src.copy(target.path);
+      }
+      // Память под путь живёт до конца процесса: звук играет асинхронно.
+      final path = _soundPath ??= target.path.toNativeUtf16();
+      final playSound = DynamicLibrary.open('winmm.dll').lookupFunction<
+          Int32 Function(Pointer<Utf16>, IntPtr, Uint32),
+          int Function(Pointer<Utf16>, int, int)>('PlaySoundW');
+      const sndAsync = 0x1, sndNoDefault = 0x2, sndFilename = 0x20000;
+      playSound(path, 0, sndFilename | sndAsync | sndNoDefault);
+    } catch (_) {}
+  }
+
   @override
   Future<void> notify(String title, String text) async {
     // Всплывающая подсказка трея через PowerShell (без сторонних пакетов);
