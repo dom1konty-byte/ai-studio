@@ -623,6 +623,14 @@ class _ChatPanelState extends State<ChatPanel> {
         padding: const EdgeInsets.all(24),
         children: [
           ...top,
+          // решение — сверху, чтобы было видно и в маленьком окне
+          if (approval != null) ...[
+            Center(
+                child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 680),
+                    child: approval)),
+            const SizedBox(height: 16),
+          ],
           const SizedBox(height: 48),
           Center(child: Text(widget.project.name, style: Rubka.head(22))),
           Center(
@@ -646,13 +654,6 @@ class _ChatPanelState extends State<ChatPanel> {
                   child: const Text('Продолжай')),
             ],
           ),
-          if (approval != null) ...[
-            const SizedBox(height: 24),
-            Center(
-                child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 680),
-                    child: approval)),
-          ],
         ],
       );
     }
