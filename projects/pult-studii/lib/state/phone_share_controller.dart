@@ -98,7 +98,7 @@ class PhoneShareController extends ChangeNotifier {
       } finally {
         _downloading = false;
       }
-      if (_stopped) return _cleanup();
+      if (_stopped) return await _cleanup();
       final apk = await findApk(tmp);
       if (apk == null) throw ShareException('В сборке нет APK-файла.');
       final found = filterLan(await addresses());
@@ -110,7 +110,7 @@ class PhoneShareController extends ChangeNotifier {
           await ApkServer.start(apkPath: apk, slug: slug, bindAddress: bindAddress);
       if (_stopped) {
         await srv.stop();
-        return _cleanup();
+        return await _cleanup();
       }
       _server = srv;
       ips = found;

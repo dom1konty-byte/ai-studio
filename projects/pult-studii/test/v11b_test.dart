@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pult_studii/models/models.dart';
+import 'package:pult_studii/services/app_storage.dart';
 import 'package:pult_studii/services/attachments.dart';
 import 'package:pult_studii/services/claude_runner.dart';
 import 'package:pult_studii/services/git_service.dart';
