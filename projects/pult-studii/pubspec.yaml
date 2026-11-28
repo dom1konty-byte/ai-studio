@@ -1,0 +1,33 @@
+name: pult_studii
+description: "AI Studio — пульт студии ai-studio"
+publish_to: 'none'
+version: 1.1.0+1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  material_ui: ^1.11.1
+  flutter_markdown_plus: ^1.0.3
+  path: ^1.9.0
+  crypto: ^3.0.0
+  window_manager: ^0.5.0
+  local_notifier: ^0.1.6
+  file_selector: ^1.1.0
+  desktop_drop: ^0.7.0
+  pasteboard: ^0.4.0
+  qr_flutter: ^4.1.0
+  win32: ^5.5.0
+  ffi: ^2.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/app_icon.png
