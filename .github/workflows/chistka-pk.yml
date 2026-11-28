@@ -3,7 +3,7 @@ name: "chistka-pk"
 
 on:
   push:
-    branches: [chistka-pk]
+    branches: [chistka-pk, main]
     paths: ["projects/chistka-pk/**", ".github/workflows/chistka-pk.yml"]
   pull_request:
     paths: ["projects/chistka-pk/**", ".github/workflows/chistka-pk.yml"]
@@ -31,6 +31,13 @@ jobs:
           if [ ! -d windows ]; then
             flutter create --platforms=windows --org com.aistudio --project-name chistka_pk .
           fi
+      - name: Окно не показывать само (для запуска в трее)
+        shell: bash
+        run: |
+          # Показ окна делает window_manager (show/hide), а не шаблон runner.
+          sed -i -E 's#^([[:space:]]*)this->Show\(\);#\1// this->Show();#' windows/runner/flutter_window.cpp
+          # без этого окно мигнёт при запуске в трее — шаг должен упасть, если шаблон изменился
+          grep -q '// this->Show();' windows/runner/flutter_window.cpp
       - name: Иконка программы
         shell: bash
         run: cp assets/icon/app_icon.ico windows/runner/resources/app_icon.ico
@@ -65,3 +72,36 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: gh api -X POST repos/${{ github.repository }}/actions/workflows/studio-board.yml/dispatches -f ref=main || echo "табло ещё не в main"
+
+  release:
+    # только слияние в main: публикуем релиз с установщиком и sha256 (для обновления из программы)
+    needs: [windows]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: ChistoDisk-setup
+          path: dist
+      - name: Релиз на GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -E '^version:' projects/chistka-pk/pubspec.yaml | sed -E 's/version:[[:space:]]*([0-9.]+).*/\1/')
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Версия в pubspec должна быть x.y.z, сейчас: $VERSION"; exit 1; }
+          TAG="chistka-pk-v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::warning::Релиз уже есть — поднимите версию в pubspec"
+            exit 0
+          fi
+          cd dist
+          sha256sum ChistoDisk-setup.exe > ChistoDisk-setup.exe.sha256
+          gh release create "$TAG" ChistoDisk-setup.exe ChistoDisk-setup.exe.sha256 \
+            --title "ЧистоДиск $VERSION" \
+            --notes "Установщик ЧистоДиск $VERSION. Программа сама предложит обновиться." \
+            --target ${{ github.sha }}

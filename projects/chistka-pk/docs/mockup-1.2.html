@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>ЧистоДиск 1.2 — макет</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#cfd8d8;font-family:"Segoe UI",system-ui,sans-serif;color:#1B2B2B;font-size:14px;display:flex;justify-content:center;padding:16px}
+.win{width:1000px;height:680px;background:#EEF6F6;display:flex;border-radius:8px;overflow:hidden;border:1px solid #b5c6c6;position:relative}
+.side{width:240px;background:#E3F1F1;display:flex;flex-direction:column;padding:16px 8px 8px;flex:none}
+.logo{display:flex;align-items:center;gap:8px;padding:8px;border-radius:16px;cursor:pointer;font-size:18px;font-weight:600;transition:background .12s}
+.logo:hover{background:rgba(15,157,154,.1)}
+.drop{width:32px;height:32px;background:#0F9D9A;border-radius:50% 50% 50% 50%/62% 62% 38% 38%;display:grid;place-items:center;color:#fff;font-size:15px}
+.item{display:flex;align-items:center;gap:12px;height:44px;padding:0 16px;border-radius:24px;cursor:pointer;transition:background .12s;color:#1B2B2B}
+.item:hover{background:rgba(15,157,154,.08)}
+.item.sel{background:#CDEDEC;color:#0B3F3E;font-weight:600}
+.item .i{width:20px;text-align:center;font-size:16px}
+.sub{padding-left:24px}
+.grp{margin:8px 0 4px}
+.arrow{margin-left:auto;font-size:11px;color:#566B6B}
+.sp{flex:1}
+.stat{font-size:12px;color:#566B6B;padding:0 16px 8px}
+.admin{margin:0 8px 8px;background:#FFF1D6;color:#6B4300;border-radius:12px;padding:8px 12px;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center}
+.row{display:flex;gap:8px;padding:0 8px}
+.ib{width:48px;height:48px;border-radius:24px;display:grid;place-items:center;font-size:20px;cursor:pointer;transition:background .12s;position:relative}
+.ib:hover{background:rgba(15,157,154,.12)}
+.ib:hover::after{content:attr(data-t);position:absolute;bottom:52px;left:0;background:#1B2B2B;color:#fff;font-size:12px;padding:4px 8px;border-radius:6px;white-space:nowrap}
+.edge{width:6px;cursor:col-resize;flex:none;margin-left:-3px;z-index:2;transition:background .12s}
+.edge:hover{background:#0F9D9A}
+.main{flex:1;padding:24px;display:flex;flex-direction:column;gap:16px;overflow:hidden}
+h1{font-size:28px;font-weight:600;line-height:1.1}
+.cap{color:#566B6B;font-size:12px;margin-top:4px}
+.disk{background:#fff;border:1px solid #D5E6E6;border-radius:12px;padding:8px 16px;font-size:12px;color:#566B6B}
+.bar{height:8px;border-radius:4px;background:#D5E6E6;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;width:81%;background:#0F9D9A}
+.hero{border-radius:16px;background:linear-gradient(120deg,#0B7C7A,#17B3AE);color:#fff;display:flex;align-items:center;gap:24px;padding:16px 24px}
+.ring{width:120px;height:120px;border-radius:50%;background:conic-gradient(#fff 0 62%,rgba(255,255,255,.28) 0);display:grid;place-items:center;animation:spin 1s cubic-bezier(.2,.7,.2,1)}
+.ring::before{content:"";width:94px;height:94px;border-radius:50%;background:#0f8c8a;grid-area:1/1}
+.ring b{grid-area:1/1;z-index:1;font-size:13px;font-weight:400}
+@keyframes spin{from{transform:rotate(-120deg);opacity:0}to{transform:none;opacity:1}}
+.big{font-size:56px;font-weight:300;line-height:1}
+.hero small{display:block;font-size:14px;margin-top:4px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.card{background:#fff;border:1px solid #D5E6E6;border-radius:16px;padding:12px 16px;display:flex;align-items:center;gap:12px;transition:transform .12s,border-color .12s;cursor:pointer}
+.card:hover{transform:translateY(-1px);border-color:#0F9D9A}
+.dot{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:18px;flex:none}
+.c1{background:rgba(15,157,154,.14);color:#0B7C7A}
+.c2{background:rgba(61,90,128,.14);color:#3D5A80}
+.c3{background:rgba(178,106,0,.14);color:#8f5500}
+.c4{background:rgba(123,94,167,.14);color:#6a4d96}
+.c5{background:rgba(86,107,107,.14);color:#566B6B}
+.link{color:#0B7C7A}
+.t{flex:1}.t b{font-weight:600;display:block}.t span{font-size:12px;color:#566B6B}
+.sz{font-weight:600;font-size:14px}
+.chk{width:20px;height:20px;border-radius:4px;background:#0B7C7A;color:#fff;font-size:13px;display:grid;place-items:center;flex:none}
+.chk.off{background:transparent;border:2px solid #566B6B}
+.act{margin-top:auto;display:flex;justify-content:flex-end;gap:8px}
+.btn{height:48px;padding:0 28px;border-radius:24px;border:0;font:600 14px "Segoe UI",system-ui;cursor:pointer;transition:filter .12s}
+.btn:hover{filter:brightness(.95)}
+.tonal{background:#CDEDEC;color:#0B3F3E}.fill{background:#0B7C7A;color:#fff}
+</style></head><body>
+<div class="win">
+ <div class="side">
+  <div class="logo" title="О программе"><div class="drop">✓</div>ЧистоДиск</div>
+  <div class="item grp"><span class="i">🧹</span>Очистка<span class="arrow">▲</span></div>
+  <div class="item sub sel"><span class="i">◉</span>Очистка</div>
+  <div class="item sub"><span class="i">⬇</span>Загрузки</div>
+  <div class="item sub"><span class="i">◔</span>Большие файлы</div>
+  <div class="item sub"><span class="i">◑</span>Карта диска</div>
+  <div class="item"><span class="i">▦</span>Программы</div>
+  <div class="item"><span class="i">🚀</span>Автозагрузка</div>
+  <div class="item"><span class="i">📶</span>Интернет</div>
+  <div class="sp"></div>
+  <div class="stat">За всё время: 27,4 ГБ</div>
+  <div class="admin">🛡 Режим администратора</div>
+  <div class="row"><div class="ib" data-t="Настройки">⚙</div><div class="ib" data-t="Журнал">🕘</div></div>
+ </div>
+ <div class="edge" title="Потяните, чтобы изменить ширину"></div>
+ <div class="main">
+  <div><h1>Очистка</h1><div class="cap">Выберите, что убрать</div></div>
+  <div class="disk">Диск C: свободно 45,2 ГБ из 237,0 ГБ<div class="bar"><i></i></div></div>
+  <div class="hero">
+   <div class="ring"><b>62 %</b></div>
+   <div><div class="big">3,4 ГБ</div><small>Можно освободить</small></div>
+  </div>
+  <div class="grid">
+   <div class="card"><div class="dot c1">🗂</div><div class="t"><b>Временные файлы</b><span>Остатки работы программ</span></div><div class="sz">1,2 ГБ</div><div class="chk">✓</div></div>
+   <div class="card"><div class="dot c2">🌐</div><div class="t"><b>Кэш браузеров</b><span>Chrome, Edge, Firefox</span></div><div class="sz">1,9 ГБ</div><div class="chk">✓</div></div>
+   <div class="card"><div class="dot c3">🗑</div><div class="t"><b>Корзина</b><span>Уже удалённые файлы</span></div><div class="sz">240,0 МБ</div><div class="chk">✓</div></div>
+   <div class="card"><div class="dot c4">🖼</div><div class="t"><b>Кэш миниатюр</b><span>Превью картинок</span></div><div class="sz">48,3 МБ</div><div class="chk">✓</div></div>
+   <div class="card"><div class="dot c5">📄</div><div class="t"><b>Логи</b><span>Журналы Windows</span></div><div class="sz">12,5 МБ</div><div class="chk">✓</div></div>
+   <div class="card"><div class="dot c1">⬇</div><div class="t"><b>Загрузки</b><span>Файлы старше 30 дней</span></div><div class="sz link">Выбрать →</div><div class="chk off"></div></div>
+  </div>
+  <div class="act"><button type="button" class="btn tonal">Анализ</button><button type="button" class="btn fill">Очистить</button></div>
+ </div>
+</div>
+</body></html>

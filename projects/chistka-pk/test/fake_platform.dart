@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:chistka_pk/core/procs.dart';
+import 'package:chistka_pk/core/programs.dart';
 import 'package:chistka_pk/platform/platform_api.dart';
 
 class FakePlatform implements PlatformApi {
@@ -48,9 +52,195 @@ class FakePlatform implements PlatformApi {
   @override
   Future<void> openFile(String path) async {}
 
+  final soundPlays = <String>[];
   @override
-  Future<void> openFolder(String path) async {}
+  Future<void> playDropSound(String assetPath, String dataDir) async => soundPlays.add(assetPath);
+
+  final openedFolders = <String>[];
+  @override
+  Future<void> openFolder(String path) async => openedFolders.add(path);
+
+  // --- программы и реестр ---
+  List<RawUninstall> uninstallEntries = [];
+  final regTree = <String, List<String>>{};
+  final uninstallCalls = <String>[];
+  UninstallRun uninstallResult = const UninstallRun(started: true, exitCode: 0);
+  void Function()? onUninstall;
+  void Function()? onRead;
+  bool exportOk = true;
+  bool deleteOk = true;
+  final exported = <String>[];
+  final deleted = <String>[];
+  final callOrder = <String>[];
+
+  @override
+  Future<List<RawUninstall>> readUninstallEntries() async {
+    onRead?.call();
+    return uninstallEntries;
+  }
+
+  @override
+  Future<List<String>> regSubKeys(String key) async => regTree[key] ?? const [];
+
+  @override
+  Future<UninstallRun> runUninstaller(String exe, String args) async {
+    uninstallCalls.add('$exe|$args');
+    onUninstall?.call();
+    return uninstallResult;
+  }
+
+  @override
+  Future<bool> exportRegKey(String key, String file) async {
+    callOrder.add('export $key');
+    if (exportOk) exported.add(key);
+    return exportOk;
+  }
+
+  @override
+  Future<bool> deleteRegKey(String key) async {
+    callOrder.add('delete $key');
+    if (deleteOk) deleted.add(key);
+    return deleteOk;
+  }
+
+  // --- значения реестра: фейк по ключу (без учёта регистра) ---
+  final regStrings = <String, Map<String, String>>{};
+  final regBinaries = <String, Map<String, Uint8List>>{};
+  final writableKeys = <String>{};
+  bool allWritable = true;
+  final notifications = <String>[];
+
+  String _k(String key) => key.toLowerCase();
+
+  @override
+  Future<Map<String, String>> regStringValues(String key) async =>
+      Map.of(regStrings[_k(key)] ?? const {});
+
+  @override
+  Future<Uint8List?> regReadBinary(String key, String name) async =>
+      regBinaries[_k(key)]?[name];
+
+  @override
+  Future<bool> regWriteBinary(String key, String name, Uint8List data) async {
+    if (!await regCanWrite(key)) return false;
+    (regBinaries[_k(key)] ??= {})[name] = data;
+    return true;
+  }
+
+  @override
+  Future<bool> regWriteString(String key, String name, String value) async {
+    if (!await regCanWrite(key)) return false;
+    (regStrings[_k(key)] ??= {})[name] = value;
+    return true;
+  }
+
+  @override
+  Future<bool> regDeleteValue(String key, String name) async {
+    if (!await regCanWrite(key)) return false;
+    regStrings[_k(key)]?.remove(name);
+    regBinaries[_k(key)]?.remove(name);
+    return true;
+  }
+
+  @override
+  Future<bool> regCanWrite(String key) async =>
+      allWritable ? !key.toUpperCase().startsWith('HKLM') || writableKeys.contains(_k(key)) : false;
+
+  @override
+  Future<void> notify(String title, String text) async => notifications.add('$title|$text');
+
+  // --- режим администратора, инструменты, значки ---
+  bool elevated = false;
+  RelaunchResult relaunchResult = RelaunchResult.started;
+  final relaunches = <bool>[];
+  final tools = <String>[];
+  int? toolCode = 0;
+  void Function(String call)? onTool;
+  final iconCalls = <String>[];
+  Uint8List? iconBytes;
+
+  @override
+  Future<bool> isElevated() async => elevated;
+
+  @override
+  Future<RelaunchResult> relaunch({required bool elevated}) async {
+    relaunches.add(elevated);
+    return relaunchResult;
+  }
+
+  @override
+  Future<int?> runTool(String exe, List<String> args) async {
+    final call = '$exe ${args.join(' ')}';
+    tools.add(call);
+    onTool?.call(call);
+    return toolCode;
+  }
+
+  /// Вывод `sc query` (по умолчанию служба работает).
+  String? toolOutput = 'SERVICE_NAME: wuauserv\n        STATE              : 4  RUNNING\n';
+  final queries = <String>[];
+
+  @override
+  Future<String?> runToolOutput(String exe, List<String> args) async {
+    queries.add('$exe ${args.join(' ')}');
+    return toolOutput;
+  }
+
+  @override
+  Future<Uint8List?> programIcon(String path, int index) async {
+    iconCalls.add('$path,$index');
+    return iconBytes;
+  }
 
   /// Свободное место для виджет-тестов (по умолчанию 45 ГБ).
   int freeBytes = 45 * 1024 * 1024 * 1024;
+
+  // --- компьютер ---
+  String? utf8Output;
+  final utf8Calls = <String>[];
+  Duration? utf8Timeout;
+
+  @override
+  Future<String?> runToolUtf8(String exe, List<String> args, {required Duration timeout}) async {
+    utf8Calls.add('$exe ${args.join(' ')}');
+    utf8Timeout = timeout;
+    onTool?.call('$exe ${args.join(' ')}');
+    return utf8Output;
+  }
+
+  // --- Store ---
+  ({int code, String out, String err})? psResult = (code: 0, out: '[]', err: '');
+  final psCalls = <({String script, Map<String, String> env, Duration timeout})>[];
+  int openAllAppsCalls = 0;
+
+  @override
+  Future<({int code, String out, String err})?> runPowerShell(String script,
+      {Map<String, String> env = const {}, required Duration timeout}) async {
+    psCalls.add((script: script, env: env, timeout: timeout));
+    return psResult;
+  }
+
+  @override
+  Future<void> openAllApps() async => openAllAppsCalls++;
+
+  /// Снимки подряд (последний повторяется); пусто — null.
+  List<SysSample> samples = [];
+  int sampleCalls = 0;
+
+  @override
+  Future<SysSample?> systemSample() async {
+    if (samples.isEmpty) return null;
+    final i = sampleCalls < samples.length ? sampleCalls : samples.length - 1;
+    sampleCalls++;
+    return samples[i];
+  }
+
+  final killed = <int>[];
+  KillResult killResult = KillResult.ok;
+
+  @override
+  Future<KillResult> killProcess(int pid) async {
+    killed.add(pid);
+    return killResult;
+  }
 }

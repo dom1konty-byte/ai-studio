@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final now = DateTime(2026, 11, 27, 12);
+  filterTests();
 
   test('Загрузки: только старше 30 дней, по размеру', () {
     final all = [
@@ -86,5 +87,29 @@ void main() {
         '"browser.exe","77","Console","1","100 K"\r\n';
     expect(parseRunningBrowsers(out), ['Chrome', 'Edge', 'Яндекс']);
     expect(parseRunningBrowsers(''), isEmpty);
+  });
+}
+
+void filterTests() {
+  final now = DateTime(2026, 11, 27);
+  final all = [
+    FileInfo('a', 10, now.subtract(const Duration(days: 100))),
+    FileInfo('b', 30, now.subtract(const Duration(days: 3))),
+    FileInfo('c', 20, now.subtract(const Duration(days: 15))),
+    FileInfo('d', 5, now.subtract(const Duration(days: 7))),
+    FileInfo('e', 1, now.subtract(const Duration(days: 30))),
+    FileInfo('f', 2, now.subtract(const Duration(days: 31))),
+  ];
+  group('фильтр Загрузок', () {
+    test('Все — все файлы, по размеру', () {
+      expect(filterDownloads(all, now, DownloadsFilter.all).map((f) => f.path),
+          ['b', 'c', 'a', 'd', 'f', 'e']);
+    });
+    test('Новые — не старше 7 дней', () {
+      expect(filterDownloads(all, now, DownloadsFilter.recent).map((f) => f.path), ['b', 'd']);
+    });
+    test('Старше 30 дней — строго больше 30', () {
+      expect(filterDownloads(all, now, DownloadsFilter.old).map((f) => f.path), ['a', 'f']);
+    });
   });
 }

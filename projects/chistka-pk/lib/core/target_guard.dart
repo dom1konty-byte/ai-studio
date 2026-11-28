@@ -49,3 +49,30 @@ String? targetRejectReason(CleanTarget t) {
   }
   return null;
 }
+
+/// Папки, которые чистятся только в режиме администратора, — ровно эти две,
+/// относительно SystemRoot. Любой другой путь для таких категорий отклоняется.
+const adminCleanSubpaths = <CategoryId, String>{
+  CategoryId.winUpdate: r'SoftwareDistribution\Download',
+  CategoryId.prefetch: 'Prefetch',
+};
+
+/// Полный путь цели админ-категории или null (категория не админская).
+String? adminCleanPath(CategoryId id, String systemRoot) {
+  final sub = adminCleanSubpaths[id];
+  final root = normalizeWinPath(systemRoot);
+  if (sub == null || root == null) return null;
+  return p.windows.join(root, sub);
+}
+
+/// Цель админ-категории [id] допустима, только если это ТОЧНО её путь внутри
+/// [systemRoot] и базовая папка цели — сам SystemRoot.
+bool isAdminCleanTarget(CategoryId id, CleanTarget t, String systemRoot) {
+  final want = adminCleanPath(id, systemRoot);
+  if (want == null) return false;
+  final got = normalizeWinPath(t.dir);
+  final base = t.base == null ? null : normalizeWinPath(t.base!);
+  final root = normalizeWinPath(systemRoot);
+  if (got == null || base == null || root == null) return false;
+  return p.windows.equals(got, want) && p.windows.equals(base, root);
+}

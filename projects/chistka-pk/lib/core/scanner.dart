@@ -72,6 +72,30 @@ List<FileInfo> filterOldDownloads(List<FileInfo> all, DateTime now, {int days = 
   return res;
 }
 
+/// Фильтр списка Загрузок.
+enum DownloadsFilter { all, recent, old }
+
+/// «Новые» — не старше 7 дней.
+bool isRecent(DateTime modified, DateTime now, {int days = 7}) =>
+    now.difference(modified) <= Duration(days: days);
+
+/// Файлы Загрузок по фильтру («Все» / «Новые» ≤ 7 дней / «Старше 30 дней»),
+/// по размеру по убыванию.
+List<FileInfo> filterDownloads(List<FileInfo> all, DateTime now, DownloadsFilter f) {
+  final res = all.where((x) {
+    switch (f) {
+      case DownloadsFilter.all:
+        return true;
+      case DownloadsFilter.recent:
+        return isRecent(x.modified, now);
+      case DownloadsFilter.old:
+        return isOldEnough(x.modified, now);
+    }
+  }).toList()
+    ..sort((a, b) => b.size.compareTo(a.size));
+  return res;
+}
+
 /// Топ-[n] самых больших файлов, по убыванию размера.
 List<FileInfo> topLargest(Iterable<FileInfo> all, int n) {
   final res = all.toList()..sort((a, b) => b.size.compareTo(a.size));
@@ -87,6 +111,19 @@ List<FileInfo> scanOldDownloadsSync(String dir, DateTime now, {int days = 30}) {
       if (isOldEnough(st.modified, now, days: days)) {
         res.add(FileInfo(f.path, st.size, st.modified));
       }
+    } catch (_) {}
+  });
+  res.sort((a, b) => b.size.compareTo(a.size));
+  return res;
+}
+
+/// Все файлы папки (Загрузки), по размеру по убыванию (вызывать из Isolate).
+List<FileInfo> scanAllFilesSync(String dir) {
+  final res = <FileInfo>[];
+  walkTreeSync(Directory(dir), (f) {
+    try {
+      final st = f.statSync();
+      res.add(FileInfo(f.path, st.size, st.modified));
     } catch (_) {}
   });
   res.sort((a, b) => b.size.compareTo(a.size));

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><title>ЧистоДиск 1.3b — макет «Очистка»-пульт</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#cfd8d8;font-family:"Segoe UI",system-ui,sans-serif;color:#1B2B2B;font-size:14px;display:flex;justify-content:center;padding:16px}
+.win{width:1000px;height:680px;background:#EEF6F6;display:flex;border-radius:8px;overflow:hidden;border:1px solid #b5c6c6}
+.side{width:240px;background:#E3F1F1;display:flex;flex-direction:column;padding:12px 8px 8px;flex:none;position:relative}
+.side:after{content:"";position:absolute;right:0;top:0;bottom:0;width:6px;cursor:col-resize}
+.side:hover:after{background:#0F9D9A}
+.logo{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:16px;cursor:pointer;font-size:18px;font-weight:600;height:48px;margin-bottom:8px}
+.logo:hover{background:rgba(15,157,154,.1)}
+.drop{width:32px;height:32px;background:#0F9D9A;border-radius:50%/62% 62% 38% 38%;display:grid;place-items:center;color:#fff;font-size:15px}
+.item{display:flex;align-items:center;gap:12px;height:48px;padding:0 16px;border-radius:24px;cursor:pointer;transition:background .12s;font-size:14px}
+.item:hover{background:rgba(15,157,154,.08)}
+.item.sel{background:#CDEDEC;color:#0B3F3E;font-weight:600}
+.item .i{width:20px;text-align:center;font-size:16px}
+.sp{flex:1}
+.stat{font-size:12px;color:#566B6B;padding:0 16px 8px}
+.row{display:flex;gap:8px;padding:0 8px}
+.ib{width:48px;height:48px;border-radius:24px;display:grid;place-items:center;font-size:18px;cursor:pointer}
+.ib:hover{background:rgba(15,157,154,.12)}
+.main{flex:1;padding:24px;display:flex;flex-direction:column;gap:16px;min-width:0}
+h1{font-size:28px;font-weight:600;line-height:1.1}
+.disk{background:#fff;border:1px solid #D5E6E6;border-radius:16px;padding:12px 16px}
+.disk .t{display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px}
+.disk .t span{color:#566B6B}
+.bar{height:8px;border-radius:4px;background:#D5E6E6;overflow:hidden}
+.bar i{display:block;height:100%;width:62%;background:#0F9D9A;border-radius:4px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,minmax(0,168px));gap:16px;align-content:start}
+.tile{background:#fff;border:1px solid #D5E6E6;border-radius:16px;padding:12px 16px;display:flex;flex-direction:column;gap:2px;overflow:hidden;transition:border-color .12s,transform .12s}
+.tile:hover{border-color:#0F9D9A;transform:translateY(-1px)}
+.dot{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:16px;margin-bottom:2px}
+.c1{background:rgba(15,157,154,.14);color:#0B7C7A}.c2{background:rgba(61,90,128,.14);color:#3D5A80}.c3{background:rgba(178,106,0,.14);color:#8F5500}.c4{background:rgba(123,94,167,.14);color:#6a4d96}.c5{background:rgba(86,107,107,.14);color:#455858}.c6{background:rgba(46,125,50,.14);color:#2E7D32}
+.tile b{font-size:16px;font-weight:600}
+.tile .d{font-size:12px;color:#566B6B}
+.act{margin-top:auto;height:48px;border-radius:24px;border:0;background:#CDEDEC;color:#0B3F3E;font:600 14px "Segoe UI",system-ui;cursor:pointer}
+.act:hover{filter:brightness(.96)}
+.quick{height:88px;flex:none;display:flex;align-items:center;gap:16px;padding:0 16px;border-radius:16px;background:linear-gradient(90deg,#DDF2F1,#C6EAE8);border:1px solid #B5DEDC}
+.quick .dot{background:#0F9D9A;color:#fff;width:48px;height:48px;font-size:22px;margin:0;flex:none}
+.quick .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.quick .tx b{font-size:18px;font-weight:600;color:#0B3F3E}
+.quick .tx span{font-size:14px;color:#2d4a4a}
+.quick .tx strong{font-weight:700;color:#0B3F3E}
+.quick a{color:#0B6E6C;font-weight:600;font-size:13px;text-decoration:underline;cursor:pointer;padding:12px 8px}
+.quick .act{margin:0;height:48px;padding:0 32px;background:#0B7C7A;color:#fff}
+.res{display:flex;align-items:center;gap:8px;margin-top:auto;font-weight:600;color:#1E5E24;font-size:13px}
+.res .ok{width:24px;height:24px;border-radius:50%;background:#2E7D32;color:#fff;display:grid;place-items:center;font-size:13px}
+.prog{margin-top:auto}
+.prog .l{display:flex;justify-content:space-between;font-size:12px;color:#3d4a4a;margin-bottom:8px;align-items:center}
+.prog .l u{color:#0B7C7A;font-weight:600;cursor:pointer;text-decoration:none;padding:8px 0 8px 12px}
+.prog .bar{height:8px}
+.prog .bar i{width:42%}
+.again{color:#0B7C7A;font-weight:600;font-size:12px;cursor:pointer;margin-left:auto}
+.resbox{margin-top:auto;display:flex;flex-direction:column;gap:8px}
+</style></head><body>
+<div class="win">
+ <div class="side">
+  <div class="logo" title="О программе"><div class="drop">✓</div>ЧистоДиск</div>
+  <div class="item sel"><span class="i">🧹</span>Очистка</div>
+  <div class="item"><span class="i">🖥</span>Компьютер</div>
+  <div class="item"><span class="i">▦</span>Программы</div>
+  <div class="item"><span class="i">🚀</span>Автозагрузка</div>
+  <div class="item"><span class="i">📶</span>Интернет</div>
+  <div class="sp"></div>
+  <div class="stat">За всё время: 27,4 ГБ</div>
+  <div class="row"><div class="ib" title="Настройки">⚙</div><div class="ib" title="Журнал">🕘</div></div>
+ </div>
+ <div class="main">
+  <h1>Очистка</h1>
+  <div class="disk">
+   <div class="t"><b>Диск C:</b><span>свободно 182 из 476 ГБ</span></div>
+   <div class="bar"><i></i></div>
+  </div>
+  <div class="quick">
+   <div class="dot">🧹</div>
+   <div class="tx"><b>Быстрая очистка</b><span>Можно освободить <strong>3,1 ГБ</strong></span></div>
+   <a>Что чистить?</a>
+   <button type="button" class="act">Очистить</button>
+  </div>
+  <div class="grid">
+   <div class="tile">
+    <div class="dot c2">⬇</div><b>Загрузки</b><div class="d">Старые файлы из папки «Загрузки»</div>
+    <div class="prog"><div class="l"><span>Ищу… 42 %</span><u>Стоп</u></div><div class="bar"><i></i></div></div>
+   </div>
+   <div class="tile">
+    <div class="dot c3">◔</div><b>Большие файлы</b><div class="d">Что занимает больше всего места</div>
+    <div class="resbox"><div class="res"><span class="ok">✓</span>Освобождено 2,4 ГБ</div><span class="again">Ещё раз</span></div>
+   </div>
+   <div class="tile">
+    <div class="dot c4">❐</div><b>Дубликаты</b><div class="d">Одинаковые файлы, одна копия остаётся</div>
+    <button type="button" class="act">Найти</button>
+   </div>
+   <div class="tile">
+    <div class="dot c5">▢</div><b>Пустые папки</b><div class="d">Папки без файлов</div>
+    <button type="button" class="act">Найти</button>
+   </div>
+   <div class="tile">
+    <div class="dot c1">◑</div><b>Карта диска</b><div class="d">Наглядно, где лежат файлы</div>
+    <button type="button" class="act">Открыть</button>
+   </div>
+  </div>
+ </div>
+</div>
+</body></html>
