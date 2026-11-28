@@ -298,6 +298,15 @@ class _ProjectRow extends StatelessWidget {
                         color: Rubka.send, shape: BoxShape.circle),
                   ),
                 ),
+              if (c.night.nextFor(p.slug) case final task?)
+                Tooltip(
+                  message: 'Задача в ${hhmm(task.when)}: ${task.text}',
+                  child: Container(
+                    key: Key('night-${p.slug}'),
+                    margin: const EdgeInsets.only(right: 6),
+                    child: const Icon(Icons.alarm, size: 18, color: Rubka.send),
+                  ),
+                ),
               if (_canDownload(c, p, build))
                 IconButton(
                   key: Key('dl-${p.slug}'),

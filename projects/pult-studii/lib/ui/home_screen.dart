@@ -11,6 +11,7 @@ import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
 import 'board_panel.dart';
 import 'chat_panel.dart';
+import 'night_dialog.dart';
 import 'studio_rail.dart';
 import 'update_banner.dart';
 import 'usage_panel.dart';
@@ -80,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
               return Column(
                 children: [
                   UpdateBanner(controller: c),
+                  NightBanner(night: c.night, nameFor: c.nameFor),
                   Expanded(
                     child: Stack(
                       children: [

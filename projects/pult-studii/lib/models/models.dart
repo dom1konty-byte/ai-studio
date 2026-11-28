@@ -79,6 +79,7 @@ class ChatMessage {
   ChatMessage(this.kind, this.text,
       {this.denials = const [],
       this.attachments = const [],
+      this.scheduled,
       DateTime? time})
       : time = time ?? DateTime.now();
 
@@ -88,6 +89,9 @@ class ChatMessage {
 
   /// Полные пути вложенных файлов (сообщение Дамира).
   final List<String> attachments;
+
+  /// Время («02:00»), если сообщение отправлено по расписанию.
+  final String? scheduled;
   final DateTime time;
   bool resolved = false;
 
@@ -108,6 +112,7 @@ class ChatMessage {
       'k': kind.name,
       't': t,
       if (attachments.isNotEmpty) 'a': attachments,
+      if (scheduled != null) 'sc': scheduled,
       'ts': time.toIso8601String(),
     });
   }
@@ -123,8 +128,10 @@ class ChatMessage {
       final files = a is List
           ? a.whereType<String>().where((x) => x.isNotEmpty).take(10).toList()
           : <String>[];
+      final sc = j['sc'];
       return ChatMessage(kind, text,
           attachments: files,
+          scheduled: sc is String && sc.length <= 8 ? sc : null,
           time: DateTime.tryParse('${j['ts']}') ?? DateTime.now());
     } catch (_) {
       return null;

@@ -323,4 +323,25 @@ class StateRepo {
     }
     return _save();
   }
+
+  /// «Задачи на ночь» (сообщения директору по расписанию).
+  List<Map<String, dynamic>> nightTasks() {
+    final v = _data['nightTasks'];
+    return v is List
+        ? [
+            for (final x in v.take(200))
+              if (x is Map) Map<String, dynamic>.from(x),
+          ]
+        : <Map<String, dynamic>>[];
+  }
+
+  Future<void> setNightTasks(List<Map<String, dynamic>> tasks) {
+    if (tasks.isEmpty) {
+      if (!_data.containsKey('nightTasks')) return Future.value();
+      _data.remove('nightTasks');
+    } else {
+      _data['nightTasks'] = tasks;
+    }
+    return _save();
+  }
 }

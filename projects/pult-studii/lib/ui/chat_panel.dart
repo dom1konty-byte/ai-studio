@@ -20,6 +20,7 @@ import '../state/chat_controller.dart';
 import 'docs_dialog.dart';
 import 'limit_banner.dart';
 import 'md_style.dart';
+import 'night_dialog.dart';
 import 'phone_share_dialog.dart';
 
 class ChatPanel extends StatefulWidget {
@@ -480,6 +481,12 @@ class _ChatPanelState extends State<ChatPanel> {
                 'Открыть этот разговор в терминале (Remote Control) — '
                     'его будет видно в приложении Claude',
             enabled: rcWhy == null),
+        _item(
+            'night',
+            Icons.alarm,
+            'Запланированные (${widget.app.night.waitingFor(chat.slug).length})',
+            'сообщения директору по расписанию',
+            'Список задач на ночь: отменить или выполнить сейчас'),
         _item('usage', Icons.payments, 'Расходы', 'сегодня ${_money(today)}',
             'Открыть панель расходов'),
         _item(
@@ -518,6 +525,11 @@ class _ChatPanelState extends State<ChatPanel> {
         unawaited(_continuePhone());
       case 'remote':
         unawaited(_openRemote());
+      case 'night':
+        showDialog<void>(
+            context: context,
+            builder: (_) => NightListDialog(
+                night: widget.app.night, chatKey: chat.slug));
       case 'usage':
         widget.app.toggleUsage();
       case 'newchat':
@@ -740,6 +752,11 @@ class _ChatPanelState extends State<ChatPanel> {
                 if (m.attachments.isNotEmpty) ...[
                   if (m.text.isNotEmpty) const SizedBox(height: 8),
                   _attachmentsView(m.attachments),
+                ],
+                if (m.scheduled != null) ...[
+                  const SizedBox(height: 4),
+                  Text('⏰ отправлено по расписанию ${m.scheduled}',
+                      style: Rubka.body(size: 12, color: Rubka.mute)),
                 ],
               ],
             ),
@@ -975,6 +992,19 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
+  Future<void> _night() async {
+    final req = await showNightDialog(context,
+        initialText: _input.text, clock: widget.app.clockNow);
+    if (req == null || !mounted) return;
+    widget.app.night.add(
+        key: chat.slug,
+        text: req.text,
+        when: req.when,
+        keepAwake: req.keepAwake);
+    _input.clear();
+    widget.app.toast('Запланировано на ${hhmm(req.when)}');
+  }
+
   void _voice() {
     widget.inputFocus.requestFocus();
     unawaited(widget.app.startVoice());
@@ -1058,6 +1088,14 @@ class _ChatPanelState extends State<ChatPanel> {
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 onPressed: enabled ? _voice : null,
                 icon: const Icon(Icons.mic),
+              ),
+              IconButton(
+                key: const Key('night-button'),
+                tooltip: 'Отправить позже',
+                iconSize: 22,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                onPressed: enabled ? _night : null,
+                icon: const Icon(Icons.alarm),
               ),
               Expanded(child: _inputField(enabled, canAttach)),
               const SizedBox(width: 8),

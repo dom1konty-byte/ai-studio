@@ -333,7 +333,8 @@ class ChatController extends ChangeNotifier {
   Future<void> send(String text,
       {bool approval = false,
       List<String> onceTools = const [],
-      bool withAttachments = false}) async {
+      bool withAttachments = false,
+      String? scheduled}) async {
     final t = text.trim();
     if (!canSend || limitBlocked) return;
     if (withAttachments && copying) return;
@@ -349,7 +350,8 @@ class ChatController extends ChangeNotifier {
     if (t.isEmpty && files.isEmpty) return;
     if (withAttachments) pending.clear();
     if (approval) approvalHidden = true;
-    _add(ChatMessage(MsgKind.user, t, attachments: files));
+    _add(ChatMessage(MsgKind.user, t,
+        attachments: files, scheduled: scheduled));
     final body = t.isEmpty ? 'Посмотри вложения.' : t;
     final raw = files.isEmpty ? body : '$body\n\n${attachmentsBlock(files)}';
     _lastRaw = raw;

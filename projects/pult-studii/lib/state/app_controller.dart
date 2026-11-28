@@ -13,6 +13,7 @@ import '../services/gh_service.dart';
 import '../services/git_service.dart';
 import '../services/notifications.dart';
 import '../services/site_preview.dart';
+import '../services/sleep_guard.dart';
 import '../services/voice_input.dart';
 import '../services/process_runner.dart';
 import '../services/project_docs.dart';
@@ -21,6 +22,7 @@ import '../services/tools_check.dart';
 import '../services/updater.dart';
 import '../services/usage.dart';
 import 'chat_controller.dart';
+import 'night_tasks.dart';
 import 'phone_share_controller.dart';
 
 /// Состояние автообновления.
@@ -44,6 +46,8 @@ class AppController extends ChangeNotifier {
     this.quitApp,
     this.attachments,
     this.voice,
+    this.sleepGuard,
+    this.nightEvery = const Duration(seconds: 30),
     SitePreview? sitePreview,
     DateTime Function()? clock,
   })  : state = StateRepo(storage),
@@ -72,6 +76,57 @@ class AppController extends ChangeNotifier {
   /// Голосовой ввод Windows (null — выключен, например в тестах).
   final VoiceInput? voice;
 
+  /// «Не давать уснуть» для задач на ночь (null — выключено, например в тестах).
+  final SleepGuard? sleepGuard;
+  final Duration? nightEvery;
+
+  /// Задачи на ночь: сообщения директору по расписанию.
+  late final NightTasks night = NightTasks(
+    state: state,
+    clock: _now,
+    guard: sleepGuard,
+    every: nightEvery,
+    targetFor: _nightTarget,
+    onDone: (t) => unawaited(_emitNight(t.key)),
+  )..addListener(notifyListeners);
+
+  NightTarget? _nightTarget(String key) {
+    if (key != officeKey && !isSafeSlug(key)) return null;
+    var c = chats[key];
+    if (c == null) {
+      String? title = key == officeKey ? officeProject.name : null;
+      for (final p in projects) {
+        if (p.slug == key) title = p.name;
+      }
+      // Доска ещё не загрузилась — подождать (имя нужно для стартового текста).
+      if (title == null) return null;
+      c = _create(key, title);
+    }
+    return ChatNightTarget(c);
+  }
+
+  Future<void> _emitNight(String key) async {
+    final n = notifier;
+    if (n == null || _disposed) return;
+    try {
+      await n.show(
+          title: notifyTitle,
+          body: cleanNotifyText('Задача на ночь выполнена: ${_nameFor(key)}'),
+          key: key);
+    } catch (_) {}
+  }
+
+  /// Имя проекта по ключу чата.
+  String nameFor(String slug) => _nameFor(slug);
+
+  String _nameFor(String slug) {
+    if (slug == officeKey) return officeProject.name;
+    for (final p in projects) {
+      if (p.slug == slug) return p.name;
+    }
+    return slug;
+  }
+
   /// Локальный просмотр сайта (один за раз).
   final SitePreview sites;
 
@@ -96,6 +151,9 @@ class AppController extends ChangeNotifier {
   /// Закрыть программу после запуска установщика (stopAll уже сделан).
   final Future<void> Function()? quitApp;
   final DateTime Function() _now;
+
+  /// Текущее время (в тестах — фейковые часы).
+  DateTime clockNow() => _now();
   final UsageRepo usage;
   final NotifyTracker _tracker = NotifyTracker();
   final String downloadsDir;
@@ -184,6 +242,7 @@ class AppController extends ChangeNotifier {
     _boardTimer?.cancel();
     _updateTimer?.cancel();
     _limitTimer?.cancel();
+    night.dispose();
     for (final c in chats.values) {
       c.dispose();
     }
@@ -199,6 +258,9 @@ class AppController extends ChangeNotifier {
   Future<void> init() async {
     try {
       await state.load();
+      try {
+        night.load();
+      } catch (_) {}
       try {
         await usage.load();
       } catch (_) {}
@@ -360,14 +422,7 @@ class AppController extends ChangeNotifier {
       } catch (_) {}
       if (focused) return;
     }
-    var name = slug;
-    if (slug == officeKey) {
-      name = officeProject.name;
-    } else {
-      for (final p in projects) {
-        if (p.slug == slug) name = p.name;
-      }
-    }
+    final name = _nameFor(slug);
     try {
       final body = notifyBody(kind, name, stage: stage);
       if (kind == NotifyKind.buildOk && n is DownloadActionNotifier) {
