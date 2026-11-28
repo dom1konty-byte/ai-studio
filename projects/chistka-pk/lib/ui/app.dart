@@ -78,7 +78,11 @@ class _ChistoAppState extends State<ChistoApp> {
               controller: widget.controller,
               enabled: widget.onboarding,
               delay: widget.splash ? const Duration(milliseconds: 2300) : Duration.zero,
-              child: Splash(enabled: widget.splash, child: child ?? const SizedBox()),
+              child: Splash(
+                enabled: widget.splash,
+                onDone: widget.controller.releaseHeavy,
+                child: child ?? const SizedBox(),
+              ),
             ),
           ),
         ),

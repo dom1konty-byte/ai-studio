@@ -4,9 +4,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'glass.dart';
 
-/// Анимация содержимого окна внутри Flutter (вместе с системным AnimateWindow):
-/// открытие 0,94 → 1 за 320 мс (easeOutCubic), закрытие 1 → 0,92 за 280 мс
-/// (easeInCubic). Окно при этом не двигается.
+/// Анимация содержимого окна внутри Flutter: открытие 0,94 → 1 за 340 мс,
+/// закрытие 1 → 0,94 за 380 мс, масштаб + затухание (easeInOutCubic).
+/// Только transform/opacity в RepaintBoundary. Окно при этом не двигается.
 class WindowFx {
   _WindowFxHostState? _host;
 
@@ -26,10 +26,10 @@ class WindowFx {
 
 final windowFx = WindowFx();
 
-const windowFxShowDuration = Duration(milliseconds: 320);
-const windowFxHideDuration = Duration(milliseconds: 280);
+const windowFxShowDuration = Duration(milliseconds: 340);
+const windowFxHideDuration = Duration(milliseconds: 380);
 const windowFxShowScale = 0.94;
-const windowFxHideScale = 0.92;
+const windowFxHideScale = 0.94;
 
 class WindowFxHost extends StatefulWidget {
   const WindowFxHost({super.key, required this.child, this.fx});
@@ -67,9 +67,9 @@ class _WindowFxHostState extends State<WindowFxHost> with SingleTickerProviderSt
       case _Mode.idle:
         return 0;
       case _Mode.hide:
-        return Curves.easeInCubic.transform(_ctl.value);
+        return Curves.easeInOutCubic.transform(_ctl.value);
       case _Mode.show:
-        return 1 - Curves.easeOutCubic.transform(_ctl.value);
+        return 1 - Curves.easeInOutCubic.transform(_ctl.value);
     }
   }
 
@@ -126,9 +126,14 @@ class _WindowFxHostState extends State<WindowFxHost> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     // Фон под уменьшающимся содержимым — цвет фона приложения.
     final bg = GlassScope.of(context) ? Colors.transparent : Theme.of(context).scaffoldBackgroundColor;
+    final child = RepaintBoundary(child: widget.child);
+    if (_mode == _Mode.idle) return ColoredBox(color: bg, child: child);
     return ColoredBox(
       color: bg,
-      child: Transform.scale(scale: _scale, child: widget.child),
+      child: Opacity(
+        opacity: (1 - _k).clamp(0.0, 1.0),
+        child: Transform.scale(scale: _scale, child: child),
+      ),
     );
   }
 }

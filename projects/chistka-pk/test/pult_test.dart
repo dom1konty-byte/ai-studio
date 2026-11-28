@@ -440,21 +440,21 @@ void main() {
   });
 
   group('плавное сворачивание (содержимое внутри Flutter)', () {
-    testWidgets('содержимое плавно уменьшается 1 → 0,92 за 280 мс', (tester) async {
+    testWidgets('содержимое плавно уменьшается 1 → 0,94 за 380 мс', (tester) async {
       await _pump(tester, _make(tmp: tmp));
       expect(windowFx.amount, 0);
       var done = false;
       windowFx.playHide().then((_) => done = true);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 140));
+      await tester.pump(const Duration(milliseconds: 190));
       expect(windowFx.amount, inExclusiveRange(0, 1));
       expect(done, isFalse);
-      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 200));
       expect(done, isTrue);
       expect(windowFx.amount, 1);
       final sc = tester.widget<Transform>(find.descendant(
           of: find.byType(WindowFxHost), matching: find.byType(Transform)).first);
-      expect(sc.transform.storage[0], closeTo(0.92, 0.001));
+      expect(sc.transform.storage[0], closeTo(0.94, 0.001));
       windowFx.reset();
       await tester.pump();
       expect(windowFx.amount, 0);
@@ -468,7 +468,7 @@ void main() {
       var done = false;
       windowFx.playShow().then((_) => done = true);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 330));
+      await tester.pump(const Duration(milliseconds: 350));
       expect(done, isTrue);
       expect(windowFx.amount, 0);
     });

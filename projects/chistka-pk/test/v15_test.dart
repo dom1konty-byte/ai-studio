@@ -1,7 +1,6 @@
 
 import 'package:chistka_pk/platform/mini_window.dart';
 import 'package:chistka_pk/platform/show_guard.dart';
-import 'package:chistka_pk/platform/window_animator.dart';
 import 'package:chistka_pk/ui/glass.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -48,15 +47,6 @@ void main() {
     b.save(const Rect.fromLTWH(10, 20, 900, 700));
     expect(b.take(), const Rect.fromLTWH(10, 20, 900, 700));
     expect(b.take(), isNull);
-  });
-
-  test('fadeOpacity: границы и монотонность', () {
-    expect(fadeOpacity(0, show: true), 0);
-    expect(fadeOpacity(1, show: true), 1);
-    expect(fadeOpacity(0, show: false), 1);
-    expect(fadeOpacity(1, show: false), 0);
-    expect(fadeOpacity(0.5, show: true), greaterThan(0.5));
-    expect(fadeOpacity(0.5, show: false), greaterThan(0.5));
   });
 
   testWidgets('ShowGuard: страховочный показ через 2,5 с', (tester) async {
