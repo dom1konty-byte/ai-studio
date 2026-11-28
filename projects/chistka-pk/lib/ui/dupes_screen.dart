@@ -5,6 +5,7 @@ import '../core/format.dart';
 import '../core/models.dart';
 import '../state/app_controller.dart';
 import 'main_screen.dart';
+import 'anim.dart';
 import 'pult_tile.dart';
 
 /// Панель «Дубликаты»: группы одинаковых файлов, в каждой одна копия остаётся.
@@ -38,7 +39,7 @@ class DupesScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Дубликаты', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+        const Text('Дубликаты', style: screenTitleStyle),
         Text(
           'Одинаковые файлы в ваших папках. Одна копия остаётся.',
           style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),

@@ -8,6 +8,7 @@ import 'anim.dart';
 import 'computer_details.dart';
 import 'computer_screen.dart';
 import 'empty_dirs_screen.dart';
+import 'glass.dart';
 import 'dupes_screen.dart';
 import 'files_screen.dart';
 import 'internet_screen.dart';
@@ -155,7 +156,9 @@ class _ShellState extends State<Shell> {
     return ListenableBuilder(
       listenable: c,
       builder: (context, _) {
+        final glass = GlassScope.of(context);
         return Scaffold(
+          backgroundColor: glass ? glassScaffoldColor(Theme.of(context).brightness) : null,
           body: SafeArea(
             child: Row(
               children: [
@@ -185,7 +188,7 @@ class _ShellState extends State<Shell> {
                       children: [
                         Positioned.fill(
                           child: Padding(
-                            padding: const EdgeInsets.all(24),
+                            padding: const EdgeInsets.all(32),
                             child: AnimatedSwitcher(
                       duration: animDuration(context, const Duration(milliseconds: 200)),
                       switchInCurve: Curves.easeOutCubic,

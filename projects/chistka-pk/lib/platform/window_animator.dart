@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../ui/window_fx.dart';
+import 'glass.dart';
 import 'window_blend.dart';
 
 const windowBlendMs = 280;
@@ -27,7 +28,8 @@ class WindowAnimator {
     final fx = windowFx.playShow();
     var ok = false;
     try {
-      ok = await _blend.show(windowBlendMs);
+      // С эффектом «Стекло» AnimateWindow даёт чёрную вспышку — идём запасным путём (прозрачность окна).
+      if (!glassAvailable.value) ok = await _blend.show(windowBlendMs);
     } catch (_) {}
     if (!ok) {
       try {
@@ -47,7 +49,7 @@ class WindowAnimator {
       final fx = windowFx.playHide();
       var ok = false;
       try {
-        ok = await _blend.hide(windowBlendMs);
+        if (!glassAvailable.value) ok = await _blend.hide(windowBlendMs);
       } catch (_) {}
       if (!ok) {
         try {

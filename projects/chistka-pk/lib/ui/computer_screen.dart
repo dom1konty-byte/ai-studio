@@ -4,6 +4,7 @@ import '../core/health.dart';
 import '../state/app_controller.dart';
 import '../state/computer_service.dart';
 import 'app.dart';
+import 'anim.dart';
 import 'pult_tile.dart';
 
 /// Экран «Компьютер» — пульт плиток с итогом в каждой. Подробности — слоем поверх.
@@ -54,7 +55,7 @@ class _ComputerScreenState extends State<ComputerScreen> with WidgetsBindingObse
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Компьютер', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+            const Text('Компьютер', style: screenTitleStyle),
             const SizedBox(height: 16),
             TileGrid(children: [
               _healthTile(c),
@@ -69,16 +70,18 @@ class _ComputerScreenState extends State<ComputerScreen> with WidgetsBindingObse
 
   Widget _healthTile(AppController c) {
     const icon = Icons.storage_outlined;
-    const color = Color(0xFF0F9D9A);
+    const tt = tintDisk;
+    const color = Color(0xFF3B78C2);
     const title = 'Здоровье диска';
     void open() => c.openComputerLayer(Layer.health);
     switch (s.healthLoad) {
       case ComputerLoad.idle:
       case ComputerLoad.loading:
-        return const PultTile(
+        return PultTile(
             key: Key('tile-health'),
             icon: icon,
             color: color,
+            tint: tt.bg,
             title: title,
             caption: 'Состояние, температура, износ',
             kind: TileKind.busy,
@@ -88,6 +91,7 @@ class _ComputerScreenState extends State<ComputerScreen> with WidgetsBindingObse
             key: const Key('tile-health'),
             icon: icon,
             color: color,
+            tint: tt.bg,
             title: title,
             caption: '',
             kind: TileKind.error,
@@ -99,6 +103,7 @@ class _ComputerScreenState extends State<ComputerScreen> with WidgetsBindingObse
           key: const Key('tile-health'),
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: '',
           kind: TileKind.summary,
@@ -113,13 +118,15 @@ class _ComputerScreenState extends State<ComputerScreen> with WidgetsBindingObse
 
   Widget _procsTile(AppController c) {
     const icon = Icons.speed_outlined;
-    const color = Color(0xFF3D5A80);
+    const tt = tintProcs;
+    const color = Color(0xFFC8473A);
     const title = 'Что тормозит';
     if (s.cpuPercent == null && s.memTotal == 0) {
       return PultTile(
         key: const Key('tile-procs'),
         icon: icon,
         color: color,
+        tint: tt.bg,
         title: title,
         caption: 'Нагрузка на процессор и память',
         kind: s.sampleFailed ? TileKind.error : TileKind.busy,
@@ -133,6 +140,7 @@ class _ComputerScreenState extends State<ComputerScreen> with WidgetsBindingObse
       key: const Key('tile-procs'),
       icon: icon,
       color: color,
+      tint: tt.bg,
       title: title,
       caption: '',
       kind: TileKind.summary,
@@ -150,7 +158,8 @@ class _ComputerScreenState extends State<ComputerScreen> with WidgetsBindingObse
     return PultTile(
       key: const Key('tile-battery'),
       icon: Icons.battery_std_outlined,
-      color: const Color(0xFF2E7D32),
+      color: tintBattery.dot,
+      tint: tintBattery.bg,
       title: 'Батарея',
       caption: '',
       kind: TileKind.summary,

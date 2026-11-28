@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/startup.dart';
 import '../state/app_controller.dart';
+import 'anim.dart';
 
 /// Экран «Автозагрузка»: что запускается с Windows, с выключателем.
 class StartupScreen extends StatefulWidget {
@@ -83,7 +84,7 @@ class _StartupScreenState extends State<StartupScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Автозагрузка',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+                style: screenTitleStyle),
             const SizedBox(height: 4),
             Text('Выключенное не удаляется — можно включить обратно.',
                 style: TextStyle(color: cs.onSurfaceVariant)),

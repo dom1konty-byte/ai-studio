@@ -5,6 +5,7 @@ import '../core/format.dart';
 import '../core/programs.dart';
 import '../state/app_controller.dart';
 import 'leftovers_screen.dart';
+import 'anim.dart';
 
 /// Экран «Программы»: список установленных программ, поиск, сортировка,
 /// «Удалить» и «Принудительно удалить…».
@@ -92,7 +93,7 @@ class _ProgramsScreenState extends State<ProgramsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Программы', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+            const Text('Программы', style: screenTitleStyle),
             const SizedBox(height: 12),
             Wrap(
               spacing: 16,

@@ -156,7 +156,7 @@ class _InternetScreenState extends State<InternetScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Интернет',
-                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+                        style: screenTitleStyle),
                     if (!offline)
                       Text(subtitle, style: TextStyle(color: cs.onSurfaceVariant)),
                   ],
@@ -209,8 +209,13 @@ class _InternetScreenState extends State<InternetScreen> {
         padding: EdgeInsets.all(pad),
         decoration: BoxDecoration(
           color: color ?? Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: border ?? _border),
+          borderRadius: BorderRadius.circular(cardRadius),
+          border: border == null ? null : Border.all(color: border),
+          boxShadow: border != null
+              ? null
+              : const [
+                  BoxShadow(color: Color(0x17143C46), blurRadius: 20, offset: Offset(0, 6)),
+                ],
         ),
         child: child,
       );

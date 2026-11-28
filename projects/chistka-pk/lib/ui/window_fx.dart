@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'glass.dart';
+
 /// Анимация содержимого окна внутри Flutter (вместе с системным AnimateWindow):
 /// открытие 0,94 → 1 за 320 мс (easeOutCubic), закрытие 1 → 0,92 за 280 мс
 /// (easeInCubic). Окно при этом не двигается.
@@ -123,7 +125,7 @@ class _WindowFxHostState extends State<WindowFxHost> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     // Фон под уменьшающимся содержимым — цвет фона приложения.
-    final bg = Theme.of(context).scaffoldBackgroundColor;
+    final bg = GlassScope.of(context) ? Colors.transparent : Theme.of(context).scaffoldBackgroundColor;
     return ColoredBox(
       color: bg,
       child: Transform.scale(scale: _scale, child: widget.child),

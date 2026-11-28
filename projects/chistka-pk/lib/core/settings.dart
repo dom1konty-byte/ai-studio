@@ -25,9 +25,13 @@ class AppSettings {
     this.navWidth = defaultNavWidth,
     this.autoUpdate = true,
     this.lastUpdateCheck,
+    this.transparentPanel = true,
   });
 
   final bool autostart;
+
+  /// Вид «Стекло»: прозрачная панель и размытие Windows 11 под окном.
+  final bool transparentPanel;
   final bool minimizeToTray;
   final bool trayHintShown;
 
@@ -51,6 +55,7 @@ class AppSettings {
     double? navWidth,
     bool? autoUpdate,
     DateTime? lastUpdateCheck,
+    bool? transparentPanel,
   }) =>
       AppSettings(
         autostart: autostart ?? this.autostart,
@@ -60,6 +65,7 @@ class AppSettings {
         navWidth: clampNavWidth(navWidth ?? this.navWidth),
         autoUpdate: autoUpdate ?? this.autoUpdate,
         lastUpdateCheck: lastUpdateCheck ?? this.lastUpdateCheck,
+        transparentPanel: transparentPanel ?? this.transparentPanel,
       );
 
   Map<String, Object?> toJson() => {
@@ -70,6 +76,7 @@ class AppSettings {
         'navWidth': navWidth,
         'autoUpdate': autoUpdate,
         'lastUpdateCheck': lastUpdateCheck?.toIso8601String(),
+        'transparentPanel': transparentPanel,
       };
 
   static AppSettings fromJson(Object? m) {
@@ -83,6 +90,7 @@ class AppSettings {
       quickCategories: q is List ? q.whereType<String>().toList() : const [],
       navWidth: m['navWidth'] is num ? clampNavWidth((m['navWidth'] as num).toDouble()) : defaultNavWidth,
       autoUpdate: b('autoUpdate', true),
+      transparentPanel: b('transparentPanel', true),
       lastUpdateCheck:
           m['lastUpdateCheck'] is String ? DateTime.tryParse(m['lastUpdateCheck'] as String) : null,
     );

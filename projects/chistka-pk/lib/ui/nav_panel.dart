@@ -5,6 +5,7 @@ import '../core/settings.dart';
 import '../state/app_controller.dart';
 import 'about_dialog.dart';
 import 'anim.dart';
+import 'glass.dart';
 
 /// Ниже этой ширины панель показывает только иконки.
 const navNarrowBelow = 120.0;
@@ -71,7 +72,13 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
     final tile = Padding(
       padding: EdgeInsets.fromLTRB(8, 2, 8, 2),
       child: Material(
-        color: selected ? cs.secondaryContainer : Colors.transparent,
+        color: selected
+            ? (GlassScope.of(context) && Theme.of(context).brightness == Brightness.light
+                ? const Color(0xBFFFFFFF)
+                : cs.secondaryContainer)
+            : Colors.transparent,
+        elevation: selected ? 2 : 0,
+        shadowColor: const Color(0xFF143C46),
         borderRadius: BorderRadius.circular(24),
         child: InkWell(
           borderRadius: BorderRadius.circular(24),
@@ -226,7 +233,7 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
           child: Center(
             child: Container(
               width: (_edgeHover || _edgeDrag) ? 2 : 1,
-              color: (_edgeHover || _edgeDrag) ? cs.primary : cs.outlineVariant,
+              color: (_edgeHover || _edgeDrag) ? cs.primary : Colors.transparent,
             ),
           ),
         ),
@@ -236,9 +243,8 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final light = Theme.of(context).brightness == Brightness.light;
-    final bg = light ? const Color(0xFFE3F1F1) : cs.surfaceContainer;
+    final glass = GlassScope.of(context);
+    final bg = navPanelColor(context, glass: glass);
     final logo = InkWell(
       key: const Key('nav-logo'),
       borderRadius: BorderRadius.circular(16),
@@ -268,7 +274,11 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
           Expanded(
             child: Container(
               color: bg,
-              child: Column(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (glass) const Positioned.fill(child: WavesBackground()),
+                  Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
@@ -290,6 +300,8 @@ class _NavPanelState extends State<NavPanel> with SingleTickerProviderStateMixin
                     ),
                   ),
                   _bottom(context),
+                ],
+              ),
                 ],
               ),
             ),

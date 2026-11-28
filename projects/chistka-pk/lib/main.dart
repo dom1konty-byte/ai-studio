@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'platform/glass.dart';
 import 'platform/single_instance.dart';
 import 'platform/tray_service.dart';
 import 'platform/window_animator.dart';
@@ -42,6 +44,7 @@ Future<void> main(List<String> args) async {
       // Обычный запуск: окно показываем плавно после первого кадра (см. ниже),
       // чтобы не было белой вспышки.
     });
+    await initGlass(dark: PlatformDispatcher.instance.platformBrightness == Brightness.dark);
     await controller.init();
     try {
       final tray = TrayService(controller);

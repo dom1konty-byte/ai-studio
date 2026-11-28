@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../platform/platform_api.dart';
 import '../state/app_controller.dart';
+import 'anim.dart';
 
 /// Экран «Настройки».
 class SettingsScreen extends StatelessWidget {
@@ -18,7 +19,7 @@ class SettingsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Настройки',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+                style: screenTitleStyle),
             const SizedBox(height: 12),
             SwitchListTile(
               key: const Key('admin-switch'),
@@ -51,6 +52,13 @@ class SettingsScreen extends StatelessWidget {
               title: const Text('Проверять обновления автоматически'),
               value: c.settings.autoUpdate,
               onChanged: c.setAutoUpdate,
+            ),
+            SwitchListTile(
+              key: const Key('transparent-panel-switch'),
+              title: const Text('Прозрачная панель'),
+              subtitle: const Text('Стекло: размытие Windows 11 под окном. Выключите — фон станет сплошным.'),
+              value: c.settings.transparentPanel,
+              onChanged: c.setTransparentPanel,
             ),
           ],
         );

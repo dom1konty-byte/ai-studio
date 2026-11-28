@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
+import '../platform/glass.dart';
+import 'glass.dart';
 import 'shell.dart';
 import 'splash.dart';
 import 'window_fx.dart';
@@ -61,8 +63,14 @@ class _ChistoAppState extends State<ChistoApp> {
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: ThemeMode.system,
-      builder: (context, child) =>
-          WindowFxHost(child: Splash(enabled: widget.splash, child: child ?? const SizedBox())),
+      builder: (context, child) => ListenableBuilder(
+        listenable: Listenable.merge([widget.controller, glassAvailable]),
+        builder: (context, _) => GlassScope(
+          on: widget.controller.settings.transparentPanel && glassAvailable.value,
+          child: WindowFxHost(
+              child: Splash(enabled: widget.splash, child: child ?? const SizedBox())),
+        ),
+      ),
       home: Shell(controller: widget.controller),
     );
   }

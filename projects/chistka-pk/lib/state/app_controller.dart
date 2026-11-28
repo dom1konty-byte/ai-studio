@@ -1533,6 +1533,8 @@ class AppController extends ChangeNotifier {
     return ok;
   }
   Future<void> setAutoUpdate(bool on) => _saveSettings(settings.copyWith(autoUpdate: on));
+  Future<void> setTransparentPanel(bool on) =>
+      _saveSettings(settings.copyWith(transparentPanel: on));
 
   /// Проверка при запуске: если включена, прошли сутки и (в трее) выдержана [delay].
   /// Ошибки сети молча игнорируются.

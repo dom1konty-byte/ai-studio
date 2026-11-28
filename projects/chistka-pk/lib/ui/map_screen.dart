@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/disk_map.dart';
 import '../core/format.dart';
 import '../state/app_controller.dart';
+import 'anim.dart';
 
 /// «Карта диска»: размеры подпапок. Только просмотр, ничего не удаляется.
 class MapScreen extends StatelessWidget {
@@ -70,7 +71,7 @@ class MapScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Карта диска', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+        const Text('Карта диска', style: screenTitleStyle),
         Text('Только просмотр, ничего не удаляется',
             style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant)),
         const SizedBox(height: 8),

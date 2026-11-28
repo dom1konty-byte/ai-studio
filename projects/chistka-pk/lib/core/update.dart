@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 /// Версия программы (совпадает с version в pubspec.yaml; проверяется тестом).
-const appVersion = '1.3.1';
+const appVersion = '1.4.0';
 
 /// Префикс тега релиза ЧистоДиск в общем репозитории студии.
 const releaseTagPrefix = 'chistka-pk-v';

@@ -5,6 +5,7 @@ import '../core/models.dart';
 import '../core/scanner.dart';
 import '../state/app_controller.dart';
 import 'main_screen.dart';
+import 'anim.dart';
 
 /// Экран «Загрузки» ([isDownloads] = true) или «Большие файлы».
 class FilesScreen extends StatefulWidget {
@@ -143,7 +144,7 @@ class _FilesScreenState extends State<FilesScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(dl ? 'Загрузки' : 'Большие файлы',
-            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+            style: screenTitleStyle),
         Text(
           dl
               ? 'Удаляются в Корзину. Ничего не отмечено заранее.'

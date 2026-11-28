@@ -38,7 +38,7 @@ IconData categoryIcon(CategoryId id) {
 String skippedText(int n) => n > 0 ? ', пропущено $n' : '';
 
 RoundedRectangleBorder cardShape() =>
-    RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
+    RoundedRectangleBorder(borderRadius: BorderRadius.circular(cardRadius));
 
 
 /// Экран «Очистка» — пульт: полоска диска, «Быстрая очистка» и плитки.
@@ -126,8 +126,8 @@ class _MainScreenState extends State<MainScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Очистка', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
+          const Text('Очистка', style: screenTitleStyle),
+          const SizedBox(height: blockGap),
           if (c.lowSpace)
             Card(
               elevation: 0,
@@ -150,14 +150,14 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
           if (disk != null && disk.total > 0) _DiskStrip(c: c),
-          const SizedBox(height: 12),
+          const SizedBox(height: blockGap),
           _QuickStrip(c: c, onClean: _quick, open: _open, onToggle: _toggleOpen),
           AnimatedSize(
             duration: animDuration(context, const Duration(milliseconds: 200)),
             alignment: Alignment.topCenter,
             child: _open ? _WhatToClean(c: c, enabled: !busy) : const SizedBox(width: double.infinity),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: blockGap),
           TileGrid(children: [
             _FilesTile(c: c, downloads: true),
             _FilesTile(c: c, downloads: false),
@@ -165,7 +165,8 @@ class _MainScreenState extends State<MainScreen> {
             _EmptyDirsTile(c: c),
             PultTile(
               icon: Icons.pie_chart_outline,
-              color: const Color(0xFF3D5A80),
+              color: tintMap.dot,
+              tint: tintMap.bg,
               title: 'Карта диска',
               caption: 'Что занимает место',
               actionLabel: 'Открыть',
@@ -196,16 +197,19 @@ class _DiskStrip extends StatelessWidget {
           color: used > 0.9 ? warningColor : null,
         ),
         const SizedBox(height: 4),
-        Text(
-          'Диск ${c.systemDriveLabel} свободно ${formatSize(disk.free)} из ${formatSize(disk.total)}',
-          style: const TextStyle(fontSize: 12),
-        ),
+        Text.rich(TextSpan(style: const TextStyle(fontSize: 14), children: [
+          TextSpan(text: 'Диск ${c.systemDriveLabel} свободно '),
+          TextSpan(
+              text: formatSize(disk.free),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
+          TextSpan(text: ' из ${formatSize(disk.total)}'),
+        ])),
       ],
     );
   }
 }
 
-/// «Быстрая очистка»: полоса 88 px (узко — в два ряда).
+/// «Быстрая очистка»: полоса 104 px (узко — в два ряда).
 class _QuickStrip extends StatelessWidget {
   const _QuickStrip({required this.c, required this.onClean, required this.open, required this.onToggle});
   final AppController c;
@@ -226,7 +230,7 @@ class _QuickStrip extends StatelessWidget {
     final failed = done && (c.failedAll || s == null);
 
     const base = TextStyle(fontSize: 14);
-    const bold = TextStyle(fontSize: 14, fontWeight: FontWeight.w700);
+    const bold = TextStyle(fontSize: 28, fontWeight: FontWeight.w700);
     Widget sub;
     if (busy) {
       sub = Column(
@@ -271,10 +275,10 @@ class _QuickStrip extends StatelessWidget {
     final info = Row(
       children: [
         Container(
-          width: 48,
-          height: 48,
+          width: 56,
+          height: 56,
           decoration: const BoxDecoration(color: Color(0xFF0F9D9A), shape: BoxShape.circle),
-          child: const Icon(Icons.auto_fix_high, color: Colors.white),
+          child: const Icon(Icons.auto_fix_high, color: Colors.white, size: 28),
         ),
         const SizedBox(width: 16),
         Expanded(
@@ -283,7 +287,7 @@ class _QuickStrip extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Быстрая очистка',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
               sub,
             ],
           ),
@@ -315,11 +319,13 @@ class _QuickStrip extends StatelessWidget {
     return LayoutBuilder(builder: (context, box) {
       final narrow = box.maxWidth < 560;
       return Container(
-        constraints: const BoxConstraints(minHeight: 88),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        constraints: const BoxConstraints(minHeight: 104),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: light ? const Color(0xFFB5DEDC) : cs.outlineVariant),
+          borderRadius: BorderRadius.circular(cardRadius),
+          boxShadow: const [
+            BoxShadow(color: Color(0x17143C46), blurRadius: 20, offset: Offset(0, 6)),
+          ],
           gradient: light
               ? const LinearGradient(colors: [Color(0xFFDDF2F1), Color(0xFFC6EAE8)])
               : null,
@@ -430,13 +436,15 @@ class _FilesTile extends StatelessWidget {
     final layer = downloads ? Layer.downloads : Layer.big;
     final title = downloads ? 'Загрузки' : 'Большие файлы';
     final icon = downloads ? Icons.download_outlined : Icons.data_usage;
-    final color = downloads ? const Color(0xFF0F9D9A) : const Color(0xFF3D5A80);
+    final tt = downloads ? tintDownloads : tintBig;
+    final color = tt.dot;
     final caption = downloads ? 'Что давно лежит в Загрузках' : 'Самые тяжёлые файлы';
 
     if (recycled != null) {
       return PultTile(
         icon: icon,
         color: color,
+        tint: tt.bg,
         title: title,
         caption: caption,
         kind: TileKind.result,
@@ -449,6 +457,7 @@ class _FilesTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           actionLabel: 'Найти',
@@ -458,6 +467,7 @@ class _FilesTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.busy,
@@ -468,6 +478,7 @@ class _FilesTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.error,
@@ -479,6 +490,7 @@ class _FilesTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.result,
@@ -499,6 +511,7 @@ class _DupTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const icon = Icons.file_copy_outlined;
+    const tt = tintDupes;
     const color = Color(0xFF7B5EA7);
     const title = 'Дубликаты';
     const caption = 'Одинаковые файлы';
@@ -508,6 +521,7 @@ class _DupTile extends StatelessWidget {
       return PultTile(
         icon: icon,
         color: color,
+        tint: tt.bg,
         title: title,
         caption: caption,
         kind: TileKind.result,
@@ -520,6 +534,7 @@ class _DupTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           actionLabel: 'Найти',
@@ -529,6 +544,7 @@ class _DupTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.busy,
@@ -539,6 +555,7 @@ class _DupTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.error,
@@ -549,6 +566,7 @@ class _DupTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.result,
@@ -569,7 +587,8 @@ class _EmptyDirsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const icon = Icons.folder_off_outlined;
-    const color = Color(0xFF566B6B);
+    const tt = tintEmpty;
+    const color = Color(0xFFC2552B);
     const title = 'Пустые папки';
     const caption = 'Папки без файлов';
     final busyApp = c.anyBusy;
@@ -578,6 +597,7 @@ class _EmptyDirsTile extends StatelessWidget {
       return PultTile(
         icon: icon,
         color: color,
+        tint: tt.bg,
         title: title,
         caption: caption,
         kind: TileKind.result,
@@ -590,6 +610,7 @@ class _EmptyDirsTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           actionLabel: 'Найти',
@@ -599,6 +620,7 @@ class _EmptyDirsTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.busy,
@@ -609,6 +631,7 @@ class _EmptyDirsTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.error,
@@ -619,6 +642,7 @@ class _EmptyDirsTile extends StatelessWidget {
         return PultTile(
           icon: icon,
           color: color,
+          tint: tt.bg,
           title: title,
           caption: caption,
           kind: TileKind.result,

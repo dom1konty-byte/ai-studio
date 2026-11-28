@@ -8,6 +8,7 @@ import '../core/health.dart';
 import '../core/procs.dart';
 import '../state/app_controller.dart';
 import '../state/computer_service.dart';
+import 'anim.dart';
 import 'computer_screen.dart';
 import 'pult_tile.dart';
 import 'settings_screen.dart';
@@ -113,8 +114,11 @@ class _DiskCard extends StatelessWidget {
       key: const Key('disk-card'),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(cardRadius),
+        boxShadow: const [
+          BoxShadow(color: Color(0x17143C46), blurRadius: 20, offset: Offset(0, 6)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,8 +300,11 @@ class _Meter extends StatelessWidget {
       width: 280,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border),
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(cardRadius),
+        boxShadow: const [
+          BoxShadow(color: Color(0x17143C46), blurRadius: 20, offset: Offset(0, 6)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

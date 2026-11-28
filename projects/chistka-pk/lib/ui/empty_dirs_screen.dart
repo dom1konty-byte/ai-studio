@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/format.dart';
 import '../state/app_controller.dart';
+import 'anim.dart';
 
 /// Панель «Пустые папки»: список с галочками, удаление в Корзину.
 class EmptyDirsScreen extends StatelessWidget {
@@ -33,7 +34,7 @@ class EmptyDirsScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Пустые папки', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600)),
+        const Text('Пустые папки', style: screenTitleStyle),
         Text(
           'Системные и скрытые папки не показываются. Папки в OneDrive не отмечены заранее.',
           style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),

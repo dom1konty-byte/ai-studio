@@ -2,12 +2,14 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-const splashMs = 1500;
+/// Заставка 2 с. Окно при запуске проявляется первые ~300 мс (WindowAnimator),
+/// поэтому логотип начинает проявляться в 250 мс и виден целиком с 700 мс (≥ 1200 мс до конца).
+const splashMs = 2000;
 const _fadeMs = 150;
 const _splashBg = Color(0xFFEEF6F6);
 const _teal = Color(0xFF0F9D9A);
 
-/// Заставка ~1,5 с (логотип держится ~0,5 с): капля падает, расходятся круги, капля становится логотипом.
+/// Заставка 2 с: логотип плавно проявляется (капля + подпись), по воде расходятся круги.
 /// Щелчок — пропуск. [enabled] = false или «Убрать анимации» — заставки нет.
 class Splash extends StatefulWidget {
   const Splash({super.key, required this.enabled, required this.child});
@@ -109,26 +111,28 @@ class _SplashArt extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, box) {
       final cx = box.maxWidth / 2, cy = box.maxHeight / 2;
-      // 0–420: капля падает сверху в центр.
-      final fall = _seg(ms, 0, 420, Curves.easeInQuad);
-      final dropY = -40 + (cy + 40) * fall;
-      // 600–1000 (потом логотип держится до конца): капля становится логотипом (чуть крупнее), подпись проявляется.
-      final morph = _seg(ms, 600, 1000, Curves.easeOut);
-      final dropSize = 28 + 20 * morph;
+      // 250–700: логотип проявляется целиком (капля чуть опускается и растёт, подпись — следом).
+      final logo = _seg(ms, 250, 700, Curves.easeOutCubic);
+      final text = _seg(ms, 400, 750, Curves.easeOut);
+      final dropSize = 40 + 8 * logo;
+      final dropY = cy - 24 * (1 - logo);
       return Stack(
         children: [
           Positioned.fill(child: CustomPaint(painter: _RipplePainter(ms, Offset(cx, cy)))),
           Positioned(
             left: cx - dropSize,
             top: dropY - dropSize,
-            child: Icon(Icons.water_drop, size: dropSize * 2, color: _teal),
+            child: Opacity(
+              opacity: logo,
+              child: Icon(Icons.water_drop, size: dropSize * 2, color: _teal),
+            ),
           ),
           Positioned(
             left: 0,
             right: 0,
             top: cy + 56,
             child: Opacity(
-              opacity: morph,
+              opacity: text,
               child: const Text(
                 'ЧистоДиск',
                 textAlign: TextAlign.center,
@@ -143,7 +147,7 @@ class _SplashArt extends StatelessWidget {
   }
 }
 
-/// Три круга на воде: 380–800 мс, каждый следующий позже на 100 мс.
+/// Три круга на воде: 450–900 мс, каждый следующий позже на 100 мс.
 class _RipplePainter extends CustomPainter {
   _RipplePainter(this.ms, this.center);
   final double ms;
@@ -153,7 +157,7 @@ class _RipplePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final maxR = math.min(size.width, size.height) * 0.3;
     for (var i = 0; i < 3; i++) {
-      final t = _seg(ms, 380.0 + i * 100, 800.0 + i * 100, Curves.easeOutCubic);
+      final t = _seg(ms, 450.0 + i * 100, 900.0 + i * 100, Curves.easeOutCubic);
       if (t <= 0 || t >= 1) continue;
       final r = maxR * (0.2 + 0.8 * t);
       final paint = Paint()
