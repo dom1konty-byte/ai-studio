@@ -265,7 +265,7 @@ String? checkSignatureJson(String out, List<String> expectedCns) {
   }
 }
 
-/// Хэш файла из SHASUMS256.txt (строки «<sha>  <имя>»).
+/// Хэш файла из SHASUMS256.txt (строки `<sha>  <имя>`).
 String? parseShaSums(String text, String fileName) {
   for (final line in text.split('\n')) {
     final m = RegExp(r'^([0-9a-fA-F]{64})\s+\*?(\S+)\s*$').firstMatch(line.trim());
