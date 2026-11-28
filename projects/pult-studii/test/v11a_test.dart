@@ -230,7 +230,7 @@ void main() {
 
   group('обновление: безопасность', () {
     test('ошибка скачивания удаляет временную папку', () async {
-      final d = Directory.systemTemp.createTempSync('ai-studio-test-');
+      final d = Directory.systemTemp.createTempSync('ai-studio-update-test-');
       addTearDown(() {
         if (d.existsSync()) d.deleteSync(recursive: true);
       });

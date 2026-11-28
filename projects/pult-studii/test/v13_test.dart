@@ -182,6 +182,10 @@ void main() {
     });
 
     test('отдаёт index.html и css, 404 на ../, только 127.0.0.1', () async {
+      // в наборе есть testWidgets: биндинг подменяет HttpClient (всегда 400) — вернём настоящий
+      final saved = HttpOverrides.current;
+      HttpOverrides.global = null;
+      addTearDown(() => HttpOverrides.global = saved);
       final s = await StaticSiteServer.start(site.path);
       addTearDown(s.stop);
       expect(s.host, '127.0.0.1');
@@ -284,7 +288,11 @@ void main() {
       await _settle(tester);
 
       expect(find.byKey(const Key('quick-replies')), findsOneWidget);
-      expect(find.text('Продолжай'), findsOneWidget);
+      expect(
+          find.descendant(
+              of: find.byKey(const Key('quick-replies')),
+              matching: find.text('Продолжай')),
+          findsOneWidget);
 
       final gate = Completer<int>();
       proc.queue.add(FakeRunning(const [
