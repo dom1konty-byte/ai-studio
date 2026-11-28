@@ -492,7 +492,11 @@ void main() {
       final second = await (await c2.getUrl(url)).close();
       expect(second.statusCode, 503);
       await second.drain<void>();
-    });
+      // явно закрываем первую загрузку и сервер, чтобы тест не завис
+      await first.listen(null).cancel();
+      c1.close(force: true);
+      await srv.stop();
+    }, timeout: const Timeout(Duration(seconds: 30)));
 
     test('плохой slug и короткий токен отвергаются', () async {
       await expectLater(

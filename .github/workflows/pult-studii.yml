@@ -36,7 +36,8 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - id: test
-        run: flutter test
+        timeout-minutes: 15
+        run: flutter test --timeout 60s
       - id: build
         run: flutter build windows --release --dart-define=BUILD_NUMBER=${{ github.run_number }}
       - uses: actions/upload-artifact@v7
