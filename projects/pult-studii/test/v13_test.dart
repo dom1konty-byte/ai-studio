@@ -307,7 +307,7 @@ void main() {
   group('голосовой ввод', () {
     testWidgets('кнопка фокусирует поле и вызывает Win+H', (tester) async {
       final voice = FakeVoice();
-      final (controller, _) = await _start(tester, voice: voice);
+      final (_, _) = await _start(tester, voice: voice);
       await tester.tap(find.byKey(const Key('project-alpha')));
       await _settle(tester);
 
@@ -341,7 +341,7 @@ void main() {
 
   group('скачать заметнее', () {
     testWidgets('⬇ только у строки с успешной сборкой', (tester) async {
-      final (controller, _) = await _start(tester);
+      final (_, _) = await _start(tester);
       expect(find.byKey(const Key('dl-alpha')), findsOneWidget); // сборка ок
       expect(find.byKey(const Key('dl-beta')), findsNothing); // сборки нет
       final btn = tester.widget<IconButton>(find.byKey(const Key('dl-alpha')));
@@ -350,7 +350,7 @@ void main() {
     });
 
     testWidgets('меню ⋯ у сайта: «Открыть сайт»', (tester) async {
-      final (controller, _) = await _start(tester);
+      final (_, _) = await _start(tester);
       await tester.tap(find.byKey(const Key('project-alpha')));
       await _settle(tester);
       await tester.tap(find.byKey(const Key('chat-menu')));

@@ -205,8 +205,8 @@ class AppController extends ChangeNotifier {
       try {
         await notifier?.init(openFromNotification);
         final n = notifier;
-        if (n is DownloadActionNotifier) {
-          n.onDownload = _downloadFromNotification;
+        if (n case final DownloadActionNotifier d) {
+          d.onDownload = _downloadFromNotification;
         }
       } catch (_) {}
       await git.setRepoPath(state.repoPath ?? '');
@@ -371,7 +371,8 @@ class AppController extends ChangeNotifier {
     try {
       final body = notifyBody(kind, name, stage: stage);
       if (kind == NotifyKind.buildOk && n is DownloadActionNotifier) {
-        await n.showWithDownload(title: notifyTitle, body: body, key: slug);
+        await (n as DownloadActionNotifier)
+            .showWithDownload(title: notifyTitle, body: body, key: slug);
       } else {
         await n.show(title: notifyTitle, body: body, key: slug);
       }

@@ -140,13 +140,13 @@ class StaticSiteServer {
     final res = req.response;
     try {
       if (req.method != 'GET' && req.method != 'HEAD') {
-        return _fail(res, 405);
+        return await _fail(res, 405);
       }
       // защита от подмены адреса (DNS rebinding): только наш host:port
       final h = req.headers.host;
-      if (h != '127.0.0.1' || req.headers.port != port) return _fail(res, 403);
+      if (h != '127.0.0.1' || req.headers.port != port) return await _fail(res, 403);
       final file = await _resolve(req.uri.pathSegments);
-      if (file == null) return _fail(res, 404);
+      if (file == null) return await _fail(res, 404);
       res.statusCode = 200;
       res.headers.set('content-type', contentTypeFor(file.path));
       res.headers.set('x-content-type-options', 'nosniff');
