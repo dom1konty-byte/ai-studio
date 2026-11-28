@@ -1,14 +1,23 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:pasteboard/pasteboard.dart';
 
 import '../app/theme.dart';
 import '../models/models.dart';
 import '../models/safety.dart';
+import '../services/attachments.dart';
 import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
 import '../state/chat_controller.dart';
+import 'docs_dialog.dart';
 import 'limit_banner.dart';
+import 'md_style.dart';
 
 class ChatPanel extends StatefulWidget {
   const ChatPanel({
@@ -33,6 +42,7 @@ class _ChatPanelState extends State<ChatPanel> {
   final _scroll = ScrollController();
   int _lastLen = -1;
   bool _askingStop = false;
+  bool _dragging = false;
 
   ChatController get chat => widget.chat;
 
@@ -53,9 +63,40 @@ class _ChatPanelState extends State<ChatPanel> {
   void _submit() {
     if (!chat.canSend || chat.limitBlocked) return;
     final t = _input.text.trim();
-    if (t.isEmpty) return;
+    if (chat.copying) return;
+    if (t.isEmpty && !chat.hasReadyAttachments) return;
     _input.clear();
-    chat.send(t);
+    chat.send(t, withAttachments: true);
+  }
+
+  Future<void> _pickFiles() async {
+    try {
+      final files = await openFiles();
+      if (files.isNotEmpty) {
+        unawaited(chat.addFiles([for (final f in files) f.path]));
+      }
+    } catch (_) {
+      widget.app.toast('Не удалось открыть окно выбора файлов.');
+    }
+  }
+
+  /// Ctrl+V: файлы или картинка из буфера (текст вставляется как обычно).
+  Future<void> _pasteAttachments() async {
+    try {
+      final files = await Pasteboard.files();
+      if (files.isNotEmpty) {
+        unawaited(chat.addFiles(files));
+        return;
+      }
+      final img = await Pasteboard.image;
+      if (img != null && img.isNotEmpty) unawaited(chat.addImageBytes(img));
+    } catch (_) {}
+  }
+
+  void _openDocs() {
+    showDialog<void>(
+        context: context,
+        builder: (_) => DocsDialog(app: widget.app, chat: chat));
   }
 
   /// Лента у самого низа (≤50 px) — тогда держим её прокрученной вниз.
@@ -189,7 +230,9 @@ class _ChatPanelState extends State<ChatPanel> {
             !chat.approvalHidden &&
             !chat.working &&
             chat.canSend;
-        return Focus(
+        final inputEnabled =
+            !chat.preparing && chat.blockedReason == null && !chat.rcOpen;
+        final page = Focus(
           canRequestFocus: false,
           skipTraversal: true,
           onKeyEvent: (node, event) {
@@ -227,6 +270,37 @@ class _ChatPanelState extends State<ChatPanel> {
             ),
           ],
         ));
+        if (chat.attachStore == null) return page;
+        return DropTarget(
+          enable: inputEnabled,
+          onDragEntered: (_) => setState(() => _dragging = true),
+          onDragExited: (_) => setState(() => _dragging = false),
+          onDragDone: (d) {
+            setState(() => _dragging = false);
+            unawaited(chat.addFiles([for (final f in d.files) f.path]));
+          },
+          child: Stack(
+            children: [
+              page,
+              if (_dragging)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      margin: const EdgeInsets.all(8),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Rubka.primary.withValues(alpha: 0.9),
+                        border: Border.all(color: Colors.white, width: 2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text('Отпусти, чтобы прикрепить',
+                          style: Rubka.head(20, color: Colors.white)),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
       },
     );
   }
@@ -253,6 +327,12 @@ class _ChatPanelState extends State<ChatPanel> {
                 spacing: 8,
                 runSpacing: 4,
                 children: [
+                  if (!chat.office)
+                    OutlinedButton.icon(
+                      onPressed: _openDocs,
+                      icon: const Icon(Icons.description, size: 18),
+                      label: const Text('Документы'),
+                    ),
                   OutlinedButton(
                     onPressed: chat.working ? null : _confirmNewChat,
                     child: const Text('Новый чат'),
@@ -462,7 +542,18 @@ class _ChatPanelState extends State<ChatPanel> {
                 bottomRight: Radius.circular(4),
               ),
             ),
-            child: Text(m.text, style: Rubka.body(color: Colors.white)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (m.text.isNotEmpty)
+                  Text(m.text, style: Rubka.body(color: Colors.white)),
+                if (m.attachments.isNotEmpty) ...[
+                  if (m.text.isNotEmpty) const SizedBox(height: 8),
+                  _attachmentsView(m.attachments),
+                ],
+              ],
+            ),
           ),
         );
       case MsgKind.director:
@@ -579,29 +670,164 @@ class _ChatPanelState extends State<ChatPanel> {
     ];
   }
 
-  static final _mdStyle = MarkdownStyleSheet(
-    p: Rubka.body(),
-    h1: Rubka.head(22),
-    h2: Rubka.head(19),
-    h3: Rubka.head(16),
-    code: Rubka.mono().copyWith(backgroundColor: Rubka.codeBg),
-    codeblockDecoration: BoxDecoration(
-        color: Rubka.codeBg, borderRadius: BorderRadius.circular(8)),
-    codeblockPadding: const EdgeInsets.all(12),
-    a: Rubka.body(color: Rubka.primary)
-        .copyWith(decoration: TextDecoration.underline),
-    listBullet: Rubka.body(),
-  );
+  static final _mdStyle = rubkaMdStyle;
+
+  /// Вложения в ленте: картинки миниатюрами, остальное — строкой.
+  Widget _attachmentsView(List<String> paths) => Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
+        children: [
+          for (final path in paths)
+            InkWell(
+              onTap: () => widget.app.openAttachment(path),
+              child: isImagePath(path)
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(path),
+                        width: 200,
+                        height: 200,
+                        fit: BoxFit.cover,
+                        cacheWidth: 400,
+                        errorBuilder: (context, error, stack) => _fileLine(path),
+                      ),
+                    )
+                  : _fileLine(path),
+            ),
+        ],
+      );
+
+  Widget _fileLine(String path) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(8)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.insert_drive_file, size: 18, color: Colors.white),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(path.split(RegExp(r'[\\/]')).last,
+                  overflow: TextOverflow.ellipsis,
+                  style: Rubka.body(size: 14, color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+
+  Widget _chips() => SizedBox(
+        height: 48,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (final a in chat.pending)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _chip(a),
+              ),
+          ],
+        ),
+      );
+
+  Widget _chip(PendingAttachment a) {
+    final err = a.state == PendingState.error;
+    final f = a.file;
+    final Widget avatar;
+    if (a.state == PendingState.copying) {
+      avatar = const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2));
+    } else if (err) {
+      avatar = const Icon(Icons.error_outline, size: 20, color: Rubka.error);
+    } else if (f != null && f.isImage) {
+      avatar = ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Image.file(File(f.path),
+            width: 32,
+            height: 32,
+            fit: BoxFit.cover,
+            cacheWidth: 64,
+            errorBuilder: (context, error, stack) =>
+                const Icon(Icons.insert_drive_file, size: 20)),
+      );
+    } else {
+      avatar = const Icon(Icons.insert_drive_file, size: 20);
+    }
+    final label = err
+        ? '${a.name}: ${a.error}'
+        : f == null
+            ? a.name
+            : '${a.name} · ${formatSize(f.size)}';
+    return InputChip(
+      avatar: avatar,
+      backgroundColor: err ? Rubka.errorBg : null,
+      side: err ? const BorderSide(color: Rubka.error) : null,
+      label: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 260),
+        child: Text(label,
+            overflow: TextOverflow.ellipsis,
+            style: Rubka.body(size: 13, color: err ? Rubka.error : Rubka.text)),
+      ),
+      onDeleted: () => chat.removePending(a),
+    );
+  }
 
   Widget _inputRow() {
     final enabled =
         !chat.preparing && chat.blockedReason == null && !chat.rcOpen;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+    final canAttach = chat.attachStore != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: Focus(
+        if (chat.pending.isNotEmpty) ...[
+          _chips(),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (canAttach)
+              IconButton(
+                tooltip: 'Прикрепить файл (или перетащи, или Ctrl+V)',
+                iconSize: 24,
+                constraints:
+                    const BoxConstraints(minWidth: 48, minHeight: 48),
+                onPressed: enabled ? _pickFiles : null,
+                icon: const Icon(Icons.attach_file),
+              ),
+            Expanded(
+              child: _inputField(enabled, canAttach),
+            ),
+            const SizedBox(width: 8),
+            chat.working
+                ? OutlinedButton(
+                    onPressed: chat.stop, child: const Text('Стоп'))
+                : FilledButton(
+                    onPressed: chat.canSend &&
+                            !chat.limitBlocked &&
+                            !chat.copying
+                        ? _submit
+                        : null,
+                    child: const Text('Отправить')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _inputField(bool enabled, bool canAttach) {
+    return Focus(
             onKeyEvent: (node, event) {
+              if (canAttach &&
+                  event is KeyDownEvent &&
+                  event.logicalKey == LogicalKeyboardKey.keyV &&
+                  HardwareKeyboard.instance.isControlPressed) {
+                unawaited(_pasteAttachments());
+                return KeyEventResult.ignored; // текст вставится как обычно
+              }
               if (event is KeyDownEvent &&
                   (event.logicalKey == LogicalKeyboardKey.enter ||
                       event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
@@ -626,16 +852,6 @@ class _ChatPanelState extends State<ChatPanel> {
                     borderRadius: BorderRadius.circular(12)),
               ),
             ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        chat.working
-            ? OutlinedButton(onPressed: chat.stop, child: const Text('Стоп'))
-            : FilledButton(
-                onPressed:
-                    chat.canSend && !chat.limitBlocked ? _submit : null,
-                child: const Text('Отправить')),
-      ],
     );
   }
 }

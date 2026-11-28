@@ -33,10 +33,17 @@ class GhService {
       RepoRemote r, int runId, String slug, String downloadsDir,
       {String? cwd}) async {
     if (!isSafeSlug(slug)) throw GitException('Недопустимое имя проекта: $slug');
+    final dir = p.join(downloadsDir, slug, '$runId');
+    await downloadInto(r, runId, dir, cwd: cwd);
+    return dir;
+  }
+
+  /// Скачать артефакты запуска прямо в папку [dir].
+  Future<void> downloadInto(RepoRemote r, int runId, String dir,
+      {String? cwd}) async {
     if (!_repoPartRe.hasMatch(r.owner) || !_repoPartRe.hasMatch(r.repo)) {
       throw GitException('Недопустимый адрес репозитория.');
     }
-    final dir = p.join(downloadsDir, slug, '$runId');
     final res = await _proc.run(
         'gh', ['run', 'download', '$runId', '-R', '${r.owner}/${r.repo}', '-D', dir],
         cwd: cwd, timeout: const Duration(minutes: 10));
@@ -44,7 +51,6 @@ class GhService {
       final t = res.stderr.trim().isNotEmpty ? res.stderr.trim() : res.stdout.trim();
       throw GitException('gh run download: $t');
     }
-    return dir;
   }
 
   Future<void> openFolder(String dir) => _proc.run(explorerPath(), [dir]);

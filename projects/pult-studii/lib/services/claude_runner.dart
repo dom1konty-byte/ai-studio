@@ -1,4 +1,5 @@
 import '../models/safety.dart';
+import 'attachments.dart';
 import 'process_runner.dart';
 import 'stream_json.dart';
 
@@ -56,6 +57,7 @@ class ClaudeRunner {
     String? prompt,
     String? sessionId,
     required List<String> allowedTools,
+    List<String> addDirs = const [],
   }) {
     return [
       '-p',
@@ -67,6 +69,8 @@ class ClaudeRunner {
       '--include-partial-messages',
       '--permission-mode',
       'acceptEdits',
+      // Папка вложений: директор открывает файлы инструментом Read.
+      for (final d in addDirs.where(isSafeAddDir)) ...['--add-dir', d],
       '--disallowedTools',
       ...disallowedTools,
       '--allowedTools',
@@ -79,6 +83,7 @@ class ClaudeRunner {
     required String cwd,
     String? sessionId,
     List<String> extraTools = const [],
+    List<String> addDirs = const [],
   }) async {
     final exe = await _proc.resolveExecutable('claude');
     if (exe == null) throw ToolNotFound('claude');
@@ -91,6 +96,7 @@ class ClaudeRunner {
       prompt: viaStdin ? null : prompt,
       sessionId: sessionId,
       allowedTools: tools,
+      addDirs: addDirs,
     );
     final proc =
         await _proc.start(exe, args, cwd: cwd, stdin: viaStdin ? prompt : null);

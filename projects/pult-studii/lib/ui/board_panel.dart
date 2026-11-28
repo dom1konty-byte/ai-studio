@@ -4,6 +4,7 @@ import '../app/theme.dart';
 import '../models/models.dart';
 import '../state/app_controller.dart';
 import '../services/readme_parser.dart';
+import 'phone_share_dialog.dart';
 
 class BoardPanel extends StatelessWidget {
   const BoardPanel({super.key, required this.controller});
@@ -210,11 +211,39 @@ class _ProjectCard extends StatelessWidget {
                     _downloadButton(build),
                 ],
               ),
+              if (isAppType(p.type) &&
+                  build.state == BuildState.success &&
+                  build.id != null)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _phoneButton(context, build),
+                ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _phoneButton(BuildContext context, BuildRun build) {
+    final expired = build.isExpired(DateTime.now());
+    final button = FilledButton.tonal(
+      style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+      onPressed: expired
+          ? null
+          : () {
+              final share = controller.startPhoneShare(project);
+              if (share == null) return;
+              showDialog<void>(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => PhoneShareDialog(share: share));
+            },
+      child: const Text('На телефон'),
+    );
+    return expired
+        ? Tooltip(message: 'Артефакт старше 30 дней', child: button)
+        : button;
   }
 
   Widget _downloadButton(BuildRun build) {

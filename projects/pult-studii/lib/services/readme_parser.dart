@@ -47,3 +47,9 @@ bool stageWaitsYes(String stage) {
   final s = stage.toLowerCase().replaceAll('ё', 'е');
   return RegExp(r'ждет\s*[«"“„]?\s*да(?![а-я])').hasMatch(s);
 }
+
+/// Проект — Android-приложение (по типу из README доски).
+bool isAppType(String type) {
+  final t = type.toLowerCase();
+  return t.contains('android') || t.contains('приложени');
+}

@@ -2,19 +2,23 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as pth;
 
 import '../models/models.dart';
 import '../services/app_storage.dart';
+import '../services/attachments.dart';
 import '../services/claude_runner.dart';
 import '../services/gh_service.dart';
 import '../services/git_service.dart';
 import '../services/notifications.dart';
 import '../services/process_runner.dart';
+import '../services/project_docs.dart';
 import '../services/remote_control.dart';
 import '../services/tools_check.dart';
 import '../services/updater.dart';
 import '../services/usage.dart';
 import 'chat_controller.dart';
+import 'phone_share_controller.dart';
 
 /// Состояние автообновления.
 enum UpdateStatus { none, downloading, installing, error }
@@ -35,6 +39,7 @@ class AppController extends ChangeNotifier {
     this.isWindowFocused,
     this.showWindow,
     this.quitApp,
+    this.attachments,
     DateTime Function()? clock,
   })  : state = StateRepo(storage),
         usage = UsageRepo(storage),
@@ -54,6 +59,15 @@ class AppController extends ChangeNotifier {
 
   final ProcessRunner proc;
   final AppStorage storage;
+
+  /// Вложения чатов (null — выключены, например в тестах).
+  final AttachmentStore? attachments;
+
+  /// Документы проектов (docs/*.md).
+  late final ProjectDocs docs = ProjectDocs(proc, storage);
+
+  /// Идущая раздача APK на телефон (одна за раз).
+  PhoneShareController? activeShare;
 
   /// Автообновление (null — выключено, например в тестах).
   final UpdateService? updater;
@@ -395,6 +409,9 @@ class AppController extends ChangeNotifier {
     try {
       await cancelLogin?.call();
     } catch (_) {}
+    try {
+      await activeShare?.stop();
+    } catch (_) {}
     await Future.wait(chats.values.map((c) async {
       try {
         await c.stop();
@@ -547,6 +564,7 @@ class AppController extends ChangeNotifier {
       onRateLimit: setLimit,
       limitUntil: () => activeLimit,
       onReply: () => unawaited(_emit(NotifyKind.directorReply, key)),
+      attachStore: attachments,
     );
     int sig() =>
         (c.working ? 1 : 0) + (c.preparing ? 2 : 0) + (c.rcOpen ? 4 : 0);
@@ -713,5 +731,46 @@ class AppController extends ChangeNotifier {
     }
     toast('Открываю: $host');
     unawaited(gh.openUrl(href!));
+  }
+
+  /// Документы проекта для окна «Документы».
+  Future<List<DocEntry>> loadDocs(ChatController c) => docs.load(
+      slug: c.slug, repoPath: git.repoPath, workDir: c.workDir);
+
+  /// Открыть вложение: безопасный тип — самим файлом, остальное — папкой
+  /// (чтобы случайно не запустить программу).
+  Future<void> openAttachment(String path) async {
+    final store = attachments;
+    if (store == null || !pth.isWithin(store.root, path)) return;
+    try {
+      await proc.run(
+          explorerPath(), [isOpenableAttachment(path) ? path : pth.dirname(path)]);
+    } catch (_) {
+      toast('Не удалось открыть файл.');
+    }
+  }
+
+  /// «На телефон»: скачать APK последней успешной сборки и раздать.
+  /// null — раздавать нечего.
+  PhoneShareController? startPhoneShare(Project pr) {
+    final run = builds[pr.slug];
+    final id = run?.id;
+    if (!isSafeSlug(pr.slug) || id == null || run?.state != BuildState.success) {
+      return null;
+    }
+    unawaited(activeShare?.stop());
+    final share = PhoneShareController(
+      slug: pr.slug,
+      downloadTo: (dir) async {
+        final remote = await git.remote();
+        if (remote == null) {
+          throw GitException('не удалось определить репозиторий');
+        }
+        await gh.downloadInto(remote, id, dir, cwd: git.repoPath);
+      },
+    );
+    activeShare = share;
+    unawaited(share.start());
+    return share;
   }
 }

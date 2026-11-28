@@ -5,12 +5,26 @@ import 'package:path/path.dart' as p;
 
 import '../models/models.dart';
 import '../services/app_storage.dart';
+import '../services/attachments.dart';
 import '../services/claude_runner.dart';
 import '../services/git_service.dart';
 import '../services/process_runner.dart';
 import '../services/remote_control.dart';
 import '../services/stream_json.dart';
 import '../services/usage.dart';
+
+enum PendingState { copying, ready, error }
+
+/// Файл, прикреплённый к ещё не отправленному сообщению (чип над полем ввода).
+class PendingAttachment {
+  PendingAttachment(this.name);
+
+  /// Имя для показа (исходное).
+  final String name;
+  PendingState state = PendingState.copying;
+  Attachment? file;
+  String? error;
+}
 
 /// Чат одного проекта или «Офиса» (slug == officeKey).
 class ChatController extends ChangeNotifier {
@@ -27,9 +41,13 @@ class ChatController extends ChangeNotifier {
     this.onRateLimit,
     this.limitUntil,
     this.onReply,
+    this.attachStore,
   });
 
   final String slug;
+
+  /// Куда копируются вложения (null — вложения выключены).
+  final AttachmentStore? attachStore;
 
   /// Имя для стартового текста («Проект: <Имя> …»).
   final String title;
@@ -105,6 +123,98 @@ class ChatController extends ChangeNotifier {
   String? _pendingPrefix;
   String? _lastRaw;
   bool _disposed = false;
+
+  /// Вложения, ожидающие отправки.
+  final List<PendingAttachment> pending = [];
+
+  /// Хоть один файл ещё копируется.
+  bool get copying => pending.any((x) => x.state == PendingState.copying);
+
+  List<PendingAttachment> get readyAttachments =>
+      pending.where((x) => x.state == PendingState.ready).toList();
+
+  bool get hasReadyAttachments => readyAttachments.isNotEmpty;
+
+  int get _activeCount =>
+      pending.where((x) => x.state != PendingState.error).length;
+
+  /// Добавить файлы с диска (кнопка, перетаскивание, буфер).
+  Future<void> addFiles(List<String> paths) async {
+    final store = attachStore;
+    if (store == null) return;
+    for (final src in paths) {
+      final item = PendingAttachment(src.split(RegExp(r'[\\/]')).last);
+      _addPending(item);
+      if (_activeCount > maxAttachments) {
+        item
+          ..state = PendingState.error
+          ..error = 'больше $maxAttachments файлов';
+        notifyListeners();
+        continue;
+      }
+      try {
+        item.file = await store.addFile(slug, src);
+        item.state = PendingState.ready;
+      } on AttachmentException catch (e) {
+        _fail(item, e.message);
+      } catch (_) {
+        _fail(item, 'не удалось скопировать');
+      }
+      notifyListeners();
+    }
+  }
+
+  /// Добавить картинку из буфера обмена.
+  Future<void> addImageBytes(Uint8List bytes) async {
+    final store = attachStore;
+    if (store == null) return;
+    final item = PendingAttachment('image.${imageExtension(bytes)}');
+    _addPending(item);
+    if (_activeCount > maxAttachments) {
+      _fail(item, 'больше $maxAttachments файлов');
+      notifyListeners();
+      return;
+    }
+    try {
+      item.file = await store.addBytes(slug, item.name, bytes);
+      item.state = PendingState.ready;
+    } on AttachmentException catch (e) {
+      _fail(item, e.message);
+    } catch (_) {
+      _fail(item, 'не удалось сохранить');
+    }
+    notifyListeners();
+  }
+
+  void _addPending(PendingAttachment item) {
+    pending.add(item);
+    // Красных чипов не копим больше пяти.
+    final errors = pending.where((x) => x.state == PendingState.error).toList();
+    for (var i = 0; i < errors.length - 5; i++) {
+      pending.remove(errors[i]);
+    }
+    notifyListeners();
+  }
+
+  void _fail(PendingAttachment item, String text) {
+    item
+      ..state = PendingState.error
+      ..error = text;
+  }
+
+  void removePending(PendingAttachment item) {
+    pending.remove(item);
+    notifyListeners();
+  }
+
+  /// Папка вложений передаётся claude, если в чате были вложения.
+  List<String> _addDirs() {
+    final s = attachStore;
+    if (s == null || !messages.any((m) => m.attachments.isNotEmpty)) {
+      return const [];
+    }
+    return [s.dirFor(slug)];
+  }
 
   bool get canSend =>
       !preparing && blockedReason == null && !working && !rcOpen;
@@ -221,13 +331,29 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> send(String text,
-      {bool approval = false, List<String> onceTools = const []}) async {
+      {bool approval = false,
+      List<String> onceTools = const [],
+      bool withAttachments = false}) async {
     final t = text.trim();
-    if (t.isEmpty || !canSend || limitBlocked) return;
+    if (!canSend || limitBlocked) return;
+    if (withAttachments && copying) return;
+    var files = <String>[];
+    final store = attachStore;
+    if (withAttachments && store != null) {
+      final dir = store.dirFor(slug);
+      files = readyAttachments
+          .map((x) => x.file!.path)
+          .where((f) => p.isWithin(dir, f))
+          .toList();
+    }
+    if (t.isEmpty && files.isEmpty) return;
+    if (withAttachments) pending.clear();
     if (approval) approvalHidden = true;
-    _add(ChatMessage(MsgKind.user, t));
-    _lastRaw = t;
-    await _run(t, onceTools);
+    _add(ChatMessage(MsgKind.user, t, attachments: files));
+    final body = t.isEmpty ? 'Посмотри вложения.' : t;
+    final raw = files.isEmpty ? body : '$body\n\n${attachmentsBlock(files)}';
+    _lastRaw = raw;
+    await _run(raw, onceTools);
   }
 
   /// Итоговый запрос по ТЕКУЩЕЙ сессии: в новом разговоре — со стартовым
@@ -394,6 +520,7 @@ class ChatController extends ChangeNotifier {
         cwd: workDir,
         sessionId: state.sessionId(slug),
         extraTools: [...state.allowedTools(slug), ...onceTools],
+        addDirs: _addDirs(),
       );
       _turn = turn;
       // Стоп нажали, пока процесс запускался.

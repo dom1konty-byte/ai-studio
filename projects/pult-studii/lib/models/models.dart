@@ -77,12 +77,17 @@ RuleDecision decideDenials(List<PermissionDenial> denials) {
 
 class ChatMessage {
   ChatMessage(this.kind, this.text,
-      {this.denials = const [], DateTime? time})
+      {this.denials = const [],
+      this.attachments = const [],
+      DateTime? time})
       : time = time ?? DateTime.now();
 
   final MsgKind kind;
   String text;
   final List<PermissionDenial> denials;
+
+  /// Полные пути вложенных файлов (сообщение Дамира).
+  final List<String> attachments;
   final DateTime time;
   bool resolved = false;
 
@@ -99,7 +104,12 @@ class ChatMessage {
     if (kind == MsgKind.action && t.length > 200) {
       t = '${t.substring(0, 199)}…';
     }
-    return jsonEncode({'k': kind.name, 't': t, 'ts': time.toIso8601String()});
+    return jsonEncode({
+      'k': kind.name,
+      't': t,
+      if (attachments.isNotEmpty) 'a': attachments,
+      'ts': time.toIso8601String(),
+    });
   }
 
   static ChatMessage? fromJsonLine(String line) {
@@ -109,7 +119,12 @@ class ChatMessage {
       final kind = MsgKind.values.where((k) => k.name == j['k']).firstOrNull;
       final text = j['t'];
       if (kind == null || text is! String) return null;
+      final a = j['a'];
+      final files = a is List
+          ? a.whereType<String>().where((x) => x.isNotEmpty).take(10).toList()
+          : <String>[];
       return ChatMessage(kind, text,
+          attachments: files,
           time: DateTime.tryParse('${j['ts']}') ?? DateTime.now());
     } catch (_) {
       return null;

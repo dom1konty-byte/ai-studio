@@ -165,7 +165,10 @@ class MemoryStorage implements AppStorage {
 
   @override
   Future<String?> readText(String path) async =>
-      path.endsWith('README.md') ? readme : null;
+      files[path] ?? (path.endsWith('README.md') ? readme : null);
+
+  /// Файлы по полному пути (для readText).
+  final files = <String, String>{};
 
   @override
   Future<bool> repoLooksValid(String path) async =>

@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'app/app.dart';
 import 'services/app_storage.dart';
+import 'services/attachments.dart';
 import 'services/real_process_runner.dart';
 import 'services/updater.dart';
 import 'services/windows_notifier.dart';
@@ -53,6 +54,7 @@ Future<void> main() async {
     storage: FileStorage(p.join(appData, 'pult-studii')),
     downloadsDir: p.join(home, 'Downloads'),
     homeDir: home,
+    attachments: FileAttachmentStore(p.join(appData, 'pult-studii', 'attachments')),
     updater: win ? UpdateService(proc) : null,
     notifier: win ? WindowsNotifier() : null,
     isWindowFocused: win ? windowManager.isFocused : null,
