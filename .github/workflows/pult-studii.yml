@@ -27,6 +27,8 @@ jobs:
         run: |
           if [ ! -d windows ]; then
             flutter create --platforms=windows --org com.aistudio --project-name pult_studii .
+            # flutter create кладёт шаблонный тест — он не наш
+            git ls-files --error-unmatch test/widget_test.dart >/dev/null 2>&1 || rm -f test/widget_test.dart
           fi
       - run: flutter pub get
       - run: flutter analyze

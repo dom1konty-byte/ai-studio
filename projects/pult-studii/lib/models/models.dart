@@ -42,7 +42,7 @@ class ChatMessage {
   final DateTime time;
   bool resolved = false;
 
-  /// Что сохраняем в chats/<slug>.jsonl.
+  /// Что сохраняем в `chats/<slug>.jsonl`.
   bool get persistent =>
       kind == MsgKind.user ||
       kind == MsgKind.director ||

@@ -81,7 +81,7 @@ class ToolsCheck {
       title: 'Папка ai-studio',
       ok: ok,
       detail: ok
-          ? '$path'
+          ? path
           : (path == null
               ? 'не выбрана'
               : 'в $path нет .claude/agents или projects/README.md'),
