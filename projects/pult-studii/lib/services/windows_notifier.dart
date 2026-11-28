@@ -3,7 +3,10 @@ import 'package:local_notifier/local_notifier.dart';
 import 'notifications.dart';
 
 /// Тосты Windows через пакет local_notifier.
-class WindowsNotifier implements AppNotifier {
+class WindowsNotifier implements AppNotifier, DownloadActionNotifier {
+  @override
+  void Function(String key)? onDownload;
+
   void Function(String key)? _onClick;
   bool _ready = false;
   final _live = <LocalNotification>{};
@@ -28,10 +31,32 @@ class WindowsNotifier implements AppNotifier {
     required String title,
     required String body,
     required String key,
-  }) async {
+  }) =>
+      _show(title, body, key, withDownload: false);
+
+  @override
+  Future<void> showWithDownload({
+    required String title,
+    required String body,
+    required String key,
+  }) =>
+      _show(title, body, key, withDownload: true);
+
+  Future<void> _show(String title, String body, String key,
+      {required bool withDownload}) async {
     if (!_ready) return;
-    final n = LocalNotification(title: title, body: body);
+    final n = LocalNotification(
+      title: title,
+      body: body,
+      actions: withDownload
+          ? [LocalNotificationAction(type: 'button', text: 'Скачать')]
+          : null,
+    );
     n.onClick = () => _onClick?.call(key);
+    n.onClickAction = (_) {
+      // «Скачать»: качаем и открываем чат проекта
+      onDownload?.call(key);
+    };
     n.onClose = (_) {
       _live.remove(n);
       n.destroy();

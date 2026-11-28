@@ -16,6 +16,18 @@ abstract class AppNotifier {
   });
 }
 
+/// Уведомление с кнопкой «Скачать» (если Windows-реализация это умеет).
+abstract class DownloadActionNotifier {
+  /// Ключ проекта, у которого нажали «Скачать».
+  void Function(String key)? onDownload;
+
+  Future<void> showWithDownload({
+    required String title,
+    required String body,
+    required String key,
+  });
+}
+
 /// Название этапа без пометки «ждёт «да»» и галочки: `Дизайн ✅ ждёт «да»` → `Дизайн`.
 String stageName(String stage) {
   final t = stage

@@ -53,3 +53,9 @@ bool isAppType(String type) {
   final t = type.toLowerCase();
   return t.contains('android') || t.contains('приложени');
 }
+
+/// Проект — сайт (по типу из README доски).
+bool isSiteType(String type) {
+  final t = type.toLowerCase();
+  return t.contains('сайт') || t.contains('site');
+}

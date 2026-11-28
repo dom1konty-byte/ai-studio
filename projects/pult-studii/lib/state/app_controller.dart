@@ -12,6 +12,8 @@ import '../services/claude_runner.dart';
 import '../services/gh_service.dart';
 import '../services/git_service.dart';
 import '../services/notifications.dart';
+import '../services/site_preview.dart';
+import '../services/voice_input.dart';
 import '../services/process_runner.dart';
 import '../services/project_docs.dart';
 import '../services/remote_control.dart';
@@ -41,10 +43,13 @@ class AppController extends ChangeNotifier {
     this.showWindow,
     this.quitApp,
     this.attachments,
+    this.voice,
+    SitePreview? sitePreview,
     DateTime Function()? clock,
   })  : state = StateRepo(storage),
         usage = UsageRepo(storage),
         _now = clock ?? DateTime.now,
+        sites = sitePreview ?? SitePreview(),
         rc = remote ?? RemoteControl(proc),
         _copy = copyText ?? _systemCopy,
         git = GitService(proc, storage),
@@ -63,6 +68,12 @@ class AppController extends ChangeNotifier {
 
   /// Вложения чатов (null — выключены, например в тестах).
   final AttachmentStore? attachments;
+
+  /// Голосовой ввод Windows (null — выключен, например в тестах).
+  final VoiceInput? voice;
+
+  /// Локальный просмотр сайта (один за раз).
+  final SitePreview sites;
 
   /// Документы проектов (docs/*.md).
   late final ProjectDocs docs = ProjectDocs(proc, storage);
@@ -176,6 +187,7 @@ class AppController extends ChangeNotifier {
     for (final c in chats.values) {
       c.dispose();
     }
+    unawaited(sites.stop());
     _toasts.close();
     super.dispose();
   }
@@ -192,6 +204,10 @@ class AppController extends ChangeNotifier {
       } catch (_) {}
       try {
         await notifier?.init(openFromNotification);
+        final n = notifier;
+        if (n is DownloadActionNotifier) {
+          n.onDownload = _downloadFromNotification;
+        }
       } catch (_) {}
       await git.setRepoPath(state.repoPath ?? '');
       await recheck();
@@ -353,10 +369,12 @@ class AppController extends ChangeNotifier {
       }
     }
     try {
-      await n.show(
-          title: notifyTitle,
-          body: notifyBody(kind, name, stage: stage),
-          key: slug);
+      final body = notifyBody(kind, name, stage: stage);
+      if (kind == NotifyKind.buildOk && n is DownloadActionNotifier) {
+        await n.showWithDownload(title: notifyTitle, body: body, key: slug);
+      } else {
+        await n.show(title: notifyTitle, body: body, key: slug);
+      }
     } catch (_) {}
   }
 
@@ -372,6 +390,16 @@ class AppController extends ChangeNotifier {
       unawaited(_emit(NotifyKind.buildOk, slug));
     } else if (s == BuildState.failed) {
       unawaited(_emit(NotifyKind.buildFailed, slug));
+    }
+  }
+
+  /// Кнопка «Скачать» в уведомлении «Сборка готова».
+  void _downloadFromNotification(String key) {
+    for (final p in projects) {
+      if (p.slug == key) {
+        unawaited(download(p));
+        return;
+      }
     }
   }
 
@@ -413,6 +441,7 @@ class AppController extends ChangeNotifier {
     try {
       await activeShare?.stop();
     } catch (_) {}
+    await sites.stop();
     await Future.wait(chats.values.map((c) async {
       try {
         await c.stop();
@@ -732,6 +761,74 @@ class AppController extends ChangeNotifier {
     }
     toast('Открываю: $host');
     unawaited(gh.openUrl(href!));
+  }
+
+  /// Голосовой ввод: фокус уже в поле, через ~150 мс жмём Win+H.
+  Future<void> startVoice() async {
+    final v = voice;
+    var ok = false;
+    if (v != null) {
+      await Future<void>.delayed(voiceDelay);
+      try {
+        ok = await v.trigger();
+      } catch (_) {
+        ok = false;
+      }
+    }
+    if (!ok) toast(voiceFallbackText);
+  }
+
+  void openLocalLink(String url) {
+    if (!isLocalPreviewUrl(url)) {
+      toast('Ссылка не открыта: разрешён только локальный просмотр.');
+      return;
+    }
+    unawaited(gh.openUrl(url));
+  }
+
+  /// Адрес опубликованного сайта из README и отчёта проекта (в worktree).
+  Future<String?> publishedSiteUrl(ChatController c) async {
+    if (c.workDir.isEmpty || !isSafeSlug(c.slug)) return null;
+    final base = pth.join(c.workDir, 'projects', c.slug);
+    final texts = <String?>[];
+    for (final f in [
+      pth.join(base, 'README.md'),
+      pth.join(base, 'docs', 'report.md'),
+    ]) {
+      try {
+        texts.add(await storage.readText(f));
+      } catch (_) {}
+    }
+    return findSiteUrl(texts);
+  }
+
+  /// «Открыть сайт»: опубликованный адрес или локальный просмотр.
+  Future<void> openSite(ChatController c) async {
+    final url = await publishedSiteUrl(c);
+    if (url != null) {
+      openLink(url);
+      return;
+    }
+    if (c.workDir.isEmpty || !isSafeSlug(c.slug)) {
+      toast('Папка проекта ещё не открыта — подожди пару секунд.');
+      return;
+    }
+    try {
+      final root =
+          await locateSiteRoot(pth.join(c.workDir, 'projects', c.slug));
+      final dir = root.path;
+      if (dir == null) {
+        toast(root.needsBuild
+            ? 'Сайт ещё не собран — попроси директора собрать'
+            : 'В проекте не нашёл index.html — сайта пока нет.');
+        return;
+      }
+      final local = await sites.start(dir);
+      toast('Открываю локально: ${Uri.parse(local).authority}');
+      openLocalLink(local);
+    } catch (_) {
+      toast('Не удалось запустить локальный просмотр.');
+    }
   }
 
   /// Документы проекта для окна «Документы».

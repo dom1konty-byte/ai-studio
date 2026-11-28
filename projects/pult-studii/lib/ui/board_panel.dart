@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../app/theme.dart';
 import '../models/models.dart';
 import '../services/notifications.dart';
+import '../services/rate_limit.dart';
 import '../services/readme_parser.dart';
 import '../state/app_controller.dart';
 
@@ -224,6 +227,13 @@ class _PulseDotState extends State<_PulseDot>
       );
 }
 
+/// ⬇ нужен у строки с успешной свежей сборкой.
+bool _canDownload(AppController c, Project p, BuildRun b) =>
+    b.state == BuildState.success &&
+    b.id != null &&
+    !b.isExpired(DateTime.now()) &&
+    !c.downloading.contains(p.slug);
+
 class _ProjectRow extends StatelessWidget {
   const _ProjectRow(
       {required this.controller, required this.project, required this.compact});
@@ -287,6 +297,18 @@ class _ProjectRow extends StatelessWidget {
                     decoration: const BoxDecoration(
                         color: Rubka.send, shape: BoxShape.circle),
                   ),
+                ),
+              if (_canDownload(c, p, build))
+                IconButton(
+                  key: Key('dl-${p.slug}'),
+                  tooltip: 'Скачать сборку от '
+                      '${hhmm((build.updatedAt ?? DateTime.now()).toLocal())}',
+                  iconSize: 18,
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () => unawaited(c.download(p)),
+                  icon: const Icon(Icons.download),
                 ),
               Flexible(
                 flex: 2,

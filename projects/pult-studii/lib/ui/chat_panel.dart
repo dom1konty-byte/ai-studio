@@ -11,6 +11,7 @@ import 'package:pasteboard/pasteboard.dart';
 import '../app/theme.dart';
 import '../models/models.dart';
 import '../models/safety.dart';
+import '../models/quick_replies.dart';
 import '../services/attachments.dart';
 import '../services/rate_limit.dart';
 import '../services/readme_parser.dart';
@@ -444,6 +445,13 @@ class _ChatPanelState extends State<ChatPanel> {
                   ? 'Скачать последнюю сборку в папку «Загрузки»'
                   : 'Недоступно: $dlWhy',
               enabled: dlWhy == null),
+        if (!office && isSiteType(p.type))
+          _item(
+              'site',
+              Icons.public,
+              'Открыть сайт',
+              'адрес из README или просмотр с компьютера',
+              'Открыть опубликованный сайт или посмотреть его локально'),
         if (!office && isAppType(p.type))
           _item(
               'qr',
@@ -502,6 +510,8 @@ class _ChatPanelState extends State<ChatPanel> {
         _openDocs();
       case 'download':
         unawaited(widget.app.download(widget.project));
+      case 'site':
+        unawaited(widget.app.openSite(chat));
       case 'qr':
         _phoneShare();
       case 'continue':
@@ -965,6 +975,46 @@ class _ChatPanelState extends State<ChatPanel> {
     );
   }
 
+  void _voice() {
+    widget.inputFocus.requestFocus();
+    unawaited(widget.app.startVoice());
+  }
+
+  /// Быстрые кнопки: текст уходит директору сразу.
+  Widget _quickReplies(bool active) {
+    final items = quickRepliesFor(office: chat.office);
+    return SingleChildScrollView(
+      key: const Key('quick-replies'),
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final t in items)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Material(
+                color: Rubka.bubble,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  key: Key('quick-$t'),
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: active ? () => unawaited(chat.send(t)) : null,
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: Text(t,
+                        maxLines: 1,
+                        style: Rubka.body(
+                            size: 12,
+                            color: active ? Rubka.ink2 : Rubka.disabledFg)),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _inputRow() {
     final enabled =
         !chat.preparing && chat.blockedReason == null && !chat.rcOpen;
@@ -973,6 +1023,10 @@ class _ChatPanelState extends State<ChatPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (!chat.working) ...[
+          _quickReplies(enabled && canSend),
+          const SizedBox(height: 8),
+        ],
         if (chat.pending.isNotEmpty) ...[
           _chips(),
           const SizedBox(height: 8),
@@ -997,6 +1051,14 @@ class _ChatPanelState extends State<ChatPanel> {
                 )
               else
                 const SizedBox(width: 10),
+              IconButton(
+                key: const Key('voice-button'),
+                tooltip: 'Голосовой ввод Windows — говори, текст появится в поле',
+                iconSize: 22,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                onPressed: enabled ? _voice : null,
+                icon: const Icon(Icons.mic),
+              ),
               Expanded(child: _inputField(enabled, canAttach)),
               const SizedBox(width: 8),
               if (chat.working)

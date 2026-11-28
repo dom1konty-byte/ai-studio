@@ -11,6 +11,7 @@ import 'services/attachments.dart';
 import 'services/phone_share.dart';
 import 'services/real_process_runner.dart';
 import 'services/updater.dart';
+import 'services/windows_voice.dart';
 import 'services/windows_notifier.dart';
 import 'state/app_controller.dart';
 
@@ -64,6 +65,7 @@ Future<void> main() async {
     attachments: attachments,
     updater: win ? UpdateService(proc) : null,
     notifier: win ? WindowsNotifier() : null,
+    voice: win ? WindowsVoiceInput() : null,
     isWindowFocused: win ? windowManager.isFocused : null,
     showWindow: win
         ? () async {
