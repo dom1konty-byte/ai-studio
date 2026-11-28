@@ -1,13 +1,11 @@
 import 'dart:convert';
 
 import 'app_storage.dart';
+import 'direct_install.dart';
 import 'process_runner.dart';
 
 /// Репозиторий студии по умолчанию.
 const defaultRepoSlug = 'dom1konty-byte/ai-studio';
-
-/// Страница «Установщик приложений» (winget) в Microsoft Store.
-const wingetStoreUrl = 'ms-windows-store://pdp/?productid=9NBLGGH4NNS1';
 
 final _slugRe =
     RegExp(r'^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$');
@@ -111,10 +109,14 @@ class LaunchResult {
 
 /// Установка и вход: все команды с фиксированными аргументами.
 class SetupService {
-  SetupService(this._proc, this._storage);
+  SetupService(ProcessRunner proc, AppStorage storage, {DirectInstaller? direct})
+      : _proc = proc,
+        _storage = storage,
+        _direct = direct ?? DirectInstaller.real(proc);
 
   final ProcessRunner _proc;
   final AppStorage _storage;
+  final DirectInstaller _direct;
 
   Future<void> refreshEnvironment() => _proc.refreshEnvironment();
 
@@ -160,8 +162,9 @@ class SetupService {
       'npm', ['install', '-g', '@anthropic-ai/claude-code'],
       timeout: const Duration(minutes: 10));
 
-  Future<void> openWingetStore() =>
-      _proc.run('rundll32', ['url.dll,FileProtocolHandler', wingetStoreUrl]);
+  /// Прямая загрузка с официального сайта. Вернёт текст ошибки или null.
+  Future<String?> directInstall(String id, StatusCallback onStatus) =>
+      _direct.install(id, onStatus);
 
   // ---------- GitHub ----------
 

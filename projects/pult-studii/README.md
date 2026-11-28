@@ -12,6 +12,8 @@
 4. При первом запуске откроется «Мастер первого запуска»: сам ставит Git, Node.js, GitHub CLI, Claude Code (и Python), помогает войти в GitHub и Claude и скачивает папку студии (`%USERPROFILE%\ai-studio`). Нужен интернет и аккаунты GitHub и Claude. Когда всё готово, мастер закрывается. Открыть снова: «Настройка» внизу списка проектов.
 5. Удалить: Параметры Windows → Приложения → Рубка.
 
+Microsoft Store не нужен: если winget нет или он не сработал, мастер сам скачивает Git, GitHub CLI, Node.js, Python и Claude Code с официальных сайтов (подпись файла проверяется перед запуском; Windows может спросить разрешение — нажми «Да»).
+
 Ручная установка программ, если мастер не справился: `winget install --id Git.Git -e`, `OpenJS.NodeJS.LTS`, `GitHub.cli`, `Python.Python.3.12`, `Anthropic.ClaudeCode` (или `npm install -g @anthropic-ai/claude-code`); входы: `gh auth login`, `claude`.
 
 ## Запуск

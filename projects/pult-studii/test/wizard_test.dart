@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pult_studii/services/app_storage.dart';
+import 'package:pult_studii/services/direct_install.dart';
 import 'package:pult_studii/services/process_runner.dart';
 import 'package:pult_studii/services/setup_service.dart';
 import 'package:pult_studii/state/wizard_controller.dart';
@@ -29,6 +30,20 @@ class Env {
   late final FakeProc proc;
 
   final failWinget = <String>{};
+  final downloader = FakeDownloader()
+    ..texts.addAll({
+      'https://api.github.com/repos/git-for-windows/git/releases/latest':
+          '{"assets":[{"name":"Git-2.50.0-64-bit.exe","browser_download_url":'
+              '"https://github.com/git-for-windows/git/releases/download/v/Git-2.50.0-64-bit.exe"}]}',
+      'https://api.github.com/repos/cli/cli/releases/latest':
+          '{"assets":[{"name":"gh_2.70.0_windows_amd64.msi","browser_download_url":'
+              '"https://github.com/cli/cli/releases/download/v/gh_2.70.0_windows_amd64.msi"}]}',
+      'https://nodejs.org/dist/index.json':
+          '[{"version":"v22.1.0","lts":"Jod","files":["win-x64-msi"]}]',
+    });
+  bool failDirect = false;
+  bool badSignature = false;
+  bool psClaudeFails = false;
   final wingetIds = <String>[];
   bool ghAuth = false;
   bool claudeAuth = false;
@@ -51,6 +66,30 @@ class Env {
       }
       installed.add(_wingetToExe[id]!);
       return const ProcResult(0, 'Successfully installed');
+    }
+    if (exe == 'powershell') {
+      if (k.contains('install.ps1')) {
+        if (psClaudeFails) return const ProcResult(1, '', 'ps упал');
+        installed.add('claude');
+        return const ProcResult(0);
+      }
+      final subj = k.contains('Git-')
+          ? 'CN=Johannes Schindelin'
+          : k.contains('gh_')
+              ? 'CN=GitHub, Inc.'
+              : k.contains('node-')
+                  ? 'CN=OpenJS Foundation'
+                  : 'CN=Python Software Foundation';
+      return ProcResult(0,
+          '{"Status":${badSignature ? 2 : 0},"S":"${badSignature ? 'CN=Evil' : subj}"}');
+    }
+    if (exe == 'msiexec') {
+      installed.add(args[1].contains('gh_') ? 'gh' : 'node');
+      return const ProcResult(0);
+    }
+    if (exe.endsWith('.exe')) {
+      installed.add(exe.contains('Git-') ? 'git' : 'python');
+      return const ProcResult(0);
     }
     if (exe == 'npm' && k == 'install -g @anthropic-ai/claude-code') {
       installed.add('claude');
@@ -88,7 +127,11 @@ class Env {
     Future<bool> Function(String)? onFinish,
   }) =>
       WizardController(
-        service: SetupService(proc, storage),
+        service: SetupService(proc, storage,
+            direct: DirectInstaller(
+                proc: proc,
+                downloader: downloader..failDownload = failDirect,
+                tempDir: '/tmp/rubka-test')),
         defaultFolder: _folder,
         initialFolder: folder,
         onFinish: onFinish ?? (_) async => true,
@@ -180,7 +223,8 @@ void main() {
 
     test('ошибка winget не останавливает остальные', () async {
       final env = Env(installed: {'winget', 'git'})
-        ..failWinget.add('GitHub.cli');
+        ..failWinget.add('GitHub.cli')
+        ..failDirect = true;
       final w = env.wizard();
       await w.refresh();
       await w.installSelected();
@@ -202,7 +246,8 @@ void main() {
 
     test('Claude: winget не вышел → npm', () async {
       final env = Env(installed: {'winget', 'git', 'node', 'gh', 'python'})
-        ..failWinget.add('Anthropic.ClaudeCode');
+        ..failWinget.add('Anthropic.ClaudeCode')
+        ..psClaudeFails = true;
       final w = env.wizard();
       await w.refresh();
       await w.installSelected();
@@ -214,7 +259,8 @@ void main() {
 
     test('Claude: winget не вышел и Node.js нет → npm не зовём', () async {
       final env = Env(installed: {'winget', 'git', 'gh', 'python'})
-        ..failWinget.add('Anthropic.ClaudeCode');
+        ..failWinget.add('Anthropic.ClaudeCode')
+        ..psClaudeFails = true;
       final w = env.wizard();
       await w.refresh();
       w.toggle('node', false);
@@ -224,7 +270,7 @@ void main() {
       expect(w.tool('claude').log, contains('Node.js'));
     });
 
-    test('нет winget: ничего не ставим, ставим npm не пытаемся без Node', () async {
+    test('нет winget: всё ставится прямой загрузкой', () async {
       final env = Env(installed: {'git'});
       final w = env.wizard();
       await w.refresh();
@@ -232,7 +278,39 @@ void main() {
       expect(w.hasSelection, isTrue);
       await w.installSelected();
       expect(env.wingetIds, isEmpty);
-      expect(w.tool('node').run, InstallRun.failed);
+      expect(env.downloader.downloaded, [
+        'https://nodejs.org/dist/v22.1.0/node-v22.1.0-x64.msi',
+        'https://github.com/cli/cli/releases/download/v/gh_2.70.0_windows_amd64.msi',
+        'https://www.python.org/ftp/python/$pythonDirectVersion/'
+            'python-$pythonDirectVersion-amd64.exe',
+      ]);
+      expect(w.programsDone, isTrue);
+      expect(w.tool('claude').installed, isTrue);
+    });
+
+    test('winget упал → прямая загрузка для этой программы', () async {
+      final env = Env(installed: {'winget', 'git', 'node', 'claude', 'python'})
+        ..failWinget.add('GitHub.cli');
+      final w = env.wizard();
+      await w.refresh();
+      await w.installSelected();
+      expect(env.wingetIds, ['GitHub.cli']);
+      expect(env.downloader.downloaded.length, 1);
+      expect(w.tool('gh').installed, isTrue);
+    });
+
+    test('подпись плохая → не запускаем, ошибка, Повторить', () async {
+      final env = Env(installed: {'git', 'node', 'claude', 'python'})
+        ..badSignature = true;
+      final w = env.wizard();
+      await w.refresh();
+      await w.installSelected();
+      expect(env.calls.any((c) => c.startsWith('msiexec')), isFalse);
+      expect(w.tool('gh').run, InstallRun.failed);
+      expect(w.tool('gh').log, contains('Подпись'));
+      env.badSignature = false;
+      await w.retry('gh');
+      expect(w.tool('gh').installed, isTrue);
     });
   });
 

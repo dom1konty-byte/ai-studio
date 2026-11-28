@@ -12,6 +12,15 @@ class ToolItem {
   bool selected = false;
   InstallRun run = InstallRun.idle;
   String log = '';
+
+  /// «через winget», «скачиваю с официального сайта» и т. п.
+  String status = '';
+
+  /// Процент скачивания (null — неизвестно).
+  int? percent;
+
+  String get statusText =>
+      percent == null ? status : '$status $percent%';
 }
 
 /// Мастер первого запуска: 4 шага (программы, GitHub, Claude, папка студии).
@@ -127,9 +136,14 @@ class WizardController extends ChangeNotifier {
 
   // ---------- Шаг 1 ----------
 
-  Future<void> installSelected() async {
+  /// Повторить установку одной программы.
+  Future<void> retry(String id) => installSelected(only: id);
+
+  Future<void> installSelected({String? only}) async {
     if (busy) return;
-    final queue = tools.where((t) => t.selected && !t.installed).toList();
+    final queue = tools
+        .where((t) => (only == null ? t.selected : t.spec.id == only) && !t.installed)
+        .toList();
     if (queue.isEmpty) return;
     busy = true;
     installMessage = '';
@@ -145,16 +159,34 @@ class WizardController extends ChangeNotifier {
             'нажми «Да».';
         notifyListeners();
         var ok = false;
+        t.status = '';
+        t.percent = null;
         if (wingetOk) {
+          t.status = 'через winget';
+          notifyListeners();
           final r = await service.wingetInstall(t.spec);
           t.log = shortLog(r);
           ok = r.ok;
-        } else {
-          t.log = 'Нет установщика приложений (winget).';
+        }
+        if (!ok) {
+          final wingetLog = wingetOk ? t.log : '';
+          t.log = 'Windows может спросить разрешение — нажми «Да».';
+          notifyListeners();
+          final err = await service.directInstall(t.spec.id, (s, pct) {
+            t.status = s;
+            t.percent = pct;
+            notifyListeners();
+          });
+          t.percent = null;
+          ok = err == null;
+          t.log = ok
+              ? ''
+              : [if (wingetLog.isNotEmpty) wingetLog, err].join('\n');
         }
         if (!ok && t.spec.id == 'claude') {
           await service.refreshEnvironment();
           if (await service.isInstalled('node')) {
+            t.status = 'через Node.js (npm)';
             t.log = 'Другой способ: через Node.js…';
             notifyListeners();
             final r = await service.npmInstallClaude();
@@ -165,6 +197,7 @@ class WizardController extends ChangeNotifier {
           }
         }
         if (ok) await service.refreshEnvironment();
+        t.status = '';
         t.run = ok ? InstallRun.ok : InstallRun.failed;
         notifyListeners();
       }
@@ -186,8 +219,6 @@ class WizardController extends ChangeNotifier {
     }
     notifyListeners();
   }
-
-  Future<void> openWingetStore() => service.openWingetStore();
 
   // ---------- Шаг 2 ----------
 

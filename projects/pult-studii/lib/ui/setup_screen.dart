@@ -220,21 +220,10 @@ class _SetupScreenState extends State<SetupScreen> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
                 color: Rubka.summaryBg, borderRadius: BorderRadius.circular(8)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                    'В Windows нет «Установщика приложений» (winget), поэтому '
-                    'Рубка не может ставить программы сама. Открой его страницу '
-                    'в Microsoft Store, нажми «Получить», потом вернись сюда '
-                    'и нажми «Проверить снова».',
-                    style: Rubka.body(size: 14)),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                    onPressed: _w.openWingetStore,
-                    child: const Text('Открыть «Установщик приложений»')),
-              ],
-            ),
+            child: Text(
+                'Установщика winget нет — это нормально. Рубка скачает '
+                'программы с официальных сайтов сама. Microsoft Store не нужен.',
+                style: Rubka.body(size: 14)),
           ),
         const SizedBox(height: 8),
         for (final t in _w.tools) _toolRow(t),
@@ -242,7 +231,7 @@ class _SetupScreenState extends State<SetupScreen> {
         Row(
           children: [
             FilledButton(
-              onPressed: _w.hasSelection && _w.wingetOk && !_w.busy
+              onPressed: _w.hasSelection && !_w.busy
                   ? _w.installSelected
                   : null,
               child: const Text('Установить выбранное'),
@@ -290,7 +279,9 @@ class _SetupScreenState extends State<SetupScreen> {
         ? 'уже установлено'
         : (t.run == InstallRun.failed
             ? 'не получилось'
-            : t.spec.hint);
+            : (t.run == InstallRun.running && t.status.isNotEmpty
+                ? t.statusText
+                : t.spec.hint));
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -319,6 +310,14 @@ class _SetupScreenState extends State<SetupScreen> {
                           color: Rubka.codeBg,
                           borderRadius: BorderRadius.circular(8)),
                       child: SelectableText(t.log, style: Rubka.mono(size: 12)),
+                    ),
+                  if (t.run == InstallRun.failed && !t.installed)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: OutlinedButton(
+                        onPressed: _w.busy ? null : () => _w.retry(t.spec.id),
+                        child: const Text('Повторить'),
+                      ),
                     ),
                 ],
               ),

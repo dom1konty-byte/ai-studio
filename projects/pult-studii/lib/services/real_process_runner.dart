@@ -89,6 +89,10 @@ class RealProcessRunner implements ProcessRunner {
   @override
   Future<String?> resolveExecutable(String name) async {
     if (!Platform.isWindows) return name;
+    // Полный путь (скачанный установщик): запускаем, если файл есть.
+    if (name.contains('\\') || name.contains('/')) {
+      return File(name).existsSync() ? name : null;
+    }
     final cached = _cache[name];
     if (cached != null) return cached;
     final dirs = _currentPath

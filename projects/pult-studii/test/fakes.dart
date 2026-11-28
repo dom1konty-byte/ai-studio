@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:pult_studii/models/models.dart';
+import 'package:pult_studii/services/direct_install.dart';
 import 'package:pult_studii/services/app_storage.dart';
 import 'package:pult_studii/services/process_runner.dart';
 
@@ -126,3 +127,29 @@ const sampleReadme = '''
 | Альфа | [`alpha`](alpha/) | Сайт | Дизайн ✅ ждёт «да» | `alpha` | 2026-11-01 |
 | Бета | [`beta`](beta/) | Программа Windows | Разработка | `beta` | 2026-11-02 |
 ''';
+
+/// Фейковый загрузчик: тексты по адресу, список «скачанного».
+class FakeDownloader implements Downloader {
+  final texts = <String, String>{};
+  final fetched = <String>[];
+  final downloaded = <String>[];
+  final progress = <int>[];
+  bool failDownload = false;
+
+  @override
+  Future<String> fetchText(Uri url) async {
+    fetched.add(url.toString());
+    final t = texts[url.toString()];
+    if (t == null) throw DownloadException('нет ответа');
+    return t;
+  }
+
+  @override
+  Future<void> download(
+      Uri url, String destPath, void Function(int percent) onProgress) async {
+    if (failDownload) throw DownloadException('Не удалось скачать');
+    downloaded.add(url.toString());
+    onProgress(50);
+    onProgress(100);
+  }
+}
